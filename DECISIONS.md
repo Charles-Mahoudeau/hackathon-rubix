@@ -1,0 +1,2 @@
+- 2026-11-07 — GR5-22 VFX modules return pure draw-parameter tables (render/vfx/*.luau, config/vfx.luau); the actual shader/draw calls are wired later once the engine's rendering API is documented. Reason: no render API in the repo/template, and logic stays headless-testable.
+- 2026-11-07 — Glitch source whitelist lives in config (`allowedSources = ai_error`); UI/log code must call `glitch.trigger(g, "ai_error")` from the ERROR event only. Reason: acceptance criterion "never from idle/hover".
