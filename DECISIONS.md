@@ -2,3 +2,5 @@
 
 - 2026-11-07 — Sim modules live in `config/` and `sim/` (outside `scripts/`), because the engine auto-loads every file in `scripts/`; the engine entry will require them later. Reason: keeps headless sim testable with plain Lua.
 - 2026-11-07 — GR5-2 foundation uses a single `config/balance.luau` table; to be split into `config/*.luau` per subsystem as milestones add content. Reason: simplest for M0.
+- 2026-11-07 — `tickSeconds = 0.1` (10 Hz, spec §7). Durations in balance are now expressed in game seconds (`jumpSeconds`, `scanSeconds`, `ai.delaySeconds*`, `mineRatePerSecond`) and converted via `Sim:ticks()`, so wall-clock behavior is unchanged by the tick rate. Reason: avoids a cross-cutting rebalance if the tick rate changes.
+- 2026-11-07 — Planets, veins settings and `startBuyer` moved to `config/world.luau` (spec §4/§16.1); `balance.luau` keeps only tunables. Markets/routes stay inside planet entries for now. Reason: simplest split matching the spec layout.

@@ -5,7 +5,7 @@ local Ai = require("sim.ai")
 local s = Sim.new()
 s:setDecider(Ai.decide)
 local start = s.resources.credits
-s:run(300)
+s:run(3000)
 assert(s.resources.credits > start, "credits should increase")
 print("credits", start, "->", s.resources.credits)
 
@@ -19,7 +19,7 @@ assert(#s2.logs == n and s2.logs[1].level == "ERROR")
 
 -- vague mode: runs without crashing, logs errors
 Ai.mode = "vague"
-local s3 = Sim.new(); s3:setDecider(Ai.decide); s3:run(300)
+local s3 = Sim.new(); s3:setDecider(Ai.decide); s3:run(3000)
 local errs = 0; for _, l in ipairs(s3.logs) do if l.level == "ERROR" then errs = errs + 1 end end
 assert(errs > 0)
 print("vague errors logged", errs, "credits", s3.resources.credits)

@@ -1,5 +1,6 @@
 -- Server-side simulation core. Pure Lua/Luau, no engine deps, headless-runnable.
 local balance = require("config.balance")
+local world = require("config.world")
 local Sim = {}
 Sim.__index = Sim
 
@@ -19,28 +20,31 @@ function Sim.new(opts)
     compute = b.startCompute, reputation = b.startReputation }
   self.warehouse = { titanium = 0, cobalt = 0 }
   self.planets = {}
-  for _, p in ipairs(b.planets) do
+  for _, p in ipairs(world.planets) do
     local planet = { id = p.id, name = p.name, kind = p.kind, jumps = p.jumps, tier = p.tier,
       prices = p.prices, ore = p.ore, veins = {} }
     if p.kind == "harvest" then
-      for i = 1, b.veinCount do
-        local r = b.veinRichnessMin + self.rand() * (b.veinRichnessMax - b.veinRichnessMin)
+      for i = 1, world.veinCount do
+        local r = world.veinRichnessMin + self.rand() * (world.veinRichnessMax - world.veinRichnessMin)
         planet.veins[i] = { richness = r * (p.oreBonus or 1), scanned = false }
       end
     end
     self.planets[p.id] = planet
   end
-  self.buyer = b.startBuyer
+  self.buyer = world.startBuyer
   self.agents, self.ships = {}, {}
   for kind, def in pairs(b.agents) do
     self.agents[kind] = { id = kind, tier = def.startTier, tools = {}, pending = nil, mode = "default" }
     for _, t in ipairs(def.tools) do self.agents[kind].tools[t] = true end
   end
-  self.ships.s1 = { id = "s1", owner = "miner", state = "idle", at = b.startBuyer, cargo = 0, ore = nil,
+  self.ships.s1 = { id = "s1", owner = "miner", state = "idle", at = world.startBuyer, cargo = 0, ore = nil,
     timer = 0, target = nil, skill = nil }
   self.skills = {}
   return self
 end
+
+-- Convert game seconds to whole ticks (balance is expressed in seconds).
+function Sim:ticks(seconds) return math.max(1, math.ceil(seconds / self.b.tickSeconds - 1e-9)) end
 
 function Sim:log(level, msg)
   local l = self.logs
@@ -93,7 +97,7 @@ end
 
 local function travelTicks(self, from, to)
   local a, b = self.planets[from].jumps, self.planets[to].jumps
-  return math.max(1, math.abs(a - b)) * self.b.jumpTicks
+  return math.max(1, math.abs(a - b)) * self:ticks(self.b.jumpSeconds)
 end
 
 -- Apply a validated call. Invalid => logged ERROR, ignored.
@@ -161,7 +165,7 @@ function Sim:stepShip(ship)
     local p = self.planets[ship.target.planet]
     local v = p.veins[ship.target.vein]
     ship.ore = p.ore
-    ship.cargoF = (ship.cargoF or 0) + b.ship.mineRate * v.richness
+    ship.cargoF = (ship.cargoF or 0) + b.ship.mineRatePerSecond * b.tickSeconds * v.richness
     ship.cargo = math.floor(ship.cargoF)
     if ship.cargo >= b.ship.cargoCap then
       ship.cargo, ship.cargoF = b.ship.cargoCap, 0
@@ -187,7 +191,7 @@ function Sim:step()
       else
         self.resources.compute = math.max(0, self.resources.compute - self.b.ai.computePerDecision)
         local d = self.b.ai
-        agent.pending = { call = call, delay = d.delayMin + math.floor(self.rand() * (d.delayMax - d.delayMin + 1)) }
+        agent.pending = { call = call, delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }
       end
     end
   end
