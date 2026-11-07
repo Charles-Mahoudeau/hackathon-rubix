@@ -1,5 +1,6 @@
+-- Global (no require in AYLO); sorted-load puts scripts/config/* before scripts/render/*.
 -- VFX balance/look numbers (GR5-22). No literals of this kind live in render/vfx/*.
-return {
+VfxConfig = {
 	bloom = {
 		threshold = 0.72, -- luminance above which a pixel counts as neon
 		neonTagOnly = true, -- only pixels tagged neon (alpha-channel/mask) bloom

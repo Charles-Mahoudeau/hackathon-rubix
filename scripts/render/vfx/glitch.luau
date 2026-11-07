@@ -1,8 +1,8 @@
 -- AI-error glitch. Triggered only by trigger("ai_error"); never by idle/hover/etc. One short flicker.
-local cfg = require("config/vfx").glitch
-local M = {}
+local cfg = VfxConfig.glitch
+Glitch = {}
 
-function M.new()
+function Glitch.new()
 	return { t = nil, rng = cfg.seed }
 end
 
@@ -13,7 +13,7 @@ local function nextRand(self): number
 end
 
 -- Returns true if accepted. Unknown sources (hover, idle, ...) are rejected.
-function M.trigger(self, source: string): boolean
+function Glitch.trigger(self, source: string): boolean
 	if not cfg.allowedSources[source] then
 		return false
 	end
@@ -21,12 +21,12 @@ function M.trigger(self, source: string): boolean
 	return true
 end
 
-function M.isActive(self): boolean
+function Glitch.isActive(self): boolean
 	return self.t ~= nil
 end
 
 -- Advance by dt; returns nil when inactive, else the frame's effect params.
-function M.update(self, dt: number)
+function Glitch.update(self, dt: number)
 	if self.t == nil then
 		return nil
 	end
@@ -48,4 +48,4 @@ function M.update(self, dt: number)
 	}
 end
 
-return M
+

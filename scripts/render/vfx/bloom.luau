@@ -1,9 +1,9 @@
 -- Shared neon-bloom primitive. Every other VFX/asset ticket asks this module for its params.
-local cfg = require("config/vfx").bloom
-local M = {}
+local cfg = VfxConfig.bloom
+Bloom = {}
 
 -- Is this pixel part of the bloom? tagged = neon mask value in [0,1].
-function M.isNeon(luminance: number, tagged: boolean?): boolean
+function Bloom.isNeon(luminance: number, tagged: boolean?): boolean
 	if cfg.neonTagOnly then
 		return tagged == true and luminance >= cfg.threshold
 	end
@@ -11,7 +11,7 @@ function M.isNeon(luminance: number, tagged: boolean?): boolean
 end
 
 -- Parameters for the bloom pass; `scale` (default 1) lets a caller dim/boost without a copy of the pass.
-function M.params(scale: number?)
+function Bloom.params(scale: number?)
 	return {
 		threshold = cfg.threshold,
 		intensity = cfg.intensity * (scale or 1),
@@ -20,4 +20,4 @@ function M.params(scale: number?)
 	}
 end
 
-return M
+

@@ -1,9 +1,9 @@
 -- Animated trade-route style: blue = safe, orange = risky; dashes move when a convoy is active.
-local cfg = require("config/vfx").route
-local M = {}
+local cfg = VfxConfig.route
+Route = {}
 
 -- risk in [0,1]; active = convoy on the route; t = time in seconds.
-function M.style(risk: number, active: boolean, t: number)
+function Route.style(risk: number, active: boolean, t: number)
 	local risky = risk >= cfg.riskyThreshold
 	local base = if risky then cfg.risky else cfg.safe
 	local period = cfg.dashLength + cfg.gapLength
@@ -16,4 +16,4 @@ function M.style(risk: number, active: boolean, t: number)
 	}
 end
 
-return M
+

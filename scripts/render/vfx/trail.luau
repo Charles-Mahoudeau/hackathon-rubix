@@ -1,12 +1,12 @@
 -- Ship/convoy engine trail: ring buffer of fading points. Feed with position each frame.
-local cfg = require("config/vfx").trail
-local M = {}
+local cfg = VfxConfig.trail
+Trail = {}
 
-function M.new()
+function Trail.new()
 	return { points = {}, acc = 0 }
 end
 
-function M.update(self, dt: number, x: number, y: number)
+function Trail.update(self, dt: number, x: number, y: number)
 	self.acc += dt
 	if self.acc >= cfg.sampleInterval then
 		self.acc = 0
@@ -25,7 +25,7 @@ function M.update(self, dt: number, x: number, y: number)
 end
 
 -- Draw data: position, alpha and width fading with age.
-function M.draw(self)
+function Trail.draw(self)
 	local out = {}
 	for i, p in self.points do
 		local k = 1 - p.age / cfg.lifetime
@@ -34,4 +34,4 @@ function M.draw(self)
 	return out
 end
 
-return M
+
