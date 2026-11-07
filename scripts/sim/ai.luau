@@ -1,7 +1,7 @@
 -- AI decision interface. Swapping in RUBIX later = replace ONLY Ai.decide.
 -- Contract: decide(sim, agentId, context) -> { name = string, args = table }
 -- AI output is always a tool call, never free text; Sim validates everything.
-local Ai = {}
+Ai = Ai or {}
 Ai.mode = "stub" -- "stub" | "vague"
 
 local function stub(sim, agentId, ctx)
@@ -35,4 +35,3 @@ function Ai.decide(sim, agentId, ctx)
   return stub(sim, agentId, ctx)
 end
 
-return Ai

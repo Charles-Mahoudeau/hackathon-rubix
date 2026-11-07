@@ -1,6 +1,6 @@
--- Run from repo root: lua5.4 -e 'package.path="?.luau;"..package.path' tests/test_headless.luau
-local Sim = require("sim.sim")
-local Ai = require("sim.ai")
+-- Run from repo root: lua5.4 tests/test_headless.luau
+-- Loads scripts/ the way the engine does (sorted, shared globals; no require).
+dofile("tests/load_scripts.lua")
 
 local s = Sim.new()
 s:setDecider(Ai.decide)

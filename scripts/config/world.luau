@@ -1,5 +1,6 @@
+-- Global (no require in AYLO): loaded by the engine in sorted path order; scripts/config/* sort first.
 -- World layout (spec §4/§16.1): planets, veins, markets. Tunable data only.
-local world = {
+World = {
   startBuyer = "meridian",
   veinCount = 4,
   veinRichnessMin = 0.5,
@@ -13,4 +14,3 @@ local world = {
       prices = { titanium = 14, cobalt = 20 } },
   },
 }
-return world

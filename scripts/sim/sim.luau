@@ -1,7 +1,6 @@
+-- Global `Sim` (no require in AYLO). Reads Balance/World set by scripts/config/* (sorted earlier).
 -- Server-side simulation core. Pure Lua/Luau, no engine deps, headless-runnable.
-local balance = require("config.balance")
-local world = require("config.world")
-local Sim = {}
+Sim = {}
 Sim.__index = Sim
 
 local function lcg(seed)
@@ -14,30 +13,30 @@ end
 
 function Sim.new(opts)
   opts = opts or {}
-  local b = opts.balance or balance
+  local b = opts.balance or Balance
   local self = setmetatable({ b = b, tick = 0, logs = {}, rand = lcg(opts.seed or b.seed) }, Sim)
   self.resources = { credits = b.startCredits, titanium = 0, cobalt = 0,
     compute = b.startCompute, reputation = b.startReputation }
   self.warehouse = { titanium = 0, cobalt = 0 }
   self.planets = {}
-  for _, p in ipairs(world.planets) do
+  for _, p in ipairs(World.planets) do
     local planet = { id = p.id, name = p.name, kind = p.kind, jumps = p.jumps, tier = p.tier,
       prices = p.prices, ore = p.ore, veins = {} }
     if p.kind == "harvest" then
-      for i = 1, world.veinCount do
-        local r = world.veinRichnessMin + self.rand() * (world.veinRichnessMax - world.veinRichnessMin)
+      for i = 1, World.veinCount do
+        local r = World.veinRichnessMin + self.rand() * (World.veinRichnessMax - World.veinRichnessMin)
         planet.veins[i] = { richness = r * (p.oreBonus or 1), scanned = false }
       end
     end
     self.planets[p.id] = planet
   end
-  self.buyer = world.startBuyer
+  self.buyer = World.startBuyer
   self.agents, self.ships = {}, {}
   for kind, def in pairs(b.agents) do
     self.agents[kind] = { id = kind, tier = def.startTier, tools = {}, pending = nil, mode = "default" }
     for _, t in ipairs(def.tools) do self.agents[kind].tools[t] = true end
   end
-  self.ships.s1 = { id = "s1", owner = "miner", state = "idle", at = world.startBuyer, cargo = 0, ore = nil,
+  self.ships.s1 = { id = "s1", owner = "miner", state = "idle", at = World.startBuyer, cargo = 0, ore = nil,
     timer = 0, target = nil, skill = nil }
   self.skills = {}
   return self
@@ -208,4 +207,3 @@ end
 
 function Sim:run(ticks) for _ = 1, ticks do self:step() end end
 
-return Sim

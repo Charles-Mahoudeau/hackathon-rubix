@@ -1,5 +1,6 @@
+-- Global (no require in AYLO): loaded by the engine in sorted path order; scripts/config/* sort first.
 -- ONE tunable balance table. No gameplay number lives anywhere else.
-local balance = {
+Balance = {
   tickSeconds = 0.1,  -- spec §7: 10 Hz fixed step
   startCredits = 100,
   startCompute = 50,
@@ -24,4 +25,3 @@ local balance = {
   logMax = 200,
   seed = 1234,
 }
-return balance
