@@ -1,8 +1,7 @@
--- Resolves icon tint + glow from state. Colors come ONLY from the shared theme table (GR5-3);
+-- Global IconStyle (no require in AYLO; IconSet is loaded first by sorted order). Resolves icon tint + glow from state. Colors come ONLY from the shared theme table (GR5-3);
 -- the fallback below is a placeholder until that table lands (same keys: dim, text, cyan, warn, danger, ok).
-local icon_set = require("./icon_set")
 
-local M = {}
+IconStyle = {}
 
 local FALLBACK_THEME = {
 	dim = "#5b6b7a", text = "#c9d6e2", cyan = "#19e6ff", ok = "#3dff9a", warn = "#ffb020", danger = "#ff3860",
@@ -13,8 +12,8 @@ local ACTIVE_KEY = { resource = "cyan", tool = "cyan", agent = "cyan" }
 
 -- Returns { file, color, glow, glow_color } for an icon key like "tool.mine".
 -- Idle: flat dim color, glow = false. Active: neon color, glow = true (the ONLY case with bloom).
-function M.resolve(key, active, theme, opts)
-	local def = icon_set.icons[key]
+function IconStyle.resolve(key, active, theme, opts)
+	local def = IconSet.icons[key]
 	assert(def, "unknown icon: " .. tostring(key))
 	theme = theme or FALLBACK_THEME
 	local kind = string.match(key, "^(%w+)%.")
@@ -25,4 +24,3 @@ function M.resolve(key, active, theme, opts)
 	return { file = def.file, color = neon, glow = true, glow_color = neon }
 end
 
-return M

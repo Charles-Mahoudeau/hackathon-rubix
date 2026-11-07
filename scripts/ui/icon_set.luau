@@ -2,8 +2,8 @@
 -- Single lookup: icon key -> file + author. Swapping the set = rerun the script / edit this table.
 -- Colors are NOT baked in: SVGs use fill="currentColor"; tint with theme.dim/theme.text (idle)
 -- or the neon from `active_color` (active). Glow only when active (see icon_style.luau).
-local M = {}
-M.icons = {
+IconSet = {}
+IconSet.icons = {
 	["resource.credits"] = { file = "icons/resource_credits.svg", author = "Delapouite", source = "https://game-icons.net/1x1/delapouite/coins.html" },
 	["resource.titanium"] = { file = "icons/resource_titanium.svg", author = "Lorc", source = "https://game-icons.net/1x1/lorc/metal-bar.html" },
 	["resource.cobalt"] = { file = "icons/resource_cobalt.svg", author = "Lorc", source = "https://game-icons.net/1x1/lorc/crystal-cluster.html" },
@@ -21,4 +21,3 @@ M.icons = {
 	["agent.logistician"] = { file = "icons/agent_logistician.svg", author = "Delapouite", source = "https://game-icons.net/1x1/delapouite/delivery-drone.html" },
 	["agent.monitor"] = { file = "icons/agent_monitor.svg", author = "Delapouite", source = "https://game-icons.net/1x1/delapouite/eye-target.html" },
 }
-return M
