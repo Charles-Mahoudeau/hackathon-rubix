@@ -1,0 +1,2 @@
+- 2026-11-07 — GR5-19: Miner tiers = one hull (Support Ship) + module overlay sprites; Freighter = Frigate hull at 1.6x. Reason: tier look without 3 full sprites; distinct silhouette at map size. Map uses simplified icons (diamond vs wide rect) so readability does not depend on the sprite.
+- 2026-11-07 — GR5-19: Void Fleet Pack 1 is CC0 → no credits entry required (optional courtesy line only).
