@@ -1,0 +1,15 @@
+#!/bin/sh
+# Rejects commit messages that don't follow Conventional Commits.
+# Enable with: git config core.hooksPath .githooks
+
+pattern='^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([a-z0-9_-]+\))?!?: .+'
+msg_file="$1"
+first_line=$(head -n1 "$msg_file")
+
+if ! echo "$first_line" | grep -qE "$pattern"; then
+  echo "Commit message does not follow Conventional Commits:"
+  echo "  $first_line"
+  echo "Expected: <type>(<scope>): <description>, e.g. 'feat(mining): add ore yield curve'"
+  echo "Types: feat fix chore docs style refactor perf test build ci revert"
+  exit 1
+fi
