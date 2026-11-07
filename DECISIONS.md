@@ -1,0 +1,1 @@
+- 2026-11-07 — GR5-21: icons kept as vector SVG with `currentColor` (not pixelated), tinted at runtime from the theme table; reason: GR5-3 theme not in repo yet, vector tint keeps one source of truth. Icon picks listed in tools/build_icons.py; attribution generated to CREDITS_ICONS.md.
