@@ -6,3 +6,5 @@
 - 2026-11-07 — Planets: palette is passed to the shader per material from `GameConfig.palette` (placeholder 8 colours until GR5-3); `Planet.new` asserts every colour name is in the palette, so no second remap pass is needed.
 - 2026-11-07 — Trade planets (Meridian Base, Halcyon Port) get the same rotating planet treatment as harvest planets (issue default).
 - 2026-11-07 — Config lives in `scripts/config/planets.luau` (only `scripts/` is auto-loaded, no `require`); globals `GameConfig`, `Planet`.
+- 2026-11-07 — Asteroids/stars/galaxy: reuse the planet shader via Planet.fromDef (waterLevel 0, no clouds, small radius/pixels); config in scripts/config/bodies.luau. Hidden vein = dark rock at base size; revealed = size + lit-colour tier by richness (rebuild with Asteroid.new(..., true) and swap SpriteRenderer on scan). "?" is UI, not sprite.
+- 2026-11-07 — Galaxy: defaulted to a decorative distant sprite (layer -100, low detail), not the star-map screen backdrop (GR5-3). Star.new is the single star renderer; GR5-17 should call it.
