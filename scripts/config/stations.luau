@@ -74,8 +74,9 @@ return {
 	-- Planet stations hang off the planet; market stations stand above their node (the node and label stay as the hit area).
 	map = {
 		-- `scale` is the biggest world unit per sprite pixel; a station shrinks below it so that its whole extent (modules, turrets,
-		-- debris) fits `fit` (px), which is how the depot stays on the map as the command centre grows it.
-		home = { station = "hmc_depot", planet = "kessa", dx = 96, dy = -108, scale = 0.5, fit = { w = 200, h = 240 }, label = "HMC DEPOT" },
+		-- debris) fits `fit` (px; `perStage` more px per width and height for every stage reached), which is how the depot stays on the map as the command centre grows it. The home entry is also the
+		-- depot dock point of the ships (client/fleet_map): dx, dy from the planet centre, so the ships dock at the station itself.
+		home = { station = "hmc_depot", planet = "kessa", dx = 64, dy = -62, scale = 0.5, fit = { w = 76, h = 76, perStage = 20 }, label = "HMC DEPOT" },
 		outposts = {
 			varn = { station = "outpost_varn", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "VARN OUTPOST" },
 			ashfall = { station = "outpost_ashfall", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "ASHFALL OUTPOST" },

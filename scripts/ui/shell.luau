@@ -443,6 +443,63 @@ local function modeBox(font, x, y, w, h, m, cv, agentRows)
   return p
 end
 
+-- Examples dropdown (GR5-106): the examples of this agent's role on the left, the picked one on the right with what it needs.
+-- Picking a row only previews it; "Use this directive" fills the draft. Prerequisites are shown, never granted.
+local function examplesPanel(font, x: number, y: number, w: number, h: number, ex)
+  local lw = math.floor(w * 0.42)
+  local rw = w - lw - 3 * L.pad
+  local p = panel({ x = x, y = y, w = w, h = h }, nil)
+  local k = { at(L.pad, 8, text(font, ("EXAMPLES  %s  (%d)"):format(ex.roleLabel or "", #ex.list), T.small, "dim"), lw - 2 * L.pad, 16) }
+  local selected
+  for _, item in ipairs(ex.list) do if item.id == ex.selected then selected = item end end
+  if #ex.list == 0 then
+    k[#k + 1] = at(L.pad, 36, text(font, ex.empty, T.body, "dim"), w - 2 * L.pad, 20)
+    return withChildren(p, k)
+  end
+  local rows = {}
+  for _, item in ipairs(ex.list) do
+    local on = item == selected
+    local tint = on and "cyan" or "dim"
+    local tag = item.gradeLabel .. (item.ready and "" or "  needs setup")
+    rows[#rows + 1] = buttonNode({ width = lw - 2 * L.pad - 16, direction = "column", gap = 2, paddingX = 8, paddingY = 5 },
+      "editor.example.pick." .. item.id, tint, {
+        text(font, (on and "> " or "") .. tag, T.small, item.ready and (on and "cyan" or "text") or Theme.semantic.warning),
+        text(font, item.hint, T.small, "dim") }, on)
+  end
+  k[#k + 1] = scrollBox(L.pad, 30, lw - 2 * L.pad, h - 30 - L.pad, rows, 4)
+
+  local dx = lw + 2 * L.pad
+  if not selected then
+    k[#k + 1] = at(dx, 36, text(font, ex.noSelection, T.body, "dim"), rw, 20)
+    return withChildren(p, k)
+  end
+  local detail = {
+    text(font, "DIRECTIVE  " .. selected.gradeLabel, T.small, "dim"),
+    scrollText(font, selected.directive, T.body, "cyan", rw),
+    text(font, "PREREQUISITES  (never changed for you)", T.small, "dim"),
+  }
+  if #selected.prerequisites == 0 then detail[#detail + 1] = text(font, "none", T.small, "text") end
+  for _, need in ipairs(selected.prerequisites) do
+    detail[#detail + 1] = scrollText(font, (need.met and "ok       " or need.info and "check    " or "MISSING  ") .. need.text, T.small, need.met and "green" or Theme.semantic.warning, rw)
+  end
+  if selected.directive2 then
+    detail[#detail + 1] = text(font, ex.secondAgent, T.small, "dim")
+    detail[#detail + 1] = scrollText(font, selected.directive2, T.body, "cyan", rw)
+  end
+  if selected.stubNote then detail[#detail + 1] = scrollText(font, selected.stubNote, T.small, Theme.semantic.warning, rw) end
+  if not selected.fits then detail[#detail + 1] = scrollText(font, ex.tooLong, T.small, Theme.semantic.error, rw) end
+  detail[#detail + 1] = text(font, "COACHING", T.small, "dim")
+  detail[#detail + 1] = scrollText(font, selected.hint, T.small, "text", rw)
+  detail[#detail + 1] = text(font, ex.watchLabel:upper(), T.small, "dim")
+  detail[#detail + 1] = scrollText(font, selected.watch, T.small, "text", rw)
+  detail[#detail + 1] = scrollText(font, ex.noMeasure, T.small, "dim", rw)
+  k[#k + 1] = scrollBox(dx, 30, rw, h - 30 - 28 - 2 * L.pad, detail, 3)
+  local confirm = ex.confirm == selected.id
+  k[#k + 1] = at(dx, h - 28 - L.pad, button(font, confirm and ex.confirmLabel or ex.useLabel, "editor.example.use." .. selected.id,
+    selected.fits and (confirm and "amber" or "cyan") or "dim", rw - 16))
+  return withChildren(p, k)
+end
+
 local function editorScreen(font, r, m, opts)
   local e = Screens.editor
   local counterColor = function(c) return c.amber and Theme.semantic.warning or "dim" end
@@ -491,10 +548,19 @@ local function editorScreen(font, r, m, opts)
   end
   ak[#ak + 1] = at(x + 8, 4, button(font, "Clear order", "editor.clear_order", "dim", 110))
   ak[#ak + 1] = at(x + 126, 4, button(font, "Save", "editor.save", m.canSave and "cyan" or "dim", 80))
+  local nextX = x + 214
   if m.lock then
-    ak[#ak + 1] = at(x + 214, 4, button(font, m.lock.locked and "Monitor lock: ON" or "Monitor lock: off", m.lock.action, m.lock.locked and "amber" or "dim", 150))
+    ak[#ak + 1] = at(nextX, 4, button(font, m.lock.locked and "Monitor lock: ON" or "Monitor lock: off", m.lock.action, m.lock.locked and "amber" or "dim", 150))
+    nextX += 158
   end
+  local ex = opts.examples or { open = false, list = {} }
+  ak[#ak + 1] = at(nextX, 4, button(font, ex.open and "Examples: close" or ("Examples (%d)"):format(#ex.list), "editor.examples.toggle", ex.open and "cyan" or "dim", 150))
   out[#out + 1] = withChildren(acts, ak)
+
+  if ex.open then
+    out[#out + 1] = examplesPanel(font, x0, r.y + e.toolsY, dw, e.feedY + e.feedHeight - e.toolsY, ex)
+    return out
+  end
 
   -- tools: equipped slots with their prompt weight, locked ones with the requirement, the Context shortcut
   local tb = box(font, x0, r.y + e.toolsY, e.directiveWidth, e.toolsHeight, ("TOOLS  slots %d / %d"):format(m.toolSlots.used, m.toolSlots.max), 110)
@@ -1317,7 +1383,8 @@ function Shell.spec(sim, screenId: string, opts)
         buy = ComputeView.buyOptions(sim, Screens.compute.packs) }
       local draft = opts.draft or Editor.newDraft(sim, id)
       nodes = editorScreen(font, rects.main, Editor.model(sim, id, draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute,
-        state = sim.agents[id].state, time = opts.time, draft = draft, list = Editor.list(sim, id), feed = Editor.feed(sim, id) })
+        state = sim.agents[id].state, time = opts.time, draft = draft, list = Editor.list(sim, id), feed = Editor.feed(sim, id),
+        examples = Editor.examplesView(sim, id, opts.examples) })
     end
     for _, n in ipairs(nodes) do children[#children + 1] = n end
   elseif screenId == "logs" and LogsView.total(sim) > 0 then
