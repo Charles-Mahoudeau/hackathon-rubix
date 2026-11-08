@@ -39,5 +39,19 @@ return {
       units = 500, minRatio = 1.5, refPlanet = "kessa",
       reward = { credits = 2000 },
     },
+    {
+      id = 6, name = "Two pairs of hands", check = "teamwork", start = { ships = 2 },
+      goal = "Over 10 game minutes, every Miner earns 1,000 credits or more and spends less than 10% of its mining time crowding another ship on a vein.",
+      hint = "Two ships on one vein dig slower. Give each Miner its own vein, or make the vein a parameter of your skill.",
+      minutes = 10, creditsEach = 1000, crowdMaxPct = 10,
+      reward = { credits = 2000 },
+    },
+    {
+      id = 7, name = "Divide the work", check = "divide", start = { logisticians = 2 },
+      goal = "Over 15 game minutes, the two Logisticians of one station each complete 2 deliveries with no not_enough_stock or no_free_freighter error.",
+      hint = "They share the same stock and freighters. Split the work: by resource, by destination, or let them message each other.",
+      minutes = 15, deliveries = 2, errors = { "not_enough_stock", "no_free_freighter" },
+      reward = { freighter = 1 },
+    },
   },
 }
