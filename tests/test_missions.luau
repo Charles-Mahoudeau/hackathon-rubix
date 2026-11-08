@@ -50,6 +50,11 @@ do
   assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 8 and #m.rows == 8)
   assert(m.current.hint:find("Say which ore, which vein", 1, true), "hint text from the spec")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
+  local view = MissionsView.new()
+  assert(MissionsView.act(s, "missions.select.2", view))
+  local selected = MissionsView.model(s, view)
+  assert(selected.current.id == 2 and selected.current.locked and selected.current.progressText == "Claim the previous mission")
+  assert(selected.current.claim == nil and selected.rows[1].state == "active" and selected.rows[2].state == "locked")
 end
 
 -- 2. mission 1 with a precise directive completes in under 15 game minutes, from the same vein

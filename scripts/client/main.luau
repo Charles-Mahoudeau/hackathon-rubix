@@ -46,6 +46,7 @@ local state = {
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
+	missions = MissionsView.new(),
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), music = {}, lowComputeCheck = 0, -- sound cues and the ambient loop (GR5-23, GR5-99)
 	cueUi = nil, cueSim = nil, -- one-shot pixel cues: the UI layer that draws them, and the sim they last watched (GR5-100)
@@ -131,7 +132,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, missions = state.missions, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
 	state.shell.screen = shown
 end
 
@@ -187,7 +188,7 @@ local function dispatch(action, now, utc)
 	end
 	if FleetView.act(state.sim, action) then changed = true end
 	if StationView.act(state.station, action) then changed = true end
-	local missionHandled, missionOk = MissionsView.act(state.sim, action)
+	local missionHandled, missionOk = MissionsView.act(state.sim, action, state.missions)
 	if missionHandled then
 		changed = true
 		if missionOk == false then Audio.onEvent(state.audio, { name = "ui_denied" }, { speed = 1 }) end
@@ -330,7 +331,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
 		if state.shell.screen == "alerts" then extra = AlertsView.signature(state.sim) end
 		if state.shell.screen == "branches" then extra = BranchesView.signature(state.sim) end
-		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
+		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) .. tostring(state.missions.selected) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
 		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
 		if state.shell.screen == "debug" then extra = DebugPanel.signature(state.sim, state.debug) end
