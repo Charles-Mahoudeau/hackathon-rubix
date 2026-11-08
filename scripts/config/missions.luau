@@ -53,5 +53,12 @@ return {
       minutes = 15, deliveries = 2, errors = { "not_enough_stock", "no_free_freighter" },
       reward = { freighter = 1 },
     },
+    {
+      id = 8, name = "Someone to watch over them", check = "watch", start = { upgrades = { "commandCenter" } },
+      goal = "Have the Monitor resolve 3 alerts: after a Monitor action, the alerted agent is acting again within 120 s. The Monitor may spend 10 Compute or less on the mission.",
+      hint = "Wake the Monitor only on the alerts that matter, and tell it exactly what to do for each one.",
+      resolve = 3, backSeconds = 120, computeMax = 10,
+      reward = { credits = 5000, compute = 20 },
+    },
   },
 }

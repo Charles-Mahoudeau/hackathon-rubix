@@ -12,7 +12,7 @@ return {
   -- Tier 2 is entered when lifetime revenue reaches this (spec §6.6); other tiers come from their own purchases.
   tierRevenue = { [2] = 1500 },
   -- Tool slots per agent type (spec §8.1). `wait` and `run_skill` are free; every other equipped tool takes one slot.
-  toolSlots = { miner = 5, logistician = 5 },
+  toolSlots = { miner = 5, logistician = 5, monitor = 6 },
   freeTools = { wait = true, run_skill = true },
   -- Command capacity (spec §6.5): agents at once, all types, by Reputation level 0, 1, 2, ... (the last value holds above).
   commandCapacity = { 2, 5, 8, 12, 16 },
@@ -25,7 +25,7 @@ return {
   shop = {
     tier = 2,
     order = { "drill_mk2", "drill_mk3", "hold_mk2", "hold_mk3", "engine_mk2", "engine_mk3", "scanner", "archive", "ship2",
-      "warehouse", "trading_post", "logistics_hub", "deep_nav", "ship3", "ship4" },
+      "warehouse", "trading_post", "logistics_hub", "deep_nav", "ship3", "ship4", "command_center" },
     items = {
       drill_mk2 = { name = "Drill Mk2", stat = "drill", mark = 2, cost = 1200, value = 3, desc = "Drill 2 -> 3 u/s" },
       drill_mk3 = { name = "Drill Mk3", stat = "drill", mark = 3, cost = 4000, value = 5, desc = "Drill 3 -> 5 u/s" },
@@ -44,6 +44,8 @@ return {
       -- spec §6.5: Warehouse + Reputation 1; enters T4 (freighters, `ship`, Logistician, Halcyon and Meridian).
       logistics_hub = { name = "Logistics hub", stat = "hub", cost = 20000, needs = "warehouse", rep = 1, desc = "Tier 4: freighters, ship tool, Logistician, Halcyon, Meridian" },
       deep_nav = { name = "Deep-range nav", stat = "deepNav", cost = 8000, tier = 4, needs = "engine_mk3", desc = "Reach Lumen Rift" },
+      -- spec §6.5: T4 + Reputation 2; enters T5 (Monitor agent, Alerts panel).
+      command_center = { name = "Command center", stat = "commandCenter", cost = 15000, tier = 4, rep = 2, desc = "Tier 5: Monitor agent, Alerts panel" },
     },
   },
   waitMinSeconds = 10,
@@ -54,10 +56,26 @@ return {
     [2] = { "scan" },
     [3] = { "store" },
     [4] = { "ship" },
+    [5] = { "set_order", "assign_skill", "pause_agent", "resume_agent" },
   },
   agents = {
     miner = { tools = { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" }, startTier = 1 },
     logistician = { tools = { "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
+    monitor = { tools = { "set_order", "assign_skill", "pause_agent", "resume_agent", "report", "wait" }, startTier = 5 },
+  },
+  -- The Monitor (spec §8.7, D18). One per company in the MVP; its scope picks the agents it sees and acts on. The heartbeat
+  -- (game seconds, or off) wakes it with no alert; an alert older than queueMaxSeconds leaves the queue (not the panel).
+  monitor = {
+    tier = 5, scopes = { "company", "mining", "logistics" }, defaultScope = "company",
+    heartbeat = { default = 300, min = 60, max = 600, step = 60 }, queueMaxSeconds = 300, stubWaitSeconds = 60,
+    -- An order set by the Monitor, and the text a vague stub Monitor writes (spec §10.5).
+    stubOrder = "Previous plan failed: %s. Choose another option.",
+  },
+  -- Alert detection (spec §8.7). The panel keeps the last logMax alerts; each check runs every checkSeconds of game time.
+  alerts = {
+    types = { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle" },
+    logMax = 100, checkSeconds = 1,
+    idleSeconds = 120, losingMoneySeconds = 300, crowdingSeconds = 60, stationFullPct = 95, freighterIdleSeconds = 300,
   },
   ai = {
     delaySecondsMin = 2, delaySecondsMax = 4, vagueErrorRate = 0.5, -- Compute cost per decision: config/ai.luau

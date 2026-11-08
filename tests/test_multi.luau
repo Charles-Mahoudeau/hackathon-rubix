@@ -192,7 +192,7 @@ do
   assert(status(s, 7) == "complete", Missions.progress(s, s.missions[7]).text)
   local freighters = #s.freighters
   assert(Missions.claim(s, 7) and #s.freighters == freighters + 1, "+1 freighter at the station")
-  assert(MissionsView.model(s).allDone)
+  assert(MissionsView.model(s).current.id == 8, "the last mission waits for the command center")
 
   local t = company(1)
   skipTo(t, 7)
@@ -238,14 +238,14 @@ do
   local st = Persistence.memoryStorage()
   assert(Persistence.save(s, st, "a", 0))
   local r = assert(Persistence.load(st, "a"))
-  assert(status(r, 7) == "active" and #r.missions == 7)
+  assert(status(r, 7) == "active" and #r.missions == 8)
   local data = Persistence.serialize(s, 0)
   data = Sim.deepCopy(data)
   local key = data.state and data.state.missions and "state" or nil
   local list = (key and data.state or data).missions
   while #list > 5 do table.remove(list) end
   local old = assert(Persistence.restore(data))
-  assert(#old.missions == 7 and old.missions[6].status == "locked")
+  assert(#old.missions == 8 and old.missions[6].status == "locked")
 end
 
 print("multi OK")

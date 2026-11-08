@@ -141,7 +141,7 @@ function Model.feed(sim)
   local out, list = {}, sim.feed or {}
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
-    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind }
+    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source }
   end
   return out
 end

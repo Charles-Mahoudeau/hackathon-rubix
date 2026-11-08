@@ -75,7 +75,7 @@ function View.contextPanel(sim, agentId)
   local agent = sim.agents[agentId]
   local current = Prompt.build(sim, agentId)
   local rows = {}
-  for _, key in ipairs(Settings.order) do
+  for _, key in ipairs(Settings.orderFor(agent.type)) do
     local available, unlockTier = Settings.available(sim, key)
     local base = Prompt.build(sim, agentId, { settings = assert(Settings.with(agent.contextSettings, key, Settings.minimal[key])) })
     local options = {}

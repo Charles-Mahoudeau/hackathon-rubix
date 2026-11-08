@@ -54,6 +54,9 @@ function Editor.model(sim, agentId, draft)
     canSave = Editor.canSave(sim, draft),
     dirty = draft.directive ~= saved.directive or draft.order ~= saved.order,
     orderActive = agent.order ~= "",
+    orderSource = (agent.order ~= "" and agent.orderSource) or nil,
+    -- the Monitor lock: only shown once a Monitor is hired, and never for the Monitor itself
+    lock = (sim.agents.monitor and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
     sections = p.sections,
     inputTokens = p.input,
     outputTokens = cfg.estimatedOutputTokens,

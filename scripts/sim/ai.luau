@@ -3,17 +3,19 @@
 -- AI output is always a tool call, never free text; Sim validates everything.
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
+local Skills = require("@scripts/sim/skills")
 
 local Ai = {}
 local mode = "stub" -- "stub" (spec §10.5, reads the directive) | "optimal" (always the best call) | "vague" (random bad calls)
 local providers = {} -- name -> decide(sim, agentId, ctx); the real provider registers itself here
 local provider = "stub"
 
-local logisticianStub
+local logisticianStub, monitorStub
 
 local function optimal(sim, agentId, ctx)
   local kind = sim.agents[agentId].type
   if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
+  if kind == "monitor" then return monitorStub(sim, agentId, ctx) end
   if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local ship = ctx.ship
   if ship.cargo > 0 then return { name = "sell", args = { ship = ship.id } } end
@@ -56,6 +58,7 @@ end
 local function directiveStub(sim, agentId, ctx)
   local kind = sim.agents[agentId].type
   if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
+  if kind == "monitor" then return monitorStub(sim, agentId, ctx) end
   if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local agent = sim.agents[agentId]
   local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
@@ -186,6 +189,93 @@ logisticianStub = function(sim, agentId, ctx)
     dest = pool[1 + math.floor(sim.randStub() * #pool)]
   end
   return { name = "ship", args = { resource = resource, qty = math.min(have, cargo), destination = dest } }
+end
+
+-- Spec §10.5 for the Monitor: a keyword interpreter over its order and directive, acting on the oldest queued alert.
+-- What the text leaves open is picked from the stub stream; with no alert it waits.
+local function parseParams(text)
+  local out = {}
+  for k, v in tostring(text or ""):gmatch("([%w_]+)=([^,]+)") do out[k] = tonumber(v) or v end
+  return out
+end
+
+-- Best vein for a `vein` parameter: not excluded, not depleted, the highest reserve percent (unscanned counts as 50).
+local function bestVein(ctx, decl, exclude, reach)
+  local f, best, bestPct = decl.filter or {}, nil, -1
+  for _, v in ipairs(ctx.veins) do
+    local pct = v.pct or 50
+    if v.id ~= exclude and pct > 0 and reach(v) and (not f.resource or v.ore == f.resource) and (not f.planet or v.planet == f.planet) and pct > bestPct then
+      best, bestPct = v.id, pct
+    end
+  end
+  return best
+end
+
+-- Parameter values for `skill` with every vein parameter on a fresh vein the target can reach; nil when another kind cannot be filled in.
+local function rotatedParams(sim, ctx, skill, known, depleted, target)
+  local params = {}
+  local ship = target.type == "miner" and sim:ownedShip(target.id) or nil
+  local function reach(v) return not ship or sim:inRange(ship, v.planet) end
+  for name, decl in pairs(skill.params or {}) do
+    if decl.kind == "vein" then
+      params[name] = bestVein(ctx, decl, depleted, reach)
+      if not params[name] then return nil end
+    elseif known[name] ~= nil then
+      params[name] = known[name]
+    else
+      return nil
+    end
+  end
+  return params
+end
+
+function monitorStub(sim, agentId, ctx)
+  local agent = sim.agents[agentId]
+  local wait = { name = "wait", args = { seconds = sim.b.monitor.stubWaitSeconds } }
+  local alert = ctx.alerts[1]
+  if not alert or not alert.agent or not sim.agents[alert.agent] then return wait end
+  local target = sim.agents[alert.agent]
+  local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
+  local function has(...)
+    for _, t in ipairs(texts) do
+      for _, w in ipairs({ ... }) do if t:find(w, 1, true) then return true end end
+    end
+    return false
+  end
+  local known = parseParams(alert.params)
+  local depleted = known.vein
+
+  if has("resume", "restart", "unstick") then
+    return { name = "resume_agent", args = { agent = target.id } }
+  end
+  if has("next vein", "another vein", "rotate") and alert.skill and sim.skills[alert.skill] then
+    local params = rotatedParams(sim, ctx, sim.skills[alert.skill], known, depleted, target)
+    if params then return { name = "assign_skill", args = { agent = target.id, skill = alert.skill, params = params } } end
+  end
+  if has("skill", "switch", "reassign") then
+    for _, name in ipairs(Skills.names(sim)) do
+      local skill = sim.skills[name]
+      if skill.agent_type == target.type and name ~= alert.skill then
+        local params = rotatedParams(sim, ctx, skill, known, depleted, target)
+        if params then return { name = "assign_skill", args = { agent = target.id, skill = name, params = params } } end
+      end
+    end
+  end
+  if has("order", "tell") then
+    return { name = "set_order", args = { agent = target.id, text = sim.b.monitor.stubOrder:format(alert.reason) } }
+  end
+  if has("pause") and alert.type == "losing_money" then
+    return { name = "pause_agent", args = { agent = target.id } }
+  end
+  local options = {
+    { name = "set_order", args = { agent = target.id, text = sim.b.monitor.stubOrder:format(alert.reason) } },
+    { name = "resume_agent", args = { agent = target.id } },
+    { name = "pause_agent", args = { agent = target.id } },
+    wait,
+  }
+  local valid = {}
+  for _, call in ipairs(options) do if sim:validate(agentId, call) then valid[#valid + 1] = call end end
+  return valid[1 + math.floor(sim.randStub() * #valid)]
 end
 
 -- Deliberately vague: sometimes emits invalid calls, to exercise validation.

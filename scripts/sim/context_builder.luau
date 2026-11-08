@@ -177,6 +177,72 @@ function builders.logistician(sim, agent, s)
   }
 end
 
+local function skillParamText(skill)
+  local keys = {}
+  for k in pairs(skill.params or {}) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    local d = skill.params[k]
+    parts[#parts + 1] = k .. ":" .. (d.filter and (d.filter.resource or d.filter.planet) or d.kind)
+  end
+  return #parts > 0 and table.concat(parts, ",") or "-"
+end
+
+local function paramMap(params)
+  if not params then return nil end
+  local keys = {}
+  for k in pairs(params) do keys[#keys + 1] = k end
+  table.sort(keys)
+  local pairs_ = {}
+  for _, k in ipairs(keys) do pairs_[#pairs_ + 1] = { k, params[k] } end
+  return map(pairs_)
+end
+
+-- Spec §9.2.4: time, alerts, agents, skills, veins, prices (if on), credits, compute.
+function builders.monitor(sim, agent, s)
+  local ctx = sim:context(agent.id)
+  local alertRows = {}
+  for _, a in ipairs(ctx.alerts) do
+    alertRows[#alertRows + 1] = { a.type, a.agent or "-", a.reason, a.skill or "-", a.params or "-", a.age_s }
+  end
+  local agentRows = {}
+  for _, r in ipairs(ctx.agents) do
+    agentRows[#agentRows + 1] = { r.id, r.type, r.mode, paramMap(r.params) or "-", r.state, r.at, r.net_h, r.compute_h, r.err_10m, r.locked }
+  end
+  local data = {
+    { key = "time", kind = "scalar", value = clock(sim) },
+    { key = "alerts", kind = "table", cols = { "type", "agent", "reason", "skill", "params", "age_s" }, rows = alertRows },
+    { key = "agents", kind = "table", cols = { "id", "type", "mode", "params", "state", "at", "net_h", "compute_h", "err_10m", "locked" },
+      rows = agentRows },
+  }
+  if s.agent_detail == "results" then
+    local rows = {}
+    for _, r in ipairs(ctx.agents) do
+      for _, e in ipairs(recentRows(sim.agents[r.id], 3)) do rows[#rows + 1] = { r.id, e[1], e[3], e[4] } end
+    end
+    data[#data + 1] = { key = "results", kind = "table", cols = { "agent", "tool", "ok", "result" }, rows = rows }
+  end
+  if s.show_skills then
+    local rows = {}
+    for _, sk in ipairs(ctx.skills) do rows[#rows + 1] = { sk.name, sk.agent_type, skillParamText(sim.skills[sk.name]) } end
+    data[#data + 1] = { key = "skills", kind = "table", cols = { "name", "type", "params" }, rows = rows }
+  end
+  if s.show_veins then
+    local rows = {}
+    for _, v in ipairs(ctx.veins) do rows[#rows + 1] = { v.id, v.ore, v.pct } end
+    data[#data + 1] = { key = "veins", kind = "table", cols = { "id", "res", "res%" }, rows = rows }
+  end
+  if s.show_prices then
+    data[#data + 1] = { key = "prices", kind = "maps",
+      subs = priceSubs(sim, nil, { prices_hmc = "off", prices_orbis = s.prices_orbis, prices_halcyon = s.prices_halcyon,
+        prices_meridian = s.prices_meridian, price_trends = false }, sim.home) }
+  end
+  data[#data + 1] = { key = "credits", kind = "scalar", value = sim.resources.credits }
+  data[#data + 1] = { key = "compute", kind = "scalar", value = round1(sim.resources.compute) }
+  return data
+end
+
 -- -> ordered context data for `agentId` under `settings` (defaults to the agent's own settings).
 function Builder.build(sim, agentId, settings)
   local agent = sim.agents[agentId]

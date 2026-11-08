@@ -13,6 +13,7 @@ local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
+local AlertsView = require("@scripts/ui/alerts_view")
 local ArchiveView = require("@scripts/ui/archive_view")
 local SkillStudio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
@@ -73,6 +74,9 @@ local function editorClick(action)
 	if action == "editor.save" then
 		local ok, msg = Editor.save(state.sim, id, state.draft)
 		state.toast = ok and msg or nil
+	elseif action == "editor.lock" then
+		local a = state.sim.agents[id]
+		state.sim:setMonitorLock(id, not (a and a.monitorLock))
 	elseif action == "editor.clear_order" then
 		Editor.clearOrder(state.sim, id, state.draft)
 		state.toast, state.inputsDirty = nil, true
@@ -122,6 +126,7 @@ engine.ecs.system("game.Shell", {
 			if ShopView.act(state.sim, click.action) then changed = true end
 			if FleetView.act(state.sim, click.action) then changed = true end
 			if MissionsView.act(state.sim, click.action) then changed = true end
+			if AlertsView.act(state.sim, click.action) then changed = true end
 			if ArchiveView.act(state.sim, click.action) then changed = true end
 			local handled, openScreen = SkillStudio.act(state.sim, state.studio, click.action)
 			if handled then changed = true end
@@ -166,6 +171,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
 		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
 		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
+		if state.shell.screen == "alerts" then extra = AlertsView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end

@@ -64,6 +64,8 @@ function Persistence.serialize(sim, savedAt)
       versions = sim.versions,
       recordSeq = sim.recordSeq,
       missions = sim.missions,
+      alerts = sim.alerts,
+      monitorSettings = sim.monitorSettings,
       stationOrder = sim.stationOrder,
       compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
         lifetime = sim.compute.lifetime, lifetimeTotal = sim.compute.lifetimeTotal, started = sim.compute.started },
@@ -85,6 +87,16 @@ function Persistence.restore(data, opts)
   end
   for i, fresh in ipairs(Missions.new()) do -- older saves hold fewer missions: the new ones start locked
     if not sim.missions[i] then sim.missions[i] = fresh end
+  end
+  -- Older saves have no alerts or Monitor settings: Sim.new defaults stay. New alert types default on.
+  if st.alerts then sim.alerts = { seq = st.alerts.seq or 0, list = st.alerts.list or {} } end
+  if st.monitorSettings then
+    local ms = sim.monitorSettings
+    if st.monitorSettings.scope then ms.scope = st.monitorSettings.scope end
+    ms.heartbeat = st.monitorSettings.heartbeat
+    for t, on in pairs(st.monitorSettings.alertTypes or {}) do
+      if ms.alertTypes[t] ~= nil then ms.alertTypes[t] = on end
+    end
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
   for k, v in pairs(st.warehouse) do sim.warehouse[k] = v end

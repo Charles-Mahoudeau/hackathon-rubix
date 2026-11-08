@@ -199,7 +199,7 @@ do
   local m = ShopView.model(s)
   local by = {}
   for _, r in ipairs(m.rows) do by[r.id] = r end
-  assert(#m.rows == 15 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
+  assert(#m.rows == 16 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
   assert(by.drill_mk3.note == "Needs Drill Mk2" and by.engine_mk2.action == "shop.buy.engine_mk2" and by.engine_mk2.costText == "1000 cr")
   local handled, ok = ShopView.act(s, "shop.buy.engine_mk2")
   assert(handled and ok and s.upgrades.engine == 2 and s.resources.credits == 0)

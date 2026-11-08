@@ -8,7 +8,7 @@ local function str(desc, extra)
 end
 
 return {
-  order = { "mine", "return", "sell", "store", "scan", "report", "wait", "run_skill", "ship" },
+  order = { "mine", "return", "sell", "store", "scan", "report", "wait", "run_skill", "ship", "set_order", "assign_skill", "pause_agent", "resume_agent" },
   schemas = {
     mine = { description = "Fly to a vein, mine it, stop at the target hold %.",
       args = { vein = str("known vein id", { required = true }),
@@ -31,5 +31,14 @@ return {
     ship = { description = "Send a freighter to a market.",
       args = { resource = str("ore id", { required = true }), qty = { type = "any", desc = "int 1-500|all" },
         destination = str("market", { required = true, enum = { "orbis", "halcyon", "meridian" } }) } },
+    set_order = { description = "Set or clear another agent's one-off order.",
+      args = { agent = str("agent id", { required = true }), text = str("order, max 100 tokens; empty clears", { maxLength = 400 }) } },
+    assign_skill = { description = "Run a saved skill on another agent, or none to return it to AI mode.",
+      args = { agent = str("agent id", { required = true }), skill = str("skill name or none", { required = true }),
+        params = { type = "any", desc = "values of the skill parameters" } } },
+    pause_agent = { description = "Stop another agent until it is resumed.",
+      args = { agent = str("agent id", { required = true }) } },
+    resume_agent = { description = "Resume a paused agent.",
+      args = { agent = str("agent id", { required = true }) } },
   },
 }

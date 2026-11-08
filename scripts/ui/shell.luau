@@ -14,6 +14,7 @@ local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
+local AlertsView = require("@scripts/ui/alerts_view")
 local ArchiveView = require("@scripts/ui/archive_view")
 local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
@@ -147,7 +148,7 @@ local function feedStrip(font, r, lines)
   local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
   for _, l in ipairs(lines) do
-    local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or "text")
+    local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or (l.source == "monitor" and "cyan" or "text"))
     rows[#rows + 1] = text(font, (l.agent and (l.agent .. "  ") or "") .. l.text, T.small, color)
   end
   return withChildren(panel(r, { direction = "column", padding = L.gap, overflow = "hidden" }), rows)
@@ -304,6 +305,10 @@ local function editorScreen(font, r, m, opts)
   end
   nodeAt(x + 16, e.buttonsY, button(font, "Clear order", "editor.clear_order", "dim", 110))
   nodeAt(x + 134, e.buttonsY, button(font, "Save", "editor.save", m.canSave and "cyan" or "dim", 80))
+  if m.lock then
+    nodeAt(x + 230, e.buttonsY, button(font, m.lock.locked and "Monitor lock: ON" or "Monitor lock: off", m.lock.action, m.lock.locked and "amber" or "dim", 150))
+  end
+  if m.orderSource then nodeAt(L.pad + 200, e.orderY - 22, text(font, "set by the " .. m.orderSource, T.small, "cyan")) end
   local note = opts.toast or (not m.canSave and "Over the limit: cannot be saved." or (m.dirty and "Unsaved changes." or nil))
   if note then
     nodeAt(L.pad, e.toastY, text(font, note, T.small, opts.toast and "green" or (not m.canSave and Theme.semantic.warning or "dim")))
@@ -660,6 +665,44 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Alerts (GR5-29, spec §8.7): the Monitor's hire button and settings, then the alert log newest first.
+local function alertsScreen(font, r, m)
+  local c = Screens.alerts
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "ALERTS  Monitor: " .. (m.hired and "hired" or "not hired"), T.small, "dim"))
+  local x = L.pad
+  if m.hire then
+    nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
+  elseif m.hireNote then
+    nodeAt(x, c.controlsY + 6, text(font, m.hireNote, T.small, Theme.semantic.warning))
+  end
+  if m.hired then
+    nodeAt(x, c.controlsY, button(font, "Scope: " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+    x += c.buttonWidth + c.gap
+    nodeAt(x, c.controlsY + 6, text(font, "Heartbeat " .. m.heartbeatText, T.small, "text"))
+    x += 140
+    nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))
+    nodeAt(x + c.smallWidth + c.gap, c.controlsY, button(font, "+", m.heartbeatActions.up, "cyan", c.smallWidth))
+    nodeAt(x + 2 * (c.smallWidth + c.gap), c.controlsY, button(font, "On / off", m.heartbeatActions.off, "dim", 90))
+    for i, t in ipairs(m.types) do
+      local col, row = (i - 1) % c.typesPerRow, math.floor((i - 1) / c.typesPerRow)
+      nodeAt(L.pad + col * (c.typeWidth + c.gap), c.typesY + row * c.typeRowHeight,
+        button(font, (t.on and "[x] " or "[ ] ") .. t.type, t.action, t.on and "cyan" or "dim", c.typeWidth))
+    end
+  end
+  if #m.rows == 0 then
+    nodeAt(L.pad, c.listY, text(font, Screens.empty.alerts.title .. ": " .. Screens.empty.alerts.hint, T.small, "dim"))
+  end
+  for i, row in ipairs(m.rows) do
+    if i > c.maxRows then break end
+    local line = ("%5ds ago  %-14s %-12s %-10s %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason)
+    local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
+    nodeAt(L.pad, c.listY + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Archive tab strip and the studio's last message, shared by every Archive mode (GR5-26).
 local function studioHeader(font, r, kids, sm)
   local c = Screens.studio
@@ -696,11 +739,11 @@ local function teamScreen(font, r, m)
   local kids = {}
   local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
   nodeAt(L.pad, L.pad, text(font, ("TEAM  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
-  local fmt = "%-14s %-12s %-10s %-16s %9s %9s %6s"
-  nodeAt(L.pad, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors"), T.small, "dim"))
+  local fmt = "%-14s %-12s %-10s %-16s %9s %9s %6s  %s"
+  nodeAt(L.pad, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors", "last alert"), T.small, "dim"))
   local y, rowW = c.rowY + 8, r.w - 2 * L.pad
   for _, row in ipairs(m.rows) do
-    local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors)
+    local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors, row.lastAlert)
     local color = (row.state == "paused_error" or row.errors > 0) and Theme.semantic.warning or (row.netPerHour < 0 and Theme.semantic.warning or "text")
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = UiTheme.color("panel", 0), radius = 2 },
@@ -852,6 +895,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
+  elseif screenId == "alerts" and sim.tier >= 5 then
+    children[#children + 1] = alertsScreen(font, rects.main, AlertsView.model(sim))
   elseif screenId == "archive" then
     children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))
   elseif screenId == "market" and sim:hasWarehouse() then

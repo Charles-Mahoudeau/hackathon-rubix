@@ -32,7 +32,7 @@ return {
       'CONTEXT format: "key: value" lines; "name[n] col col ..." starts a table with one row per item;',
       '"k=v,k=v" groups values in one cell; "?" means unknown; y/n are yes/no.',
       "Abbreviations: res=resource, rich=richness, res%=reserve percent, _s=seconds, _h=per hour, err_10m=errors in the",
-      "last 10 minutes, at=location (vein@planet).",
+      "last 10 minutes, at=location (vein@planet), net_h=net credits per hour, compute_h=Compute per hour.",
     },
   },
   -- Context settings defaults (§9.3). `prices_hmc`: "off" | "current" | "all". `veins`: "all" | "planet" | "vein".
@@ -47,6 +47,11 @@ return {
     veins = "planet",
     inbox = true,
     warehouse = true,
+    -- Monitor only (spec §9.2.4): extra detail per agent ("summary" | "results"), and which optional sections show.
+    agent_detail = "summary",
+    show_skills = true,
+    show_veins = true,
+    show_prices = false,
   },
   -- Agent editor (spec §9.4, GR5-5). Limits are in tokens of the text itself (ceil(utf8_length / charsPerToken)).
   editor = {
