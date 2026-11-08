@@ -3,6 +3,7 @@
 -- emissive fade; the bloom params for that state come from render/vfx/bloom. Client only.
 -- GR5-52: stations grow stage by stage with the player's upgrades and carry animated turrets.
 local config = require("@scripts/config/stations")
+local Theme = require("@scripts/config/theme")
 local Bloom = require("@scripts/render/vfx/bloom")
 local Remap = require("@scripts/client/remap")
 
@@ -122,6 +123,29 @@ function Stations.turretPath(kind: string, t: number): string
 	return seq[math.floor(math.max(0, t) * config.turrets.fps) % #seq + 1]
 end
 
+-- True when absolute animation frame `frame` (floor(t * fps), any integer) is the first frame of a firing loop: one shot per loop.
+function Stations.isFireStart(kind: string, frame: number): boolean
+	local def, t = config.turrets.kinds[kind], config.turrets
+	assert(def, "Stations: unknown turret '" .. tostring(kind) .. "'")
+	local length = #Stations.turretSequence(kind)
+	local fireLength = #expand(def.fire)
+	local first = math.floor(t.idleHold * t.fps) + #expand(def.open)
+	local i = frame % length
+	return i >= first and (i - first) % fireLength == 0
+end
+
+-- Names of the corporations, sorted: the index goes in the entity's game.StationTurret `corp` (the colour of its muzzle flash).
+local corpNames = {}
+for name in pairs(Theme.corps) do corpNames[#corpNames + 1] = name end
+table.sort(corpNames)
+Stations.corpNames = corpNames
+
+-- Direction in whole degrees (0 = right, 90 = down) from the hub centre out through a turret at (x, y); straight up on the hub.
+function Stations.aimOf(x: number, y: number): number
+	if x == 0 and y == 0 then return 270 end
+	return math.floor(math.deg(math.atan2(y, x)) % 360 + 0.5) % 360
+end
+
 local textures = {}
 -- The cached texture handle of a path under assets/.
 function Stations.texture(path: string)
@@ -141,7 +165,7 @@ end
 
 -- Entity descriptions (hub first) to pass to ctx.commands:spawn(). position: station centre in world units;
 -- scale: world units per sprite pixel; upgrades: the stages reached (nil = the base station). Turrets come last, on top;
--- the animated ones carry game.StationTurret { kind, phase } for client/station_fx to animate.
+-- the animated ones carry game.StationTurret { kind, phase, aim, corp } for client/station_fx to animate.
 function Stations.entities(stationId: string, state: string, position, scale: number?, corp: string?, upgrades)
 	local parts = Stations.parts(stationId, upgrades)
 	local material, k, out = Stations.material(stationId, state, corp), scale or 1, {}
@@ -163,7 +187,8 @@ function Stations.entities(stationId: string, state: string, position, scale: nu
 			out[#out + 1] = {
 				["rtype.Transform"] = boosted,
 				["rtype.SpriteRenderer"] = sprite(Stations.turretPath(t.kind, t.phase or 0), frame, frame, material, config.turretLayer),
-				["game.StationTurret"] = { kind = idx, phase = math.floor((t.phase or 0) * 10 + 0.5) },
+				["game.StationTurret"] = { kind = idx, phase = math.floor((t.phase or 0) * 10 + 0.5), aim = Stations.aimOf(t.x, t.y),
+					corp = table.find(corpNames, corp or config.corp[stationId]) or 1 },
 			}
 		else
 			out[#out + 1] = { ["rtype.Transform"] = at(t.x, t.y), ["rtype.SpriteRenderer"] = sprite(config.turretDir .. t.still .. ".png", t.w, t.h, material, config.turretLayer) }
