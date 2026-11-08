@@ -9,6 +9,7 @@ local Missions = require("@scripts/sim/missions")
 local MissionsView = require("@scripts/ui/missions_view")
 local TeamView = require("@scripts/ui/team_view")
 local Persistence = require("@scripts/sim/persistence")
+local Salvage = require("@scripts/sim/salvage")
 local Shell = require("@scripts/ui/shell")
 local Screens = require("@scripts/config/screens")
 
@@ -134,7 +135,7 @@ end
 do
   local s = company(1)
   skipTo(s, 6)
-  assert(status(s, 6) == "locked" and MissionsView.model(s).current.progressText == "Buy mining ship #2")
+  assert(status(s, 6) == "locked" and MissionsView.model(s).current.progressText == "Buy ship #2 in one branch")
   assert(s:buyUpgrade("ship2"))
   s:run(1)
   assert(status(s, 6) == "active", "ship #2 opens mission 6")
@@ -163,6 +164,50 @@ do
   t:run(t:ticks(10 * 60) + 5)
   local q = Missions.progress(t, t.missions[6])
   assert(status(t, 6) == "complete", "retry after splitting the veins: " .. q.text .. " " .. q.lines[1].text .. " " .. q.lines[2].text)
+end
+
+-- 5b. mission 6 counts agents of any branch (spec §15b.0): two Scavengers on separate sites meet it, the lone Miner does not matter;
+-- on one shared site they crowd each other and it fails
+do
+  local function scavengers()
+    local s = Sim.new()
+    s:enterTier(2)
+    s.resources.credits, s.resources.compute = 100000, 500
+    assert(s:buyUpgrade("engine_mk2") and s:openBranch("salvage"))
+    skipTo(s, 6)
+    s:run(1)
+    assert(status(s, 6) == "locked", "a Miner and one Scavenger are two branches of one: still locked")
+    assert(s:buyUpgrade("salvage_ship2"))
+    s:addAgent("scavenger2", "scavenger", { tier = s.tier })
+    s.salvageShips.w2.owner = "scavenger2"
+    s:run(1)
+    assert(status(s, 6) == "active", "two Scavengers open mission 6")
+    return s
+  end
+  local function site() return { planet = "tessar", type = "wreck", danger = 0, qualities = { "fair", "fair", "fair" } } end
+  local function go(s, agent, st, layer) assert(s:apply(agent, { name = "salvage", args = { site = st.id, layer = layer } })) end
+  local function earnTo(s, ids)
+    for _ = 1, 10 do
+      for _, id in ipairs(ids) do s:credit(id, nil, 110) end
+      s:run(s:ticks(60))
+    end
+  end
+
+  local s = scavengers()
+  local a, b = Salvage.spawnSite(s, site()), Salvage.spawnSite(s, site())
+  go(s, "scavenger", a, 1); go(s, "scavenger2", b, 1)
+  earnTo(s, { "scavenger", "scavenger2" })
+  s:run(5)
+  local q = Missions.progress(s, s.missions[6])
+  assert(status(s, 6) == "complete", "two Scavengers on separate sites: " .. q.text)
+
+  local t = scavengers()
+  local one = Salvage.spawnSite(t, site())
+  go(t, "scavenger", one, 1)
+  assert(t:apply("scavenger2", { name = "survey", args = { site = one.id } }))
+  earnTo(t, { "scavenger", "scavenger2" })
+  t:run(5)
+  assert(status(t, 6) == "active" and Missions.progress(t, t.missions[6]).failed, "two Scavengers on one site crowd each other")
 end
 
 -- 6. mission 7: two Logisticians, 2 deliveries each, zero conflicts; a conflict fails it; +1 freighter on claim
