@@ -14,7 +14,8 @@ return {
   },
 
   -- Alphas laid over the palette, so no extra colour is needed: a border is `dim` at 0.28 over `panel`.
-  alpha = { panelFill = 0.88, line = 0.28, hover = 0.14, pressed = 0.24, locked = 0.55 },
+  -- chromeFill: the opaque backing of a skinned panel (the skin itself is hollow), so the world never shows through the UI.
+  alpha = { panelFill = 0.88, chromeFill = 1.0, line = 0.28, hover = 0.14, pressed = 0.24, locked = 0.55 },
 
   -- One neon per corporation. Sprites are greyscale and remapped onto the ramp of their corporation by the shader.
   corps = { player = "cyan", rivalA = "magenta", rivalB = "amber" },
