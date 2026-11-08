@@ -92,7 +92,7 @@ function SystemMap.stations(sim)
 			if pos.side == "left" or pos.side == "right" then
 				k = fitScale(pos.station, nil, pos, panel.h - 2 * cfg.edge)
 				local x = pos.side == "left" and p.x - cfg.marketGap - e.right * k or p.x + cfg.marketGap - e.left * k
-				at = { x = x, y = p.y - (e.top + e.bottom) / 2 * k }
+				at = { x = x, y = p.y + cfg.labelClear - e.bottom * k }
 			else
 				k = fitScale(pos.station, nil, pos, p.y - cfg.marketGap - panel.y - cfg.edge)
 				at = { x = p.x, y = p.y - cfg.marketGap - e.bottom * k }
@@ -123,7 +123,11 @@ function SystemMap.tags(sim, sid: string?)
 		out[#out + 1] = MapLife.agentBadge(agent, agent and agent.state == "acting" and "working" or "waiting", label)
 	end
 	for _, id in ipairs(Logistics.logisticiansAt(sim, sid)) do tag(sim.agents[id], "LOG") end
-	if sid == StationsConfig.map.home.planet and sim.agents.monitor and sim.upgrades and sim.upgrades.commandCenter then tag(sim.agents.monitor, "MON") end
+	if sid == StationsConfig.map.home.planet and sim.upgrades and sim.upgrades.commandCenter then
+		for _, id in ipairs(sim.agentOrder) do
+			if sim.agents[id].type == "monitor" then tag(sim.agents[id], "MON") end
+		end
+	end
 	local ref = sim.refining and Refining.refineryAt(sim, sid)
 	if ref and ref.owner and sim.agents[ref.owner] then tag(sim.agents[ref.owner], "REF") end
 	return out

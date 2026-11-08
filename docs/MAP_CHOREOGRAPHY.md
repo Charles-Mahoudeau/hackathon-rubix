@@ -32,3 +32,5 @@ Muzzle VFX belongs to GR5-100, audio to GR5-99.
 ## Depot size and gaps (GR5-104 follow-up)
 
 The HMC depot is 64-80 px wide at every stage (`map.home.fit` 80x80, no growth per stage), hangs right of Kessa (dx 116, dy 10) and every pair of stations/planets keeps `map.gap` (24 px). Frames at 1280x720, T5 company: `docs/qa/gr5-104-depot-t5-map.png`, `docs/qa/gr5-104-depot-t5-feed.png` (feed lines read `-> ...`).
+
+Market stations follow the same budget: `markets.*.fit` is 80x80 px, and a station that stands beside its node ends `labelClear` (6 px) above the node's label, so the name and "Tn market" lines never cross a sprite (`tests/test_stations.luau`). Frame: `docs/qa/gr5-104-markets-t5-map.png`.

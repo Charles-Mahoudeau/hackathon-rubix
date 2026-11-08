@@ -22,7 +22,7 @@ local function assetOf(sim, id, agent)
       if sim.ships[sid].owner == id then return sid end
     end
   elseif agent.type == "monitor" then
-    return "command center"
+    return "command center (" .. agent.monitorSettings.scope .. ")"
   elseif agent.type == "logistician" then
     local st = sim.stations[agent.station]
     return st and Logistics.label(st) or agent.station

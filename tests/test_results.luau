@@ -145,13 +145,13 @@ do
   runUntil(s, 6000, function() return run.result.skill_ended_because ~= nil end)
   eq(run.result.skill_ended_because, "completed")
 
-  assert(s:apply("monitor", { name = "set_order", args = { agent = "miner", text = "mine cobalt" } }))
-  eq(lastOf(s, "monitor", "set_order").result.order_set, true)
-  assert(s:apply("monitor", { name = "assign_skill", args = { agent = "miner", skill = "One trip", params = { vein = "K1" } } }))
-  eq(lastOf(s, "monitor", "assign_skill").result.assigned, "One trip")
+  assert(s:apply("monitor_1", { name = "set_order", args = { agent = "miner", text = "mine cobalt" } }))
+  eq(lastOf(s, "monitor_1", "set_order").result.order_set, true)
+  assert(s:apply("monitor_1", { name = "assign_skill", args = { agent = "miner", skill = "One trip", params = { vein = "K1" } } }))
+  eq(lastOf(s, "monitor_1", "assign_skill").result.assigned, "One trip")
   s:pauseAgent("miner", "invalid_tool_call")
-  assert(s:apply("monitor", { name = "resume_agent", args = { agent = "miner" } }))
-  eq(lastOf(s, "monitor", "resume_agent").result.previous_error, "invalid_tool_call")
+  assert(s:apply("monitor_1", { name = "resume_agent", args = { agent = "miner" } }))
+  eq(lastOf(s, "monitor_1", "resume_agent").result.previous_error, "invalid_tool_call")
 end
 
 print("results OK")
