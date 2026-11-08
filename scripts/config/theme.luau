@@ -57,5 +57,6 @@ return {
   -- Plain (non-skinned) buttons lean this much towards their accent colour on hover / press.
   mix = { hover = 0.25, pressed = 0.45 },
 
-  layout = { view = { w = 1280, h = 720 }, topBar = 48, nav = 176, feed = 132, gap = 8, pad = 12, radius = 4 },
+  layout = { view = { w = 1280, h = 720 }, topBar = 48, nav = 176, feed = 132, gap = 8, pad = 12, radius = 4,
+    icon = { small = 14, feed = 12, row = 16 } },
 }
