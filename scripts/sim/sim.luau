@@ -10,6 +10,7 @@ local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Json = require("@scripts/sim/json")
+local Upgrades = require("@scripts/sim/upgrades")
 
 local Sim = {}
 Sim.__index = Sim
@@ -45,6 +46,7 @@ function Sim.new(opts)
   self.warehouse = {}
   for _, ore in ipairs(b.ores) do self.resources[ore] = 0; self.warehouse[ore] = 0 end
   self.lifetimeRevenue = 0
+  self.upgrades = Upgrades.new()
   self.deepNav = false
   self.planets, self.veins = {}, {}
   for _, id in ipairs(World.planetOrder) do
@@ -97,9 +99,9 @@ end
 
 -- A docked mining ship at the home planet, owned by `owner` (an agent id).
 function Sim:addShip(id, owner)
-  local b = self.b
   local ship = { id = id, owner = owner, state = "idle", at = World.homePlanet, cargo = 0, cargoF = 0,
-    ore = nil, timer = 0, vein = nil, engineMark = b.ship.engineMark, engineMult = b.ship.engineMult, crowdedBy = {} }
+    ore = nil, timer = 0, vein = nil, crowdedBy = {} }
+  Upgrades.applyToShip(self, ship)
   self.ships[id] = ship
   self.shipOrder[#self.shipOrder + 1] = id
   return ship
@@ -138,6 +140,7 @@ function Sim:log(level, msg)
 end
 
 local function tierHasTool(self, agent, tool)
+  if tool == "scan" and not self.upgrades.scanner then return false end -- the Scanner is bought in the shop (T2)
   for t, list in pairs(self.b.tiers) do
     if t <= agent.tier then for _, n in ipairs(list) do if n == tool then return true end end end
   end
@@ -161,6 +164,40 @@ function Sim:equippedTools(agentId)
     if agent.tools[name] and tierHasTool(self, agent, name) then out[#out + 1] = name end
   end
   return out
+end
+
+function Sim:hasTool(agentId, tool)
+  local agent = self.agents[agentId]
+  return agent ~= nil and agent.tools[tool] == true and tierHasTool(self, agent, tool)
+end
+
+-- Tool slots of an agent (spec §8.1): slots taken by its equipped tools (wait and run_skill are free), and the maximum.
+function Sim:toolSlots(agentId)
+  local used = 0
+  for _, name in ipairs(self:equippedTools(agentId)) do
+    if not self.b.freeTools[name] then used += 1 end
+  end
+  return used, self.b.toolSlots[self.agents[agentId].type] or 0
+end
+
+-- Reputation level from lifetime revenue (spec §6.7).
+function Sim:reputationLevel()
+  local level = 0
+  for i, need in ipairs(self.b.reputationLevels) do if self.lifetimeRevenue >= need then level = i end end
+  return level
+end
+
+function Sim:buyUpgrade(id) return Upgrades.buy(self, id) end
+
+-- Tier 2 starts at the revenue threshold; every agent follows the tier (spec §6.6).
+function Sim:updateTier()
+  local need = self.b.tierRevenue[self.tier + 1]
+  if need and self.lifetimeRevenue >= need then
+    self.tier += 1
+    for _, agent in pairs(self.agents) do agent.tier = self.tier end
+    self:log("INFO", ("tier %d reached"):format(self.tier))
+    self:emit("tier_up", { tier = self.tier })
+  end
 end
 
 -- Player changes a context setting (§9.3); takes effect from the agent's next decision.
@@ -245,7 +282,7 @@ function Sim:validate(agentId, call)
     if vein.reserve < 1 then return false, "vein_depleted" end
     if ship.state ~= "idle" then return false, "ship busy" end
     if ship.cargo > 0 and ship.ore ~= vein.ore then return false, "hold holds another ore" end
-    if ship.cargo >= self.b.ship.cargoCap then return false, "hold_full" end
+    if ship.cargo >= ship.cargoCap then return false, "hold_full" end
     local pct = args.stop_at_hold_pct
     if pct ~= nil and (type(pct) ~= "number" or pct < 10 or pct > 100) then return false, "bad stop_at_hold_pct" end
   elseif n == "return" then
@@ -256,6 +293,9 @@ function Sim:validate(agentId, call)
     if not self.planets[args.planet or ""] then return false, "bad planet" end
     if not inRange(self, ship, args.planet) then return false, "out_of_range" end
     if ship.state ~= "idle" then return false, "ship busy" end
+    local fresh = false
+    for _, v in ipairs(self.planets[args.planet].veins) do if not v.scanned then fresh = true end end
+    if not fresh then return false, "already_scanned" end
   elseif n == "sell" then
     if args.buyer ~= nil and args.buyer ~= "hmc" then return false, "buyer_locked" end
     if args.planet ~= nil and (not self.planets[args.planet] or not inRange(self, ship, args.planet)) then
@@ -353,7 +393,12 @@ function Sim:apply(agentId, call, opts)
       ship.state, ship.dest, ship.timer = "travel_back", dest, travelTicks(self, ship, ship.at, dest, 0)
     else self:sell(ship, dest) end
   elseif n == "scan" then
-    ship.state, ship.scanPlanet, ship.timer = "scanning", args.planet, self:ticks(self.b.ship.scanSeconds)
+    ship.scanPlanet = args.planet
+    if ship.at ~= args.planet then
+      ship.state, ship.dest, ship.timer = "travel_scan", args.planet, travelTicks(self, ship, ship.at, args.planet, 0)
+    else
+      ship.state, ship.timer = "scanning", self:ticks(self.b.ship.scanSeconds)
+    end
   elseif n == "wait" then
     if ship then ship.state, ship.timer = "waiting", self:ticks(args.seconds) end
   elseif n == "store" then
@@ -443,7 +488,13 @@ end
 
 function Sim:stepShip(ship, sharing)
   local b = self.b
-  if ship.state == "travel_out" or ship.state == "travel_back" then
+  if ship.state == "travel_scan" then
+    ship.timer = ship.timer - 1
+    if ship.timer <= 0 then
+      ship.at = ship.dest
+      ship.state, ship.timer = "scanning", self:ticks(b.ship.scanSeconds)
+    end
+  elseif ship.state == "travel_out" or ship.state == "travel_back" then
     ship.timer = ship.timer - 1
     if ship.timer <= 0 then
       ship.at = ship.dest
@@ -474,14 +525,14 @@ function Sim:stepShip(ship, sharing)
     for _, o in ipairs(sharing or {}) do if o ~= ship then others[#others + 1] = o.owner end end
     table.sort(others)
     setCrowdedBy(self, ship, others)
-    local rate = b.ship.drillRate * v.richness * World.ores[v.ore].hardness * self:crowdingFor(#others + 1)
-    local want = math.min(rate * b.tickSeconds, v.reserve, b.ship.cargoCap - ship.cargoF)
+    local rate = ship.drillRate * v.richness * World.ores[v.ore].hardness * self:crowdingFor(#others + 1)
+    local want = math.min(rate * b.tickSeconds, v.reserve, ship.cargoCap - ship.cargoF)
     ship.cargoF = ship.cargoF + want
     v.reserve = v.reserve - want
     ship.cargo = math.floor(ship.cargoF + 1e-9)
-    local stopAt = math.ceil(b.ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
+    local stopAt = math.ceil(ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
     if ship.cargo >= stopAt or v.reserve < 1 then
-      if ship.cargo >= b.ship.cargoCap then ship.cargo, ship.cargoF = b.ship.cargoCap, b.ship.cargoCap end
+      if ship.cargo >= ship.cargoCap then ship.cargo, ship.cargoF = ship.cargoCap, ship.cargoCap end
       self:apply(ship.owner, { name = "return", args = { ship = ship.id } }, { auto = true })
     end
   end
@@ -563,7 +614,7 @@ function Sim:skillSlots(agentId)
   local agent = self.agents[agentId]
   local n = 0
   for tier, count in pairs(slots) do if tier <= agent.tier and count > n then n = count end end
-  return n
+  return n + self.upgrades.archive
 end
 
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,
@@ -830,6 +881,8 @@ function Sim:step()
     self:stepShip(ship, ship.vein and byVein[ship.vein.id] or nil)
   end
   self:stepFreighters()
+  self:updateTier()
+  Upgrades.claimShips(self)
   for _, id in ipairs(self.agentOrder) do self:stepAgent(id, self.agents[id]) end
   self:updateBailout()
 end
@@ -869,7 +922,7 @@ function Sim:context(agentId)
     tick = self.tick,
     resources = Sim.deepCopy(self.resources),
     ship = { id = ship.id, state = ship.state, at = ship.at, cargo = ship.cargo, ore = ship.ore,
-      hold = self.b.ship.cargoCap, vein = ship.vein and ship.vein.id or nil, crowded_by = { table.unpack(ship.crowdedBy) } },
+      hold = ship.cargoCap, vein = ship.vein and ship.vein.id or nil, crowded_by = { table.unpack(ship.crowdedBy) } },
     planets = planets,
     home = self.home,
   }

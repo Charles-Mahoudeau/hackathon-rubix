@@ -45,9 +45,9 @@ local function shipSection(sim, ship)
   end
   local at = ship.vein and (ship.vein.id .. "@" .. ship.at) or ship.at
   return { key = "ship", kind = "object", fields = {
-    { "at", at }, { "hold", map(hold) }, { "cap", sim.b.ship.cargoCap },
-    { "hold%", math.floor(ship.cargo * 100 / sim.b.ship.cargoCap) },
-    { "drill", sim.b.ship.drillRate }, { "engine", ship.engineMult }, { "range", range } } }
+    { "at", at }, { "hold", map(hold) }, { "cap", ship.cargoCap },
+    { "hold%", math.floor(ship.cargo * 100 / ship.cargoCap) },
+    { "drill", ship.drillRate }, { "engine", ship.engineMult }, { "range", range } } }
 end
 
 local function veinRows(sim, ship, mode)

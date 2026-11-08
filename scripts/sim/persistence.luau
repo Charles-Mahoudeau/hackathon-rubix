@@ -3,6 +3,7 @@
 -- Only mutable state is saved; planets, ore data and balance come from config, so a rebalance applies to old saves.
 local Json = require("./json")
 local Sim = require("./sim")
+local Upgrades = require("./upgrades")
 
 local Persistence = {}
 
@@ -37,6 +38,9 @@ function Persistence.serialize(sim, savedAt)
       resources = sim.resources,
       warehouse = sim.warehouse,
       lifetimeRevenue = sim.lifetimeRevenue,
+      upgrades = sim.upgrades,
+      agentOrder = sim.agentOrder,
+      shipOrder = sim.shipOrder,
       deepNav = sim.deepNav,
       home = sim.home,
       agents = sim.agents,
@@ -58,7 +62,7 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
@@ -79,6 +83,7 @@ function Persistence.restore(data, opts)
     end
     sim.ships[id] = saved
   end
+  Upgrades.applyToFleet(sim)
   return sim
 end
 

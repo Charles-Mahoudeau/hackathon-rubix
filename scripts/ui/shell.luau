@@ -11,6 +11,7 @@ local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
 local LogsView = require("@scripts/ui/logs_view")
+local ShopView = require("@scripts/ui/shop_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
 local Shell = {}
@@ -421,6 +422,37 @@ local function logsScreen(font, r, m)
   return leftPanel, withChildren(rightPanel, rows)
 end
 
+-- Shop (GR5-7, spec §6.5): every upgrade with its cost, a Buy button when it can be bought, and why when it cannot.
+local function shopScreen(font, r, m)
+  local c = Screens.shop
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "SHOP  upgrades apply to every mining ship", T.small, "dim"))
+  for i, row in ipairs(m.rows) do
+    local y = c.rowY + (i - 1) * c.rowHeight
+    local owned = row.state == "owned"
+    nodeAt(L.pad, y + 6, text(font, row.name, T.body, owned and "dim" or "text"))
+    nodeAt(c.descX, y + 8, text(font, row.desc, T.small, "dim"))
+    if row.note and row.state ~= "available" then
+      nodeAt(c.noteX, y + 8, text(font, row.note, T.small, owned and "green" or Theme.semantic.warning))
+    end
+    if not owned then
+      nodeAt(c.costX, y + 8, text(font, row.costText, T.small, row.state == "available" and "cyan" or "dim"))
+      if row.state == "available" then nodeAt(c.buyX, y, button(font, "Buy", row.action, "cyan", c.buyWidth)) end
+    end
+  end
+  local y = c.rowY + #m.rows * c.rowHeight + c.footerGap
+  for _, f in ipairs(m.fleet) do
+    nodeAt(L.pad, y, text(font, f.text, T.small, "text"))
+    y += 18
+  end
+  for _, s in ipairs(m.slots) do
+    nodeAt(L.pad, y, text(font, s.text, T.small, "dim"))
+    y += 18
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- The two text inputs, in their own tree (see config/screens.luau editor). `draft` gives their starting text.
 function Shell.inputsSpec(draft, opts)
   opts = opts or {}
@@ -474,6 +506,8 @@ function Shell.spec(sim, screenId: string, opts)
     local a, b = logsScreen(font, rects.main, LogsView.model(sim, opts.logs or LogsView.new()))
     children[#children + 1] = a
     children[#children + 1] = b
+  elseif screenId == "shop" then
+    children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end

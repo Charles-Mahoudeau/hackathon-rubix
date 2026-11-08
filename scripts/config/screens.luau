@@ -90,6 +90,8 @@ return {
     agentButtonWidth = 96, sourceButtonWidth = 64, errorsButtonWidth = 120,
     hint = "Click a record to see its tokens, reasoning, call and result.",
   },
+  -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
+  shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
 
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,

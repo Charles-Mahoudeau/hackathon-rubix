@@ -24,16 +24,27 @@ function Remap.ramp(corp: string)
 	return out
 end
 
-function Remap.material(corp: string)
-	if cache[corp] then return cache[corp] end
+-- Remap.assets is set by tests to a stub: the Luau CLI has no `engine` global.
+local function assets() return Remap.assets or engine.assets end
+
+-- opts (all optional): steps = { a, b, c } luminance cuts, brightness, emissiveScale (see the shader). Materials are
+-- cached per corporation and option set.
+function Remap.material(corp: string, opts: { steps: { number }?, brightness: number?, emissiveScale: number? }?)
+	local o = opts or {}
+	local key = corp
+	if opts then
+		local s = o.steps or {}
+		key = string.format("%s|%s|%s|%s,%s,%s", corp, tostring(o.brightness), tostring(o.emissiveScale), tostring(s[1]), tostring(s[2]), tostring(s[3]))
+	end
+	if cache[key] then return cache[key] end
 	local ramp = Remap.ramp(corp)
-	shader = shader or engine.assets.shader(SHADER)
-	cache[corp] = engine.assets.material({
-		name = "remap." .. corp,
-		shader = shader,
-		values = { ramp0 = color(ramp[1]), ramp1 = color(ramp[2]), ramp2 = color(ramp[3]), ramp3 = color(ramp[4]) },
-	})
-	return cache[corp]
+	shader = shader or assets().shader(SHADER)
+	local values = { ramp0 = color(ramp[1]), ramp1 = color(ramp[2]), ramp2 = color(ramp[3]), ramp3 = color(ramp[4]) }
+	if o.steps then values.steps = { x = o.steps[1], y = o.steps[2], z = o.steps[3] } end
+	if o.brightness then values.brightness = o.brightness end
+	if o.emissiveScale then values.emissiveScale = o.emissiveScale end
+	cache[key] = assets().material({ name = "remap." .. key, shader = shader, values = values })
+	return cache[key]
 end
 
 return Remap
