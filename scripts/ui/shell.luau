@@ -1066,15 +1066,30 @@ local function alertsScreen(font, r, m)
         button(font, (t.on and "[x] " or "[ ] ") .. t.type, t.action, t.on and "cyan" or "dim", c.typeWidth))
     end
   end
-  if #m.rows == 0 then
-    nodeAt(L.pad, c.listY, text(font, Screens.empty.alerts.title .. ": " .. Screens.empty.alerts.hint, T.small, "dim"))
+  local top = c.listY
+  local leftW = math.floor((r.w - 3 * L.pad) * 0.32)
+  local rightX, rightW = L.pad + leftW + L.pad, r.w - 3 * L.pad - leftW
+  local height = r.h - top - L.pad
+  local agents = { text(font, "AGENTS IN SCOPE", T.small, "cyan") }
+  if #m.agents == 0 then agents[#agents + 1] = text(font, "No agents in scope", T.small, "dim") end
+  for _, a in ipairs(m.agents) do
+    agents[#agents + 1] = text(font, a.id .. "  " .. a.state, T.small, "text")
+    agents[#agents + 1] = text(font, tostring(a.task) .. (a.locked and "  PLAYER LOCK" or ""), T.small, a.locked and Theme.semantic.warning or "dim")
   end
-  for i, row in ipairs(m.rows) do
-    if i > c.maxRows then break end
-    local line = ("%5ds ago  %-14s %-12s %-10s %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason)
+  local alerts = { text(font, "ALERTS", T.small, "cyan") }
+  if #m.rows == 0 then alerts[#alerts + 1] = text(font, "No alerts", T.small, "dim") end
+  for _, row in ipairs(m.rows) do
     local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
-    nodeAt(L.pad, c.listY + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+    alerts[#alerts + 1] = text(font, ("%ds ago  %s  %s  %s: %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason), T.small, color)
   end
+  local history = { text(font, "MONITOR RESPONSE HISTORY", T.small, "cyan") }
+  if #m.history == 0 then history[#history + 1] = text(font, "No responses", T.small, "dim") end
+  for _, rec in ipairs(m.history) do
+    history[#history + 1] = text(font, ("%ss  %s  %s  %s"):format(tostring(rec.time), rec.tool, tostring(rec.status), tostring(rec.result or "")), T.small, "text")
+  end
+  nodeAt(L.pad, top, scrollBox(0, 0, leftW, height, agents, 4))
+  nodeAt(rightX, top, scrollBox(0, 0, rightW, math.floor(height / 2), alerts, 4))
+  nodeAt(rightX, top + math.floor(height / 2) + 4, scrollBox(0, 0, rightW, math.floor(height / 2) - 4, history, 4))
   return withChildren(panel(r, nil), kids)
 end
 
@@ -1286,26 +1301,34 @@ local function debugScreen(font, r, m)
   local c = Screens.debug
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, m.title .. "  not shipped in release builds", T.small, "dim"))
-  local y = c.rowY
+  nodeAt(L.pad, L.pad, text(font, m.title .. " / DEMO   " .. m.status, T.small, Theme.semantic.warning))
+  local controls = {}
   for _, g in ipairs(m.groups) do
-    nodeAt(L.pad, y + 6, text(font, g.label, T.small, "dim"))
-    local x = L.pad + c.labelWidth
+    controls[#controls + 1] = text(font, g.label, T.small, "dim")
     for _, b in ipairs(g.buttons) do
-      nodeAt(x, y, button(font, b.label, b.action, b.selected and "cyan" or "dim", c.buttonWidth))
-      x += c.buttonWidth + c.buttonGap
+      controls[#controls + 1] = button(font, b.label, b.action, b.selected and "cyan" or "dim", 200)
     end
-    y += c.rowHeight
   end
-  y += c.statusGap
-  nodeAt(L.pad, y, text(font, m.status, T.small, "text"))
-  if m.toast then nodeAt(L.pad, y + c.toastGap, text(font, m.toast, T.small, "green")) end
-  if m.promptTitle then
-    y += c.promptGap + c.toastGap
-    nodeAt(L.pad, y, text(font, m.promptTitle, T.small, "dim"))
-    for i, line in ipairs(m.promptLines) do
-      nodeAt(L.pad, y + c.toastGap + (i - 1) * c.promptLineHeight, text(font, line == "" and " " or line, T.small, "text"))
-    end
+  local x, top = 240, 48
+  local w, h = r.w - x - L.pad, r.h - top - L.pad
+  nodeAt(L.pad, top, scrollBox(0, 0, 212, h, controls, 4))
+  local prompt = { text(font, m.promptTitle, T.small, "cyan") }
+  for _, line in ipairs(m.promptLines) do
+    prompt[#prompt + 1] = text(font, line == "" and " " or line, T.small, "text")
+  end
+  nodeAt(x, top, scrollBox(0, 0, w, math.floor(h * 0.7), prompt, 2))
+  nodeAt(x, top + math.floor(h * 0.7) + 8, scrollBox(0, 0, w, math.floor(h * 0.3) - 8,
+    { text(font, "RESULT", T.small, "cyan"), text(font, m.toast or "No result yet", T.small, "text") }, 4))
+  if m.confirmReset then
+    local mw, mh = 360, 120
+    local dialog = panel({ x = (r.w - mw) / 2, y = (r.h - mh) / 2, w = mw, h = mh }, nil)
+    dialog.children = {
+      at(L.pad, L.pad, text(font, "Reset save?", T.heading, Theme.semantic.warning)),
+      at(L.pad, 42, text(font, "This starts a new game.", T.small, "text")),
+      at(L.pad, 76, button(font, "Cancel", "debug.cancelReset", "dim", 140)),
+      at(L.pad + 152, 76, button(font, "Reset save", "debug.resetSave", Theme.semantic.warning, 140)),
+    }
+    kids[#kids + 1] = dialog
   end
   return withChildren(panel(r, nil), kids)
 end

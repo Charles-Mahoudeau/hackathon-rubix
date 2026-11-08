@@ -27,6 +27,20 @@ function View.model(sim)
     types[#types + 1] = { type = t, on = st.alertTypes[t] == true, action = "alerts.type." .. t }
   end
   local blocker = Monitor.hireBlocker(sim)
+  local agents, history = {}, {}
+  for _, id in ipairs(sim.agentOrder) do
+    local a = sim.agents[id]
+    local scope = sim.registry:scopeOfAgentType(a.type)
+    if a.type ~= "monitor" and (st.scope == "company" or scope == st.scope) then
+      agents[#agents + 1] = { id = id, state = a.state, task = a.activeSkill or a.mode, locked = a.monitorLock == true }
+    end
+  end
+  local records = sim.records.monitor or {}
+  for i = #records, 1, -1 do
+    local rec = records[i]
+    history[#history + 1] = { time = rec.t_game, tool = rec.tool_call and rec.tool_call.tool or "waiting",
+      status = rec.validation, result = rec.result and rec.result.result }
+  end
   return {
     hired = hired,
     hire = (not hired and not blocker) and "alerts.hire" or nil,
@@ -36,11 +50,13 @@ function View.model(sim)
     heartbeatActions = { down = "alerts.heartbeat.down", up = "alerts.heartbeat.up", off = "alerts.heartbeat.off" },
     types = types,
     rows = Alerts.rows(sim),
+    agents = agents, history = history,
   }
 end
 
 function View.signature(sim)
-  local parts = { tostring(sim.agents.monitor ~= nil), sim.monitorSettings.scope, tostring(sim.monitorSettings.heartbeat), tostring(#sim.alerts.list) }
+  local parts = { tostring(sim.agents.monitor ~= nil), sim.monitorSettings.scope, tostring(sim.monitorSettings.heartbeat), tostring(#sim.alerts.list), tostring(sim.recordRev) }
+  for _, id in ipairs(sim.agentOrder) do local a = sim.agents[id]; parts[#parts + 1] = id .. a.state .. tostring(a.monitorLock) .. tostring(a.activeSkill) end
   for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(sim.monitorSettings.alertTypes[t]) end
   for _, r in ipairs(Alerts.rows(sim)) do parts[#parts + 1] = r.id .. r.status end
   return table.concat(parts, ",")
