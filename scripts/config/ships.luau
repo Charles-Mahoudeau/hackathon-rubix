@@ -38,7 +38,7 @@ return {
 				[3] = { engine_scale = 1.3, tier_glow = 1.0 },
 			},
 			map_icon = { shape = "diamond", size_px = 6 },
-			map_scale = 0.5,
+			map_scale = 1.6,
 		},
 		freighter = {
 			-- Larger, distinct silhouette (T4, GR5-12).
@@ -47,7 +47,7 @@ return {
 			destruction = { sheet = K .. "Destruction/PNGs/Kla'ed - Frigate - Destruction.png", frames = 9 },
 			scale = 1.6,
 			map_icon = { shape = "wide_rect", size_px = 9 },
-			map_scale = 0.8,
+			map_scale = 1.4,
 		},
 		-- Rival convoy hauler (raiding branch, GR5-45): Bomber hull. Its shield flickers while it is under attack.
 		convoy = {
@@ -56,7 +56,7 @@ return {
 			destruction = { sheet = K .. "Destruction/PNGs/Kla'ed - Bomber - Destruction.png", frames = 8 },
 			shield = { sheet = K .. "Shield/PNGs/Kla'ed - Bomber - Shield.png", frames = 6 },
 			map_icon = { shape = "wide_rect", size_px = 7 },
-			map_scale = 0.6,
+			map_scale = 1.5,
 		},
 		-- The player's interceptors (privateer) and the escorts of a convoy: Fighter hull. `weapons` embeds the hull (see
 		-- the miner note), so it replaces the hull sprite while the ship fires.
@@ -67,7 +67,7 @@ return {
 			shield = { sheet = K .. "Shield/PNGs/Kla'ed - Fighter - Shield.png", frames = 10 },
 			weapons = { sheet = K .. "Weapons/PNGs/Kla'ed - Fighter - Weapons.png", frames = 6 },
 			map_icon = { shape = "diamond", size_px = 6 },
-			map_scale = 0.5,
+			map_scale = 1.9,
 		},
 	},
 
@@ -83,22 +83,30 @@ return {
 	-- Moving ships on the system map (GR5-51). View pixels and seconds; nothing here is sim balance.
 	map_fx = {
 		smoothing = 8, -- 1/s: how fast a drawn ship follows the pose the sim gives it (ticks are 10 Hz, frames are not)
-		dock = { pad = 16, speed = 0.35, step = 0.9 }, -- parked ships circle their planet: radius beyond the planet disc, rad/s, spacing in rad
-		mining = { pad = 8, speed = 0.9 }, -- a miner at its vein circles close and fast
+		dock = { pad = 30, speed = 0.35, step = 0.9 }, -- parked ships circle their planet: radius beyond the planet disc, rad/s, spacing in rad
+		mining = { pad = 22, speed = 0.9 }, -- a miner at its vein circles close and fast
 		idle_engine_fps = 6, -- engine strip speed while parked (moving ships use engine_fps)
 		leader_corp = "player",
 		corp_of = { korvax = "rivalA", helion = "rivalB", dunmere = "rivalA" }, -- raiding corporation -> a key of corp_tint
-		escort_gap = 22, -- escorts fly this far to the side of their convoy
-		alongside = { gap = 26 }, -- an interceptor next to its target
+		escort_gap = 50, -- escorts fly this far to the side of their convoy
+		alongside = { gap = 54 }, -- an interceptor next to its target
 		shield_fps = 12,
 		weapons_fps = 14,
 		fire = { interval = 0.35, flight = 0.5, per_ship = 2 }, -- one shot every `interval` s, in the air `flight` s, at most `per_ship` at once
 		torpedo = { interval = 1.6, flight = 0.9 }, -- the first interceptor adds a torpedo now and then
 		ray_flight = 0.6,
-		projectile_scale = 1.5,
-		wave_scale = 0.7,
+		projectile_scale = 2.4,
+		wave_scale = 1.3,
 		explosion = { fps = 14, scale = 1.0 },
-		layers = { shield = 11, projectile = 12, explosion = 13, wave = 14 },
+		layers = { shield = 11, projectile = 12, explosion = 13, wave = 14, trail = 8 },
+		-- The depot: the player's dock next to Kessa (the station of GR5-52 sits here). Ships of the home planet leave from and
+		-- return to this point, offset from the planet centre in view pixels; parked ships circle it at `ring`.
+		depot = { dx = 74, dy = -46, ring = 34 },
+		-- Engine trail: pixel squares (assets/textures/white.png, 4 px) behind a moving ship, drawn in the corporation's neon.
+		trail = { sheet = "textures/white.png", px = 4, count = 7, length = 46, rate = 1.8, size = 0.8, spread = 5, rear = 17, steps = { 0.15, 0.3, 2.0 } },
+		-- A cosmetic loop until the first real trip is seen (client only, never touches the sim): a miner circling Kessa and a
+		-- hauler shuttling between `from` and the depot, so the map is not empty at game start.
+		demo = { from = "ashfall", travel = 7.0, dwell = 2.5 },
 	},
 
 	-- Stretch (B-0+): candidates noted only, no remap work until a branch is greenlit (raiding ships are drawn, GR5-51).

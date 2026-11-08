@@ -247,6 +247,25 @@ do
   assert(Model.signature(s, "missions", MissionsView.signature(s)) ~= Model.signature(Sim.new(), "missions", MissionsView.signature(Sim.new())))
 end
 
+-- 6c. a debug veins-reveal is not a scan call: mission 2 keeps waiting for the agent's real `scan`
+do
+  local s = Sim.new()
+  s.resources.credits = 5000
+  s.tier = 2
+  for _, a in pairs(s.agents) do a.tier = 2 end
+  assert(s:buyUpgrade("scanner"))
+  s.missions[1].status = "claimed"
+  s:run(2)
+  local Debug = require("@scripts/sim/debug")
+  assert(Debug.run(s, "revealVeins"))
+  s:run(2)
+  local p = Missions.progress(s, s.missions[2])
+  assert(p.lines[1].done and not p.lines[2].done, "revealing veins by debug is not a scan")
+  assert(s.veins.K4.scanned)
+  call(s, "mine", { vein = "K4", stop_at_hold_pct = 100 })
+  assert(status(s, 2) == "active", "K4 cargo sold without a scan call does not finish mission 2")
+end
+
 local function skillLoop(name, vein)
   return { name = name, agent_type = "miner", params = {}, loop = true,
     steps = { { tool = "mine", args = { vein = vein } }, { tool = "return" }, { tool = "sell" } } }

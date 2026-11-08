@@ -161,6 +161,15 @@ local function recordable(sim, agentId)
   return out
 end
 
+-- The page (0 = the newest calls) that lists the given feed call.
+function Studio.pageOf(sim, agentId, feedId)
+  local list = recordable(sim, agentId)
+  for i, e in ipairs(list) do
+    if e.id == feedId then return math.floor((#list - i) / Screens.studio.calls) end
+  end
+  return 0
+end
+
 local function pickedAgent(sim, st)
   if st.agent and sim.agents[st.agent] then return st.agent end
   return sim.agentOrder[1]
@@ -392,7 +401,14 @@ function Studio.act(sim, st, action)
   local agent = action:match("^studio%.rec%.agent%.(.+)$")
   if agent then
     if not sim.agents[agent] then return false end
-    st.agent, st.first, st.last, st.message = agent, nil, nil, nil
+    st.agent, st.first, st.last, st.message, st.page = agent, nil, nil, nil, 0
+    return true
+  end
+  local turn = action:match("^studio%.rec%.page%.(%a+)$")
+  if turn then
+    if turn ~= "older" and turn ~= "newer" then return false end
+    local last = math.max(0, math.ceil(#recordable(sim, pickedAgent(sim, st)) / Screens.studio.calls) - 1)
+    st.page = math.max(0, math.min(last, (st.page or 0) + (turn == "older" and 1 or -1)))
     return true
   end
   local pick = action:match("^studio%.rec%.pick%.(%d+)$")
@@ -408,6 +424,7 @@ function Studio.act(sim, st, action)
     local feedId = rec and Skills.feedIdForRecord(sim, rec.id)
     if not feedId then return false end
     st.mode, st.agent, st.first, st.last, st.message, st.assign, st.suggestion = "record", rec.agent_id, feedId, nil, nil, nil, nil
+    st.page = Studio.pageOf(sim, rec.agent_id, feedId)
     return true, "archive"
   end
   if action == "studio.rec.save" then
@@ -470,13 +487,17 @@ local function recordRows(sim, st)
   for _, e in ipairs(picked) do inRange[e.id] = true end
   local list = recordable(sim, agentId)
   if #list == 0 then rows[#rows + 1] = { txt(("No successful calls from %s yet."):format(agentId), "dim") } end
-  for i = math.max(1, #list - c.calls + 1), #list do
+  local pages = math.max(1, math.ceil(#list / c.calls))
+  local page = math.min(st.page or 0, pages - 1)
+  for i = math.max(1, #list - (page + 1) * c.calls + 1), #list - page * c.calls do
     local e = list[i]
     rows[#rows + 1] = { btn(("#%d  %s"):format(e.id, Feed.formatCall(e.tool, e.args)), "studio.rec.pick." .. e.id, inRange[e.id] and "cyan" or "dim", c.callWidth) }
   end
   local cfg = sim.b.skills
   local can = #picked >= cfg.recordMin and #picked <= cfg.recordMax
-  rows[#rows + 1] = { txt(("Selected: %d call%s"):format(#picked, #picked == 1 and "" or "s"), can and "green" or "dim", 160),
+  rows[#rows + 1] = { txt(("Selected: %d call%s"):format(#picked, #picked == 1 and "" or "s"), can and "green" or "dim", 130),
+    btn("Older", "studio.rec.page.older", page < pages - 1 and "cyan" or "dim", 80), btn("Newer", "studio.rec.page.newer", page > 0 and "cyan" or "dim", 80),
+    txt(("Page %d / %d"):format(pages - page, pages), "dim", 110),
     btn("Save as skill", "studio.rec.save", can and "cyan" or "dim", c.bigButtonWidth) }
   for _, r in ipairs(suggestionRows(st)) do rows[#rows + 1] = r end
   return rows
@@ -554,7 +575,7 @@ end
 
 -- One string that changes when what the studio shows changes.
 function Studio.signature(sim, st)
-  local parts = { st.mode, tostring(st.agent), tostring(st.first), tostring(st.last), tostring(#sim.feed), tostring(sim.feedSeq),
+  local parts = { st.mode, tostring(st.agent), tostring(st.page), tostring(st.first), tostring(st.last), tostring(#sim.feed), tostring(sim.feedSeq),
     st.message and st.message.text or "", tostring(st.suggestion ~= nil), tostring(st.selected) }
   if st.draft then
     for _, step in ipairs(st.draft.steps) do parts[#parts + 1] = step.tool .. argsText(step.args) .. tostring(step.guard and step.guard.min_unit_price) end

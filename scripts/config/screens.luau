@@ -119,7 +119,7 @@ return {
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
 
   -- Station screen (GR5-73): a tab per station, the stock bars on the left, docked ships / freighters / Logisticians on the right.
-  station = { tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
+  station = { title = "STATION", titleY = 14, tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
     rowBarY = 14, rowBarWidth = 200, rowBarX = 150, rowQtyX = 360, listX = 520, lineHeight = 20, sectionGap = 14 },
 
   -- Team screen (GR5-28): one row per agent.
@@ -131,14 +131,15 @@ return {
     noSkills = "No skills", noSelection = "Select a skill", selected = "skill" },
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },
   -- Skill studio (GR5-26, spec §13.3): record from the feed, the manual form, and assigning a skill with its parameter values.
-  -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls the Record tab lists.
+  -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls one page of the Record tab lists (Older / Newer turn the pages).
   studio = { tabX = 380, tabWidth = 96, tabGap = 6, rowY = 48, rowHeight = 34, rowGap = 6, textWidth = 520, argWidth = 150, smallWidth = 30,
-    toolWidth = 70, bigButtonWidth = 190, callWidth = 700, calls = 12, autoNameFallback = "skill" },
+    toolWidth = 70, bigButtonWidth = 190, callWidth = 700, calls = 8, autoNameFallback = "skill" },
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
+  -- The current mission is the left column (text wraps at textWidth); the mission list is the right column from listX.
   missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360, optionalRewardOffset = 120, optionalButtonOffset = 200 },
+    buttonWidth = 140, textWidth = 540, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 44, optionalIndent = 24, rewardX = 230, optionalButtonOffset = 150 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,

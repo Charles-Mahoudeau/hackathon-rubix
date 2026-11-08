@@ -28,12 +28,13 @@ end
 
 -- The scripted player, once per game second: a directive for every Miner without one, Compute topped up, then the shop
 -- list bought strictly in order (it waits for the first item it cannot afford yet, keeping `reserve` credits back). Returns the ids bought.
-local function play(sim, bought)
+local function play(sim, bought, opts)
+  opts = opts or {}
   local p = Config.player
   local taken = {}
   for _, id in ipairs(sim.agentOrder) do
     local a = sim.agents[id]
-    if a.type == "miner" then
+    if a.type == "miner" and opts.miners ~= false then
       local ship = sim:ownedShip(id)
       local vein = bestVein(sim, ship, taken)
       if vein then
@@ -45,6 +46,7 @@ local function play(sim, bought)
   end
   if sim.offer then sim:acceptEmergencyAdvance() end
   if sim.resources.compute < p.computeBelow then sim:buyCompute(p.computePacks) end
+  if opts.shop == false then return end
   for _, id in ipairs(p.buy) do
     if sim.b.shop.items[id] then
       local why = Upgrades.blocker(sim, id)
@@ -57,6 +59,10 @@ local function play(sim, bought)
     end
   end
 end
+
+-- The branch profitability harness (sim/branch_profit.luau) replays this player up to a fork: `opts.shop == false` stops the
+-- shop purchases, `opts.miners == false` leaves the Miner directives to the caller.
+Pacing.play, Pacing.bestVein = play, bestVein
 
 -- opts: seed, seconds, sampleSeconds, speed (all default to config/pacing.luau). Returns
 -- { seed, seconds, speed, tiers = { [t] = { at, credits, revenue } }, samples = { { t, credits, revenue, tier } },

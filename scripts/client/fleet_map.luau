@@ -20,7 +20,7 @@ local FRAME_PX = Config.frame_px
 
 -- The state of the drawn fleet: smoothed poses, trip trackers, pending explosions and the spawned entities.
 function FleetMap.new()
-	return { track = {}, pose = {}, fought = {}, results = {}, disabled = {}, effects = {}, fxSeq = 0, dest = {}, entities = {}, poses = {}, nextSlot = 1, lastT = nil }
+	return { realSeen = false, track = {}, pose = {}, fought = {}, results = {}, disabled = {}, effects = {}, fxSeq = 0, dest = {}, entities = {}, poses = {}, nextSlot = 1, lastT = nil }
 end
 
 -- Planet and market centres, id -> { x, y } (the same points the shell draws labels and routes at).
@@ -86,9 +86,15 @@ end
 local function leg(a, b, t: number)
 	local pad = Screens.map.planetRadius + FX.dock.pad / 2
 	local ux, uy = unit(a, b)
-	local from = { x = a.x + ux * pad, y = a.y + uy * pad }
-	local to = { x = b.x - ux * pad, y = b.y - uy * pad }
+	local from = a.depot and a or { x = a.x + ux * pad, y = a.y + uy * pad }
+	local to = b.depot and b or { x = b.x - ux * pad, y = b.y - uy * pad }
 	return lerp(from, to, t), heading(ux, uy)
+end
+
+-- Where a ship of planet `id` stops: the home planet's ships use the depot (points.depot) instead of its centre.
+local function stop(points, sim, id: string?)
+	if id == sim.home then return points.depot end
+	return id and points[id]
 end
 
 -- Actors: one per ship, with the pose it should have right now ---------------------------------------------------------
@@ -105,8 +111,9 @@ local function minerActors(fleet, sim, points, t, out)
 	for i, id in ipairs(sim.shipOrder) do
 		local ship = sim.ships[id]
 		local key = "ship:" .. id
-		local at = points[ship.at or sim.home] or points[sim.home]
-		local dest = ship.dest and points[ship.dest]
+		local atId = ship.at or sim.home
+		local at = stop(points, sim, atId) or points.depot
+		local dest = stop(points, sim, ship.dest)
 		local tier = math.clamp(ship.engineMark or 1, 1, #Config.ships.miner.tiers)
 		local st = ship.state
 		if (st == "travel_out" or st == "travel_back" or st == "travel_scan") and at and dest and dest ~= at then
@@ -114,10 +121,13 @@ local function minerActors(fleet, sim, points, t, out)
 			local pos, rot = leg(at, dest, p)
 			out[#out + 1] = actorOf(key, "miner", "player", { x = pos.x, y = pos.y, rot = rot }, { moving = true, tier = tier })
 		elseif at and st == "mining" then
-			local pos = orbit(at, Screens.map.planetRadius + FX.mining.pad, FX.mining.speed, phaseOf(id), t)
-			out[#out + 1] = actorOf(key, "miner", "player", pos, { tier = tier })
+			local planet = points[atId] or points[sim.home]
+			local pos = orbit(planet, Screens.map.planetRadius + FX.mining.pad, FX.mining.speed, phaseOf(id), t)
+			out[#out + 1] = actorOf(key, "miner", "player", pos, { moving = true, tier = tier })
 		elseif at then
-			local pos = orbit(at, dockRadius(), FX.dock.speed, i * FX.dock.step, t)
+			local pos
+			if atId == sim.home then pos = orbit(points.depot, FX.depot.ring, FX.dock.speed, i * FX.dock.step, t)
+			else pos = orbit(at, dockRadius(), FX.dock.speed, i * FX.dock.step, t) end
 			out[#out + 1] = actorOf(key, "miner", "player", pos, { parked = true, tier = tier })
 		end
 	end
@@ -126,10 +136,10 @@ end
 local function freighterActors(fleet, sim, points, t, out)
 	for i, f in ipairs(sim.freighters) do
 		local key = "freighter:" .. f.id
-		local home = points[f.station]
+		local home = stop(points, sim, f.station)
 		if home then
 			if f.state == "out" and f.load then fleet.dest[f.id] = f.load.destination end
-			local dest = fleet.dest[f.id] and points[fleet.dest[f.id]]
+			local dest = stop(points, sim, fleet.dest[f.id])
 			if (f.state == "out" or f.state == "back") and dest then
 				local a, b = home, dest
 				if f.state == "back" then a, b = dest, home end
@@ -137,7 +147,7 @@ local function freighterActors(fleet, sim, points, t, out)
 				local pos, rot = leg(a, b, p)
 				out[#out + 1] = actorOf(key, "freighter", "player", { x = pos.x, y = pos.y, rot = rot }, { moving = true })
 			else
-				local pos = orbit(home, dockRadius(18), FX.dock.speed * 0.6, math.pi + i * FX.dock.step, t)
+				local pos = orbit(home, home.depot and FX.depot.ring + 24 or dockRadius(18), FX.dock.speed * 0.6, math.pi + i * FX.dock.step, t)
 				out[#out + 1] = actorOf(key, "freighter", "player", pos, { parked = true })
 			end
 		end
@@ -175,7 +185,7 @@ local function convoyActors(fleet, sim, points, t, out)
 end
 
 local function interceptorActors(fleet, sim, points, t, convoys, out)
-	local home = points[sim.home]
+	local home = points.depot
 	if not sim.interceptors or not home then return end
 	for i, id in ipairs(sim.interceptorOrder) do
 		local it = sim.interceptors[id]
@@ -204,7 +214,7 @@ local function interceptorActors(fleet, sim, points, t, convoys, out)
 			local cur = fleet.pose[key]
 			pose = { x = cur.x, y = cur.y, rot = cur.rot }
 		else
-			pose = orbit(home, dockRadius(-4), FX.dock.speed, math.pi / 2 + i * FX.dock.step, t)
+			pose = orbit(home, FX.depot.ring + 14, FX.dock.speed, math.pi / 2 + i * FX.dock.step, t)
 			extra.parked, extra.noEngine = true, st == "disabled"
 		end
 		out[#out + 1] = actorOf(key, "privateer", "player", pose, extra)
@@ -213,8 +223,24 @@ end
 
 -- Sprites ------------------------------------------------------------------------------------------------------------------
 
-local function sprite(key, sheet, fw, fh, frame, x, y, rot, scale, layer, corp, glow)
-	return { key = key, sheet = sheet, fw = fw, fh = fh, frame = frame, x = x, y = y, rot = rot or 0, scale = scale, layer = layer, corp = corp, glow = glow or 0 }
+local function sprite(key, sheet, fw, fh, frame, x, y, rot, scale, layer, corp, glow, steps)
+	return { key = key, sheet = sheet, fw = fw, fh = fh, frame = frame, x = x, y = y, rot = rot or 0, scale = scale, layer = layer, corp = corp, glow = glow or 0, steps = steps }
+end
+
+-- Engine trail: pixel squares streaming out behind a moving ship, shrinking as they age. A stateless function of the clock.
+local function trailSprites(a, def, t, out)
+	local T = FX.trail
+	local fx, fy, rx, ry = basis(a.rot)
+	local scale = def.map_scale or 0.6
+	local phase = phaseOf(a.key)
+	for j = 0, T.count - 1 do
+		local clock = t * T.rate + j / T.count
+		local age = clock % 1
+		local back = T.rear * scale + age * T.length
+		local side = math.sin(phase + j * 2.4 + math.floor(clock) * 1.7) * T.spread * (0.3 + age)
+		out[#out + 1] = sprite(("%s:trail:%d"):format(a.key, j), T.sheet, T.px, T.px, 0, a.x - fx * back + rx * side, a.y - fy * back + ry * side,
+			a.rot, math.max(T.size * (1 - 0.8 * age), 0.15), FX.layers.trail, a.corp, 0, T.steps)
+	end
 end
 
 local function actorSprites(a, t, out)
@@ -222,6 +248,7 @@ local function actorSprites(a, t, out)
 	local tier = def.tiers and def.tiers[a.tier or 1] or nil
 	local scale = def.map_scale or 0.6
 	local glow = tier and tier.tier_glow or 0
+	if a.moving and not a.noEngine then trailSprites(a, def, t, out) end
 	if not a.noEngine then
 		local fps = a.parked and FX.idle_engine_fps or Config.engine_fps
 		out[#out + 1] = sprite(a.key .. ":engine", def.engine.sheet, FRAME_PX, FRAME_PX, math.floor(t * fps) % def.engine.frames, a.x, a.y, a.rot,
@@ -310,12 +337,52 @@ local function effectSprites(fleet, t, out)
 	fleet.effects = keep
 end
 
+-- True once the player's fleet does something the map shows: a trip, a vein being mined or a freighter.
+local function realActivity(sim): boolean
+	if #sim.freighters > 0 then return true end
+	for _, ship in pairs(sim.ships) do
+		local st = ship.state
+		if st == "travel_out" or st == "travel_back" or st == "travel_scan" or st == "mining" then return true end
+	end
+	return false
+end
+
+-- The start-up loop (config demo): one miner circling the home planet and one hauler shuttling from the vein planet to the
+-- depot and back, until the first real activity. Cosmetic: not in the sim, gone for good once realActivity() is true.
+local function demoActors(points, sim, t, out)
+	local D = FX.demo
+	local planet, from, depot = points[sim.home], points[D.from], points.depot
+	if not (planet and from and depot) then return end
+	local ring = Screens.map.planetRadius + FX.mining.pad
+	out[#out + 1] = actorOf("demo:miner", "miner", "player", orbit(planet, ring, FX.mining.speed, 1.0, t), { moving = true, tier = 1 })
+	local cycle = 2 * (D.travel + D.dwell)
+	local u = t % cycle
+	local pose
+	if u < D.travel then
+		local pos, rot = leg(from, depot, u / D.travel)
+		pose = { x = pos.x, y = pos.y, rot = rot }
+	elseif u < D.travel + D.dwell then
+		pose = orbit(depot, FX.depot.ring, FX.dock.speed * 2, 0, t)
+	elseif u < 2 * D.travel + D.dwell then
+		local pos, rot = leg(depot, from, (u - D.travel - D.dwell) / D.travel)
+		pose = { x = pos.x, y = pos.y, rot = rot }
+	else
+		pose = orbit(from, ring, FX.mining.speed, 0, t)
+	end
+	out[#out + 1] = actorOf("demo:hauler", "miner", "player", pose, { moving = true, tier = 1 })
+end
+
 -- Smooths the actors' poses, notices who left the map (an exploded convoy, a disabled interceptor) and builds the sprites.
 function FleetMap.update(fleet, sim, t: number)
 	local dt = math.clamp(fleet.lastT and (t - fleet.lastT) or 0, 0, 0.25)
 	fleet.lastT = t
 	local points = FleetMap.points()
+	local home = points[sim.home] or points.kessa
+	points.depot = { x = home.x + FX.depot.dx, y = home.y + FX.depot.dy, depot = true }
 	local actors, convoys = {}, nil
+	if not fleet.realSeen then
+		if realActivity(sim) then fleet.realSeen = true else demoActors(points, sim, t, actors) end
+	end
 	minerActors(fleet, sim, points, t, actors)
 	freighterActors(fleet, sim, points, t, actors)
 	convoys = convoyActors(fleet, sim, points, t, actors)
@@ -373,7 +440,7 @@ function FleetMap.describe(s, slot: number)
 			texture = Ship.texture(s.sheet),
 			source = { x = s.frame * s.fw, y = 0, z = s.fw, w = s.fh },
 			origin = { x = s.fw / 2, y = s.fh / 2 },
-			material = Remap.material(s.corp, { steps = Ship.steps(s.glow) }),
+			material = Remap.material(s.corp, { steps = s.steps or Ship.steps(s.glow) }),
 			layer = s.layer,
 		},
 		["game.MapSprite"] = { slot = slot },

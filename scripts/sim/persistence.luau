@@ -81,6 +81,7 @@ function Persistence.serialize(sim, savedAt)
       versions = sim.versions,
       recordSeq = sim.recordSeq,
       missions = sim.missions,
+      scanCalls = sim.scanCalls,
       alerts = sim.alerts,
       monitorSettings = sim.monitorSettings,
       branchesOpen = sim.branchesOpen,
@@ -107,7 +108,7 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance, branches = opts and opts.branches })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions", "branchesOpen" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions", "branchesOpen", "scanCalls" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for i, fresh in ipairs(Missions.new()) do -- older saves hold fewer missions: the new ones start locked
@@ -150,6 +151,7 @@ function Persistence.restore(data, opts)
   for id, saved in pairs(data.veins) do
     local vein = sim.veins[id]
     if vein then vein.reserve, vein.scanned = saved.reserve, saved.scanned end
+    if vein and saved.scanned and vein.hidden and st.scanCalls == nil then sim.scanCalls = 1 end -- older save: a revealed hidden vein was scanned
   end
   sim.ships = {}
   for id, saved in pairs(Sim.deepCopy(data.ships)) do
