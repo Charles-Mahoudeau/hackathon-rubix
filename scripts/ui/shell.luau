@@ -1,8 +1,9 @@
 -- The UI shell (GR5-3): top bar, left nav, main panel, bottom agent feed, and the system map drawn over the main panel.
 -- Everything here is a pure description (engine.ui specs) built from ui/shell_model.luau, so it can be tested headless;
 -- only Shell.spawn touches the engine. Colours come from config/theme.luau through ui/theme.luau, nothing else.
--- Panels are plain translucent nodes with a hairline border and a corner radius, no sprite and no baked glow: the only
--- bloom is the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
+-- Panels are a Pixel Holo UI nine-patch image tinted by the theme (opts.skin, from UiTheme.panelSkin). Without a skin
+-- (headless tests) they fall back to a translucent node with a hairline border. Neither bakes a glow: the only bloom is
+-- the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
 local UiTheme = require("@scripts/ui/theme")
@@ -44,12 +45,18 @@ local function rect(r)
   return { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h }
 end
 
-local function panel(r, extra, borderName)
-  return {
-    style = { rect(r), extra },
-    background = { color = UiTheme.panel(), radius = L.radius, borderColor = UiTheme.color(borderName or "dim", Theme.alpha.line), borderWidth = 1 },
-    children = {},
-  }
+-- Set by Shell.spec for the duration of one build; nil = no texture available.
+local skin
+
+-- `plain` keeps the hairline node even with a skin (the map panel, which must stay see-through over the world).
+local function panel(r, extra, plain)
+  local node = { style = { rect(r), extra }, children = {} }
+  if skin and not plain then
+    node.image = { texture = skin.texture, slice = skin.slice, color = skin.color }
+  else
+    node.background = { color = UiTheme.panel(), radius = L.radius, borderColor = UiTheme.line(), borderWidth = 1 }
+  end
+  return node
 end
 
 local function text(font, str: string, size: number, colorName: string, extra)
@@ -262,9 +269,10 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
--- The whole screen as a spec for engine.ui.spawn. opts = { font, glitch = frame params of Glitch.update or nil }.
+-- The whole screen as a spec for engine.ui.spawn. opts = { font, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
+  skin = opts.skin
   local font = opts.font
   local rects = Shell.layout()
   if not Model.screenVisible(sim.tier, screenId) then screenId = Screens.defaultScreen end
@@ -276,7 +284,7 @@ function Shell.spec(sim, screenId: string, opts)
   }
   if screenId == Screens.defaultScreen then
     -- The map panel is transparent over the world: planets are drawn behind it, labels and routes in front.
-    local mapPanel = panel(rects.main, nil)
+    local mapPanel = panel(rects.main, nil, true)
     mapPanel.background.color = UiTheme.color("panel", 0)
     children[#children + 1] = mapPanel
     for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim))) do children[#children + 1] = n end
@@ -311,6 +319,7 @@ end
 function Shell.spawn(commands, sim, screenId: string, opts)
   opts = opts or {}
   opts.font = opts.font or UiTheme.font()
+  opts.skin = opts.skin or UiTheme.panelSkin()
   local spec, shown = Shell.spec(sim, screenId, opts)
   return engine.ui.spawn(commands, spec), shown
 end

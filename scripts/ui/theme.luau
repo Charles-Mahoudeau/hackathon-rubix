@@ -34,6 +34,14 @@ function UiTheme.line() return UiTheme.color("dim", Theme.alpha.line) end
 function UiTheme.hover(name: string?) return UiTheme.color(name or "cyan", Theme.alpha.hover) end
 function UiTheme.pressed(name: string?) return UiTheme.color(name or "cyan", Theme.alpha.pressed) end
 
+local skinTexture
+-- The panel nine-patch texture (client only, needs the engine's asset registry). Headless callers pass no skin at all.
+function UiTheme.panelSkin()
+	local cfg = Theme.panelSkin
+	skinTexture = skinTexture or engine.assets.texture(cfg.texture)
+	return { texture = skinTexture, slice = cfg.slice, color = UiTheme.color(cfg.tint, Theme.alpha.panelFill) }
+end
+
 function UiTheme.count()
 	local n = 0
 	for _ in pairs(Theme.palette) do n += 1 end

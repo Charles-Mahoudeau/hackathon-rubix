@@ -27,5 +27,9 @@ return {
   type = { title = 22, heading = 16, body = 14, small = 12 },
 
   -- Screen layout in view pixels. The window and the engine's virtual resolution are `view` (project.luau).
+  -- Panel skin: Pixel Holo UI (Helianthus Games, itch.io), the Clean panel as a nine-patch. `slice` is the border kept at
+  -- native size { left, top, right, bottom } in texture pixels; `tint` names a palette colour multiplied over the art.
+  panelSkin = { texture = "ui/pixel_holo_ui/panel/Clean/panel.png", slice = { 15, 4, 15, 4 }, tint = "text" },
+
   layout = { view = { w = 1280, h = 720 }, topBar = 48, nav = 176, feed = 132, gap = 8, pad = 12, radius = 4 },
 }
