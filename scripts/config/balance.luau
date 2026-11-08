@@ -1,6 +1,6 @@
--- Global (no require in AYLO): loaded by the engine in sorted path order; scripts/config/* sort first.
 -- ONE tunable balance table. No gameplay number lives anywhere else (world data is in world.luau).
-Balance = {
+-- Module: `local Balance = require("@scripts/config/balance")`. The returned table is read-only.
+return {
   tickSeconds = 0.1,  -- spec §3: 10 Hz fixed step
   startCredits = 500, -- spec §6.1
   startCompute = 10,  -- spec §6.1

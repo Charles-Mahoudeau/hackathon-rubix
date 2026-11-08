@@ -1,6 +1,11 @@
--- Run from repo root: lua5.4 tests/test_headless.luau
--- Loads scripts/ the way the engine does (sorted, shared globals; no require).
-dofile("tests/load_scripts.lua")
+-- Run from repo root: luau tests/test_headless.luau   (needs the .luaurc `@scripts` alias at the repo root)
+-- Uses the same require() paths as the game.
+local Balance = require("@scripts/config/balance")
+local Sim = require("@scripts/sim/sim")
+local Ai = require("@scripts/sim/ai")
+
+-- The engine freezes what a module returns (shallow); do the same here so a write to a module table fails the tests too.
+for _, m in { Balance, Sim, Ai } do table.freeze(m) end
 
 -- spec §6.1 starting state and §4.1 ores
 local s = Sim.new()
@@ -77,7 +82,7 @@ local ok7, err7 = s7:resolveDecision("miner", { name = "mine", args = { vein = "
 assert(not ok7 and err7 == "vein_depleted")
 
 -- vague mode: runs without crashing, logs errors
-Ai.mode = "vague"
+Ai.setMode("vague")
 local s3 = Sim.new(); s3:setDecider(Ai.decide); s3:run(3000)
 local errs = 0; for _, l in ipairs(s3.logs) do if l.level == "ERROR" then errs = errs + 1 end end
 assert(errs > 0)

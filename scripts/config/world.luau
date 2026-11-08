@@ -1,6 +1,6 @@
--- Global (no require in AYLO): loaded by the engine in sorted path order; scripts/config/* sort first.
 -- World data (spec §4, §5.2): ores, harvest planets, veins, markets, routes. Adding a planet = adding a table here.
-World = {
+-- Module: `local World = require("@scripts/config/world")`. The returned table is read-only.
+return {
   homePlanet = "kessa",   -- Kessa depot is the home dock until the warehouse exists
   jumpSeconds = 15,       -- per jump, spec §5.1 travel formula
   minVeinHopSeconds = 5,

@@ -1,6 +1,8 @@
--- Global `Sim` (no require in AYLO). Reads Balance/World set by scripts/config/* (sorted earlier).
--- Server-side simulation core. Pure Lua/Luau, no engine deps, headless-runnable.
-Sim = {}
+-- Server-side simulation core. Pure Luau, no engine deps, headless-runnable.
+local Balance = require("@scripts/config/balance")
+local World = require("@scripts/config/world")
+
+local Sim = {}
 Sim.__index = Sim
 
 local function lcg(seed)
@@ -309,3 +311,5 @@ function Sim:context(agentId)
 end
 
 function Sim:run(ticks) for _ = 1, ticks do self:step() end end
+
+return Sim
