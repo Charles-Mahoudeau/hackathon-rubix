@@ -3,6 +3,7 @@
 local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
+local DebugConfig = require("@scripts/config/debug")
 local ComputeView = require("@scripts/ui/compute_view")
 local Clock = require("@scripts/sim/clock")
 local Raiding = require("@scripts/sim/raiding")
@@ -51,13 +52,15 @@ end
 function Model.nav(tier: number, active: string?)
   local out = {}
   for _, e in ipairs(Screens.nav) do
-    if tier >= e.unlockTier then out[#out + 1] = { id = e.id, label = e.label, active = e.id == active } end
+    if tier >= e.unlockTier and (not e.debugOnly or DebugConfig.enabled) then out[#out + 1] = { id = e.id, label = e.label, active = e.id == active } end
   end
   return out
 end
 
 function Model.screenVisible(tier: number, id: string)
-  for _, e in ipairs(Screens.nav) do if e.id == id then return tier >= e.unlockTier end end
+  for _, e in ipairs(Screens.nav) do
+    if e.id == id then return tier >= e.unlockTier and (not e.debugOnly or DebugConfig.enabled) end
+  end
   return false
 end
 
