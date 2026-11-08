@@ -14,6 +14,9 @@ local selftest = engine.args.selftest
 
 if selftest then
 	engine.settings.scripts.server = "server/selftest"
+	-- The save path is checked on the real rtype.Persistence plugin, in its own folder so a player's save is never touched.
+	table.insert(plugins, "rtype.Persistence")
+	engine.settings.persistence.folder = "gridmind-selftest"
 elseif engine.isServer then
 	-- Axis AI (GR5-15): requests go out from the server only. The keys are read from the environment by the engine
 	-- (AXIS_API_KEY = apk-... platform key, AXIS_GATEWAY_KEY = Relais sk-... key) and never pass through a script.
@@ -33,7 +36,9 @@ if engine.isClient then
 		-- Only the windowed client draws the shell; a headless client has no window and no Ui plugin.
 		engine.settings.scripts.client = "client/main"
 		-- rtype.Sprite only brings the SpriteRenderer component: rtype.SpriteDraw is what draws those entities (planets, background).
-		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.SpriteDraw", "rtype.Text", "rtype.Ui", "rtype.audio" }, 1, 8, #plugins + 1, plugins)
+		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.SpriteDraw", "rtype.Text", "rtype.Ui", "rtype.audio", "rtype.Persistence" }, 1, 9, #plugins + 1, plugins)
+		-- Save / load (GR5-77): saves live in <user data directory>/gridmind/. Keep in step with config/save.luau.
+		engine.settings.persistence.folder = "gridmind"
 		engine.settings.platform = "glfw"
 		engine.settings.renderer = "vulkan"
 		engine.settings.window.title = "GRIDMIND"
