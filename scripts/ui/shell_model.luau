@@ -16,9 +16,10 @@ local function round(x: number) return math.floor(x + 0.5) end
 
 -- "1,234" with thousands separators.
 function Model.thousands(n: number)
-	local s = tostring(math.floor(n))
+	local sign = n < 0 and "-" or ""
+	local s = tostring(math.floor(math.abs(n)))
 	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-	return (out:gsub("^,", ""))
+	return sign .. (out:gsub("^,", ""))
 end
 
 -- Reputation level from lifetime revenue (spec §6.7) and progress to the next level.

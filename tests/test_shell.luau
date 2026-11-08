@@ -118,6 +118,7 @@ assert(convoy and convoy.to == "orbis" and convoy.t > 0.3 and convoy.t < 0.7, "c
 local top = Model.topBar(sim)
 assert(top.creditsText == "500 cr" and top.tierText == "T4" and top.reputationText == "Rep 0" and top.computeFraction >= 0)
 assert(Model.thousands(1234567) == "1,234,567" and Model.thousands(12) == "12" and Model.thousands(1000) == "1,000")
+assert(Model.thousands(-504) == "-504" and Model.thousands(-1440) == "-1,440" and Model.thousands(0) == "0", "negative numbers keep the sign in front")
 sim.lifetimeRevenue = 80000
 local rep = Model.reputation(sim)
 assert(rep.level == 2 and rep.next == 200000 and rep.fraction > 0 and rep.fraction < 0.1, "reputation level")
