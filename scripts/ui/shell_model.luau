@@ -4,6 +4,7 @@ local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
 local ComputeView = require("@scripts/ui/compute_view")
+local Clock = require("@scripts/sim/clock")
 
 local Model = {}
 
@@ -40,6 +41,7 @@ function Model.topBar(sim)
     buy = ComputeView.buyOptions(sim, 1)[1],
     reputation = rep, reputationText = ("Rep %d"):format(rep.level),
     tier = sim.tier, tierText = ("T%d"):format(sim.tier),
+    speed = Clock.controls(sim),
   }
 end
 
@@ -137,6 +139,7 @@ function Model.signature(sim, screenId: string, extra: string?)
   local top, parts = Model.topBar(sim), {}
   parts[#parts + 1] = screenId
   parts[#parts + 1] = extra or ""
+  for _, c in ipairs(top.speed) do parts[#parts + 1] = c.action .. (c.active and "+" or "-") end
   parts[#parts + 1] = ("%s|%s|%s|%s|%d|%s|%s|%s"):format(top.creditsText, top.computeText, top.reputationText, top.tierText,
     round(top.computeFraction * 100), top.computeLevel, tostring(top.budgetReached), tostring(top.buy.affordable))
   for _, p in ipairs(Model.map(sim).planets) do parts[#parts + 1] = p.id .. (p.lit and "+" or "-") end
