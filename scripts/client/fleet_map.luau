@@ -7,20 +7,27 @@
 -- by the game.MapSprites system, writes the record's pose and strip frame into the entity. Everything is a pure function of
 -- the sim, the clock and the previous pose, so it runs headless in tests. Positions are view pixels, like the planets.
 local Config = require("@scripts/config/ships")
+local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
 local Raiding = require("@scripts/sim/raiding")
+local Salvage = require("@scripts/sim/salvage")
 local Remap = require("@scripts/client/remap")
 local Ship = require("@scripts/client/ship")
+local MapLife = require("@scripts/client/map_life")
 local Shell = require("@scripts/ui/shell")
 
 local FleetMap = {}
 
 local FX = Config.map_fx
+local LIFE = FX.life
 local FRAME_PX = Config.frame_px
 
--- The state of the drawn fleet: smoothed poses, trip trackers, pending explosions and the spawned entities.
+-- The state of the drawn fleet: smoothed poses, trip trackers, pending explosions and the spawned entities. `reduced` is the
+-- reduced-motion switch (no smoothing, hover, trails or pulses), `selected` the focused ship's id, `frozen` the real time spent
+-- paused (the animation clock stops with the game). chips / aggregates are what the UI layer draws over the map.
 function FleetMap.new()
-	return { realSeen = false, track = {}, pose = {}, fought = {}, results = {}, disabled = {}, effects = {}, fxSeq = 0, dest = {}, entities = {}, poses = {}, nextSlot = 1, lastT = nil }
+	return { track = {}, pose = {}, fought = {}, results = {}, disabled = {}, effects = {}, fxSeq = 0, dest = {}, entities = {}, poses = {}, nextSlot = 1, lastT = nil,
+		reduced = false, selected = nil, frozen = 0, clock = 0, chips = {}, aggregates = {}, away = {}, reserved = {}, bounds = nil, stationList = {}, turrets = {} }
 end
 
 -- Planet and market centres, id -> { x, y } (the same points the shell draws labels and routes at).
@@ -51,12 +58,6 @@ local function phaseOf(id: string): number
 	local sum = 0
 	for i = 1, #id do sum = (sum * 31 + string.byte(id, i)) % 6283 end
 	return sum / 1000
-end
-
--- A parked ship circles `centre` at `radius`; its heading is the tangent of the circle.
-local function orbit(centre, radius: number, speed: number, phase: number, t: number)
-	local a = phase + speed * t
-	return { x = centre.x + math.cos(a) * radius, y = centre.y + math.sin(a) * radius, rot = heading(-math.sin(a), math.cos(a)) }
 end
 
 -- Forward and right unit vectors of a ship turned by `rot` (right is clockwise of forward on screen).
@@ -97,18 +98,32 @@ local function stop(points, sim, id: string?)
 	return id and points[id]
 end
 
--- Actors: one per ship, with the pose it should have right now ---------------------------------------------------------
+-- Actors: one per ship, with the pose it should have right now -------------------------------------------------------------
 
 local function dockRadius(extra: number?) return Screens.map.planetRadius + FX.dock.pad + (extra or 0) end
 
+local function hullPx(kind: string): number return LIFE.hull_art * (Config.ships[kind].map_scale or 0.6) end
+
 local function actorOf(key: string, kind: string, corp: string, pose, extra)
-	local a = { key = key, kind = kind, corp = corp, x = pose.x, y = pose.y, rot = pose.rot }
+	local a = { key = key, kind = kind, corp = corp, x = pose.x, y = pose.y, rot = pose.rot or 0, hull = hullPx(kind), focusId = (key:gsub("[^%w_]", "_")) }
 	for k, v in pairs(extra or {}) do a[k] = v end
 	return a
 end
 
+-- A ship that is parked or at work sits on a berth around `point`; the berths are handed out together (assignBerths).
+local function berthAt(sim, points, atId: string?)
+	if atId == nil or atId == sim.home then return { id = "dock:depot", point = points.depot, radius = FX.depot.ring } end
+	return { id = "dock:" .. atId, point = points[atId], radius = dockRadius() }
+end
+
+local function workBerth(points, planetId: string)
+	return { id = "work:" .. planetId, point = points[planetId], radius = dockRadius() }
+end
+
+local function routeAnchor(a, b) return { id = ("route:%d,%d>%d,%d"):format(a.x, a.y, b.x, b.y), x = (a.x + b.x) / 2, y = (a.y + b.y) / 2 } end
+
 local function minerActors(fleet, sim, points, t, out)
-	for i, id in ipairs(sim.shipOrder) do
+	for _, id in ipairs(sim.shipOrder) do
 		local ship = sim.ships[id]
 		local key = "ship:" .. id
 		local atId = ship.at or sim.home
@@ -116,39 +131,42 @@ local function minerActors(fleet, sim, points, t, out)
 		local dest = stop(points, sim, ship.dest)
 		local tier = math.clamp(ship.engineMark or 1, 1, #Config.ships.miner.tiers)
 		local st = ship.state
+		local agent = sim.agents[ship.owner]
 		if (st == "travel_out" or st == "travel_back" or st == "travel_scan") and at and dest and dest ~= at then
 			local p = progress(fleet, key, st .. ">" .. tostring(ship.dest), ship.timer or 0, at)
 			local pos, rot = leg(at, dest, p)
-			out[#out + 1] = actorOf(key, "miner", "player", { x = pos.x, y = pos.y, rot = rot }, { moving = true, tier = tier })
+			local label = st == "travel_scan" and "SCAN" or (st == "travel_back" and "RETURN" or "TRAVEL")
+			out[#out + 1] = actorOf(key, "miner", "player", { x = pos.x, y = pos.y, rot = rot },
+				{ moving = true, tier = tier, badge = MapLife.agentBadge(agent, "moving", label), anchor = routeAnchor(at, dest) })
 		elseif at and st == "mining" then
-			local planet = points[atId] or points[sim.home]
-			local pos = orbit(planet, Screens.map.planetRadius + FX.mining.pad, FX.mining.speed, phaseOf(id), t)
-			out[#out + 1] = actorOf(key, "miner", "player", pos, { moving = true, tier = tier })
+			out[#out + 1] = actorOf(key, "miner", "player", at, { working = true, tier = tier, berth = workBerth(points, points[atId] and atId or sim.home),
+				sparksTo = points[atId] or points[sim.home], badge = MapLife.agentBadge(agent, "working", "MINE") })
 		elseif at then
-			local pos
-			if atId == sim.home then pos = orbit(points.depot, FX.depot.ring, FX.dock.speed, i * FX.dock.step, t)
-			else pos = orbit(at, dockRadius(), FX.dock.speed, i * FX.dock.step, t) end
-			out[#out + 1] = actorOf(key, "miner", "player", pos, { parked = true, tier = tier })
+			local label = st == "waiting" and "WAIT" or "DOCK"
+			out[#out + 1] = actorOf(key, "miner", "player", at, { parked = true, tier = tier, berth = berthAt(sim, points, atId),
+				badge = MapLife.agentBadge(agent, st == "waiting" and "waiting" or "docked", label) })
 		end
 	end
 end
 
 local function freighterActors(fleet, sim, points, t, out)
-	for i, f in ipairs(sim.freighters) do
+	for _, f in ipairs(sim.freighters) do
 		local key = "freighter:" .. f.id
 		local home = stop(points, sim, f.station)
 		if home then
 			if f.state == "out" and f.load then fleet.dest[f.id] = f.load.destination end
 			local dest = stop(points, sim, fleet.dest[f.id])
+			local agent = f.owner and sim.agents[f.owner]
 			if (f.state == "out" or f.state == "back") and dest then
 				local a, b = home, dest
 				if f.state == "back" then a, b = dest, home end
 				local p = progress(fleet, key, f.state .. ">" .. tostring(fleet.dest[f.id]), f.timer or 0, a)
 				local pos, rot = leg(a, b, p)
-				out[#out + 1] = actorOf(key, "freighter", "player", { x = pos.x, y = pos.y, rot = rot }, { moving = true })
+				out[#out + 1] = actorOf(key, "freighter", "player", { x = pos.x, y = pos.y, rot = rot },
+					{ moving = true, badge = MapLife.agentBadge(agent, "moving", f.state == "back" and "RETURN" or "HAUL"), anchor = routeAnchor(a, b) })
 			else
-				local pos = orbit(home, home.depot and FX.depot.ring + 24 or dockRadius(18), FX.dock.speed * 0.6, math.pi + i * FX.dock.step, t)
-				out[#out + 1] = actorOf(key, "freighter", "player", pos, { parked = true })
+				out[#out + 1] = actorOf(key, "freighter", "player", home, { parked = true, berth = berthAt(sim, points, f.station),
+					badge = MapLife.agentBadge(agent, "docked", "DOCK") })
 			end
 		end
 	end
@@ -165,7 +183,8 @@ local function convoyActors(fleet, sim, points, t, out)
 			local pos, rot = leg(a, b, c.t)
 			local corp = corpOf(c.corp)
 			local convoy = actorOf("convoy:" .. c.id, "convoy", corp, { x = pos.x, y = pos.y, rot = rot },
-				{ moving = not c.fought, shield = c.fought, cid = c.id, escorts = {} })
+				{ moving = not c.fought, shield = c.fought, cid = c.id, escorts = {}, combat = c.fought, anchor = routeAnchor(a, b),
+					badge = c.fought and MapLife.badge("combat", "ATTACKED") or MapLife.badge("moving", "CONVOY") })
 			out[#out + 1] = convoy
 			byId[c.id] = convoy
 			local fx, fy, rx, ry = basis(rot)
@@ -174,7 +193,7 @@ local function convoyActors(fleet, sim, points, t, out)
 				local back = math.floor((e - 1) / 2) * FX.escort_gap * 0.8
 				local escort = actorOf(("escort:%s:%d"):format(c.id, e), "privateer", corp,
 					{ x = pos.x + rx * side * FX.escort_gap - fx * back, y = pos.y + ry * side * FX.escort_gap - fy * back, rot = rot },
-					{ moving = not c.fought, shield = c.fought, firing = c.fought, cid = c.id, level = e })
+					{ moving = not c.fought, shield = c.fought, firing = c.fought, cid = c.id, level = e, combat = c.fought, anchor = routeAnchor(a, b) })
 				out[#out + 1] = escort
 				convoy.escorts[#convoy.escorts + 1] = escort
 			end
@@ -192,6 +211,7 @@ local function interceptorActors(fleet, sim, points, t, convoys, out)
 		local key = "interceptor:" .. id
 		local st, target = it.state, it.target and convoys[it.target]
 		local sig = st .. ":" .. tostring(it.at) .. ":" .. tostring(it.target)
+		local agent = sim.agents[it.owner]
 		local pose, extra = nil, { tier = 1 }
 		if st == "chasing" and target then
 			local p = progress(fleet, key, sig, it.timer or 0, home)
@@ -199,25 +219,108 @@ local function interceptorActors(fleet, sim, points, t, convoys, out)
 			local pos = lerp(tr.from, target, p)
 			local ux, uy = unit(tr.from, target)
 			pose, extra.moving = { x = pos.x, y = pos.y, rot = heading(ux, uy) }, true
+			extra.badge, extra.anchor = MapLife.agentBadge(agent, "moving", "CHASE"), routeAnchor(tr.from, target)
 		elseif (st == "alongside" or st == "fighting") and target then
 			local fx, fy, rx, ry = basis(target.rot)
 			local side = (st == "fighting") and -1 or 1
 			local row = (i - 1) * FX.escort_gap * 0.7
 			pose = { x = target.x + rx * side * FX.alongside.gap - fx * row, y = target.y + ry * side * FX.alongside.gap - fy * row, rot = target.rot }
 			extra.moving, extra.firing, extra.shield, extra.cid = true, st == "fighting", st == "fighting", it.target
+			extra.combat, extra.anchor = st == "fighting", target.anchor
+			extra.badge = st == "fighting" and MapLife.agentBadge(agent, "combat", "FIGHT") or MapLife.agentBadge(agent, "moving", "TRACK")
 		elseif st == "returning" then
 			local p, tr = progress(fleet, key, sig, it.timer or 0, home)
 			local pos = lerp(tr.from, home, p)
 			local ux, uy = unit(tr.from, home)
 			pose, extra.moving = { x = pos.x, y = pos.y, rot = heading(ux, uy) }, true
+			extra.badge, extra.anchor = MapLife.agentBadge(agent, "moving", "RETURN"), routeAnchor(tr.from, home)
 		elseif it.at == "space" and fleet.pose[key] and st ~= "disabled" then
 			local cur = fleet.pose[key]
 			pose = { x = cur.x, y = cur.y, rot = cur.rot }
+			extra.badge = MapLife.agentBadge(agent, "waiting", "HOLD")
 		else
-			pose = orbit(home, FX.depot.ring + 14, FX.dock.speed, math.pi / 2 + i * FX.dock.step, t)
-			extra.parked, extra.noEngine = true, st == "disabled"
+			pose = home
+			extra.parked, extra.noEngine, extra.berth = true, st == "disabled", berthAt(sim, points, sim.home)
+			if st == "disabled" then extra.badge = MapLife.badge("warning", "DISABLED")
+			elseif st == "scanning" then extra.badge = MapLife.agentBadge(agent, "working", "SCAN")
+			elseif st == "repairing" then extra.badge = MapLife.agentBadge(agent, "working", "REPAIR")
+			else extra.badge = MapLife.agentBadge(agent, "docked", "DOCK") end
 		end
 		out[#out + 1] = actorOf(key, "privateer", "player", pose, extra)
+	end
+end
+
+-- The player's Scavengers (salvage branch): the Bomber hull between the depot and the site the sim says it works at. A job's
+-- trip is read from the sim's own timer (Salvage.mapShips), the way back from the same kind of tracker as the miners'. The
+-- abandoned planets (Tessar, Oldhaven) have no place on the map: a Scavenger working or returning from one is not drawn (no
+-- route is invented) and is listed in `away` instead, with its real state.
+local function scavengerActors(fleet, sim, points, t, out, away)
+	local depot = points.depot
+	if not depot then return end
+	for _, row in ipairs(Salvage.mapShips(sim)) do
+		local key = "scav:" .. row.id
+		local agent = sim.agents[row.owner]
+		local site = row.planet and points[row.planet]
+		local st = row.state
+		local job = st == "surveying" and "SURVEY" or "SALVAGE"
+		local place = World.abandoned[row.planet or row.at]
+		if row.planet and not site then
+			away[#away + 1] = { key = key, where = place and place.name or row.planet,
+				badge = MapLife.agentBadge(agent, row.phase == "travel" and "moving" or "working", job) }
+		elseif row.phase == "travel" then
+			local pos, rot = leg(depot, site, row.progress)
+			out[#out + 1] = actorOf(key, "scavenger", "player", { x = pos.x, y = pos.y, rot = rot },
+				{ moving = true, badge = MapLife.agentBadge(agent, "moving", job), anchor = routeAnchor(depot, site) })
+		elseif row.phase == "work" then
+			out[#out + 1] = actorOf(key, "scavenger", "player", site, { working = true, berth = workBerth(points, row.planet),
+				badge = MapLife.agentBadge(agent, "working", job) })
+		elseif st == "returning" and not points[row.at] and row.at ~= sim.home then
+			away[#away + 1] = { key = key, where = place and place.name or tostring(row.at), badge = MapLife.agentBadge(agent, "moving", "RETURN") }
+		elseif st == "returning" then
+			local from = stop(points, sim, row.at)
+			local p = progress(fleet, key, "returning>" .. tostring(row.at), row.timer, from)
+			local pos, rot = leg(from, depot, p)
+			out[#out + 1] = actorOf(key, "scavenger", "player", { x = pos.x, y = pos.y, rot = rot },
+				{ moving = true, badge = MapLife.agentBadge(agent, "moving", "RETURN"), anchor = routeAnchor(from, depot) })
+		else
+			local badge
+			if st == "disabled" then badge = MapLife.badge("warning", "DISABLED")
+			elseif st == "repairing" then badge = MapLife.agentBadge(agent, "working", "REPAIR")
+			elseif row.hull < row.hull_max then badge = MapLife.badge("warning", "HULL")
+			else badge = MapLife.agentBadge(agent, "docked", "DOCK") end
+			out[#out + 1] = actorOf(key, "scavenger", "player", depot, { parked = true, noEngine = st == "disabled", berth = berthAt(sim, points, sim.home), badge = badge })
+		end
+	end
+end
+
+-- Berths, hover and the hull budget ---------------------------------------------------------------------------------------
+
+-- Hands out the parking slots: ships that share an anchor take stable slots (sorted by key) that keep clear of the labels, the
+-- stations and the slots already given out.
+local function assignBerths(actors, reserved, bounds)
+	local groups, order = {}, {}
+	for _, a in ipairs(actors) do
+		if a.berth then
+			local g = groups[a.berth.id]
+			if not g then
+				g = { berth = a.berth, list = {}, hull = 0 }
+				groups[a.berth.id] = g
+				order[#order + 1] = g
+			end
+			g.list[#g.list + 1] = a
+			g.hull = math.max(g.hull, a.hull)
+		end
+	end
+	table.sort(order, function(x, y) return x.berth.id < y.berth.id end)
+	local taken = table.clone(reserved)
+	for _, g in ipairs(order) do
+		table.sort(g.list, function(x, y) return x.key < y.key end)
+		local slots = MapLife.berths(g.berth.point, g.berth.radius, #g.list, g.hull, taken, bounds)
+		for i, a in ipairs(g.list) do
+			local s = slots[i]
+			a.x, a.y, a.rot, a.anchor = s.x, s.y, s.rot, { id = g.berth.id, x = g.berth.point.x, y = g.berth.point.y }
+			taken[#taken + 1] = { x = s.x - a.hull / 2, y = s.y - a.hull / 2, w = a.hull, h = a.hull }
+		end
 	end
 end
 
@@ -228,12 +331,13 @@ local function sprite(key, sheet, fw, fh, frame, x, y, rot, scale, layer, corp, 
 end
 
 -- Engine trail: pixel squares streaming out behind a moving ship, shrinking as they age. A stateless function of the clock.
-local function trailSprites(a, def, t, out)
+-- Only the first `n` squares are drawn (the decorative-quad budget).
+local function trailSprites(a, def, t, n, out)
 	local T = FX.trail
 	local fx, fy, rx, ry = basis(a.rot)
 	local scale = def.map_scale or 0.6
 	local phase = phaseOf(a.key)
-	for j = 0, T.count - 1 do
+	for j = 0, math.min(T.count, n) - 1 do
 		local clock = t * T.rate + j / T.count
 		local age = clock % 1
 		local back = T.rear * scale + age * T.length
@@ -243,15 +347,35 @@ local function trailSprites(a, def, t, out)
 	end
 end
 
-local function actorSprites(a, t, out)
+-- Mining sparks: 2 px cyan quads that leave the hull towards the vein and live 0.3 s, one every 0.6 s per slot.
+local function sparkSprites(a, t, n, out)
+	local Q = LIFE.quads
+	local T = FX.trail
+	local dx, dy = a.sparksTo.x - a.x, a.sparksTo.y - a.y
+	local d = math.sqrt(dx * dx + dy * dy)
+	if d < 1e-6 then return end
+	local reach = math.max(d - Screens.map.planetRadius, 4)
+	for j = 0, math.min(Q.count, n) - 1 do
+		local age = (t + phaseOf(a.key) + j * Q.every / Q.count) % Q.every
+		if age < Q.life then
+			local u = age / Q.life
+			out[#out + 1] = sprite(("%s:spark:%d"):format(a.key, j), T.sheet, T.px, T.px, 0, a.x + dx / d * reach * u, a.y + dy / d * reach * u, 0,
+				Q.size / T.px, FX.layers.trail, "player", 0, T.steps)
+		end
+	end
+end
+
+local function actorSprites(a, t, reduced, out)
 	local def = Config.ships[a.kind]
 	local tier = def.tiers and def.tiers[a.tier or 1] or nil
 	local scale = def.map_scale or 0.6
 	local glow = tier and tier.tier_glow or 0
-	if a.moving and not a.noEngine then trailSprites(a, def, t, out) end
+	local flying = a.moving and not a.noEngine and not reduced
+	if flying and a.quadBudget > 0 then trailSprites(a, def, t, a.quadBudget, out) end
+	if a.working and not reduced and a.sparksTo and a.quadBudget > 0 then sparkSprites(a, t, a.quadBudget, out) end
 	if not a.noEngine then
-		local fps = a.parked and FX.idle_engine_fps or Config.engine_fps
-		out[#out + 1] = sprite(a.key .. ":engine", def.engine.sheet, FRAME_PX, FRAME_PX, math.floor(t * fps) % def.engine.frames, a.x, a.y, a.rot,
+		local frame = flying and math.floor(t * Config.engine_fps) % def.engine.frames or 0
+		out[#out + 1] = sprite(a.key .. ":engine", def.engine.sheet, FRAME_PX, FRAME_PX, frame, a.x, a.y, a.rot,
 			scale * (tier and tier.engine_scale or 1), Config.layers.engine, a.corp, glow)
 	end
 	if a.firing and def.weapons then
@@ -281,15 +405,16 @@ local function volley(out, key, proj, a, b, t, interval, flight, count, offset, 
 	end
 end
 
-local function fightSprites(sim, actors, convoys, t, out)
+-- The projectiles of the real fights (sim.raid.fights): only between ships that are drawn.
+local function fightSprites(sim, actors, convoys, shown, t, out)
 	local fights = sim.raid and sim.raid.fights
 	if not fights then return end
 	local interceptors = {}
-	for _, a in ipairs(actors) do if a.kind == "privateer" and a.key:sub(1, 12) == "interceptor:" and a.firing then interceptors[#interceptors + 1] = a end end
+	for _, a in ipairs(actors) do if a.kind == "privateer" and a.key:sub(1, 12) == "interceptor:" and a.firing and shown[a.key] then interceptors[#interceptors + 1] = a end end
 	local f = FX.fire
 	for cid, fight in pairs(fights) do
 		local convoy = convoys[cid]
-		if convoy then
+		if convoy and shown[convoy.key] then
 			out[#out + 1] = sprite("wave:" .. cid, Config.projectiles.wave.sheet, 64, 64, math.floor(t * FX.shield_fps) % Config.projectiles.wave.frames,
 				convoy.x, convoy.y, convoy.rot + math.pi, FX.wave_scale, FX.layers.wave, convoy.corp)
 			local pack = {}
@@ -302,7 +427,7 @@ local function fightSprites(sim, actors, convoys, t, out)
 			end
 			for _, escort in ipairs(convoy.escorts) do
 				local target = pack[(escort.level - 1) % math.max(#pack, 1) + 1]
-				if target then
+				if target and shown[escort.key] then
 					local proj = escort.level >= 2 and "ray" or "big_bullet"
 					volley(out, "shot:" .. escort.key, proj, escort, target, t, f.interval, proj == "ray" and FX.ray_flight or f.flight, 1, phaseOf(escort.key), convoy.corp)
 				end
@@ -337,58 +462,94 @@ local function effectSprites(fleet, t, out)
 	fleet.effects = keep
 end
 
--- True once the player's fleet does something the map shows: a trip, a vein being mined or a freighter.
-local function realActivity(sim): boolean
-	if #sim.freighters > 0 then return true end
-	for _, ship in pairs(sim.ships) do
-		local st = ship.state
-		if st == "travel_out" or st == "travel_back" or st == "travel_scan" or st == "mining" then return true end
+-- Badges ------------------------------------------------------------------------------------------------------------------
+
+-- One chip per drawn ship, in priority order (the selected ship and the alerts claim their spot first). A chip is labelled for
+-- the selected ship, an alert, or when few hulls are drawn; it sits above / right / below / left of the hull, clear of the
+-- labels, the stations, the other hulls and the chips already placed. With no room it shrinks to its shape, then to a numbered
+-- marker on the hull (the shell lists the numbers); the selected ship and alerts may cover hulls to keep their label. The hidden hulls are one `+N` chip each at their anchor.
+local function buildChips(fleet, ranked, aggregates, bounds)
+	local B = LIFE.badge
+	local reserved = fleet.reserved or {}
+	local boxes = {}
+	for i, a in ipairs(ranked) do boxes[i] = { x = a.x - a.hull / 2, y = a.y - a.hull / 2, w = a.hull, h = a.hull } end
+	local placed, chips, numbered = {}, {}, 0
+	local roomy = #ranked <= B.labelled_max
+	local function blockers(skip)
+		local list = table.clone(reserved)
+		for i, box in ipairs(boxes) do if i ~= skip then list[#list + 1] = box end end
+		for _, r in ipairs(placed) do list[#list + 1] = r end
+		return list
 	end
-	return false
+	for i, a in ipairs(ranked) do
+		if a.badge then
+			local own = boxes[i]
+			local list = blockers(i)
+			local selected = a.focusId == fleet.selected
+			local full = selected or a.badge.alert or roomy
+			local rect = MapLife.place(full and B.label_w or B.size, full and B.label_h or B.size, own, list, bounds)
+			if not rect and (selected or a.badge.alert) then
+				-- A selected or alerting ship is never reduced to a number: its label may cover other hulls but no label.
+				local clear = table.clone(reserved)
+				for _, r in ipairs(placed) do clear[#clear + 1] = r end
+				rect = MapLife.place(B.label_w, B.label_h, own, clear, bounds)
+			end
+			if not rect and full then
+				full = false
+				rect = MapLife.place(B.size, B.size, own, list, bounds)
+			end
+			local chip = { key = a.key, focusId = a.focusId, badge = a.badge, selected = selected, full = full, clickable = a.corp == "player", hull = own }
+			if rect then
+				chip.x, chip.y, chip.w, chip.h = rect.x, rect.y, rect.w, rect.h
+				placed[#placed + 1] = rect
+			else
+				numbered += 1
+				chip.number, chip.full = numbered, false
+				chip.w, chip.h = B.marker, B.marker
+				chip.x = math.clamp(own.x + own.w - B.marker / 2, bounds.x, bounds.x + bounds.w - B.marker)
+				chip.y = math.clamp(own.y - B.marker / 2, bounds.y, bounds.y + bounds.h - B.marker)
+			end
+			chips[#chips + 1] = chip
+		end
+	end
+	local more = {}
+	for _, g in ipairs(aggregates) do
+		local anchor = { x = g.x - 5, y = g.y - 5, w = 10, h = 10 }
+		local rect = MapLife.place(30, B.label_h, anchor, blockers(0), bounds) or { x = g.x - 15, y = g.y - B.label_h / 2, w = 30, h = B.label_h }
+		placed[#placed + 1] = rect
+		more[#more + 1] = { id = g.id, count = g.count, x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+	end
+	return chips, more
 end
 
--- The start-up loop (config demo): one miner circling the home planet and one hauler shuttling from the vein planet to the
--- depot and back, until the first real activity. Cosmetic: not in the sim, gone for good once realActivity() is true.
-local function demoActors(points, sim, t, out)
-	local D = FX.demo
-	local planet, from, depot = points[sim.home], points[D.from], points.depot
-	if not (planet and from and depot) then return end
-	local ring = Screens.map.planetRadius + FX.mining.pad
-	out[#out + 1] = actorOf("demo:miner", "miner", "player", orbit(planet, ring, FX.mining.speed, 1.0, t), { moving = true, tier = 1 })
-	local cycle = 2 * (D.travel + D.dwell)
-	local u = t % cycle
-	local pose
-	if u < D.travel then
-		local pos, rot = leg(from, depot, u / D.travel)
-		pose = { x = pos.x, y = pos.y, rot = rot }
-	elseif u < D.travel + D.dwell then
-		pose = orbit(depot, FX.depot.ring, FX.dock.speed * 2, 0, t)
-	elseif u < 2 * D.travel + D.dwell then
-		local pos, rot = leg(depot, from, (u - D.travel - D.dwell) / D.travel)
-		pose = { x = pos.x, y = pos.y, rot = rot }
-	else
-		pose = orbit(from, ring, FX.mining.speed, 0, t)
-	end
-	out[#out + 1] = actorOf("demo:hauler", "miner", "player", pose, { moving = true, tier = 1 })
-end
+-- Update -------------------------------------------------------------------------------------------------------------------
 
--- Smooths the actors' poses, notices who left the map (an exploded convoy, a disabled interceptor) and builds the sprites.
+-- Smooths the actors' poses, notices who left the map (an exploded convoy, a disabled interceptor), spends the hull and quad
+-- budgets and builds the sprites and the badge chips. The animation clock stops while the sim is paused.
 function FleetMap.update(fleet, sim, t: number)
-	local dt = math.clamp(fleet.lastT and (t - fleet.lastT) or 0, 0, 0.25)
+	local raw = math.max(fleet.lastT and (t - fleet.lastT) or 0, 0)
+	local dt = math.min(raw, 0.25)
 	fleet.lastT = t
+	if sim.paused then fleet.frozen += raw end
+	local anim = t - fleet.frozen
+	fleet.clock = anim
+	local reduced = fleet.reduced
+	local bounds = fleet.bounds or Shell.layout().main
+
 	local points = FleetMap.points()
 	local home = points[sim.home] or points.kessa
 	points.depot = { x = home.x + FX.depot.dx, y = home.y + FX.depot.dy, depot = true }
-	local actors, convoys = {}, nil
-	if not fleet.realSeen then
-		if realActivity(sim) then fleet.realSeen = true else demoActors(points, sim, t, actors) end
-	end
-	minerActors(fleet, sim, points, t, actors)
-	freighterActors(fleet, sim, points, t, actors)
-	convoys = convoyActors(fleet, sim, points, t, actors)
-	interceptorActors(fleet, sim, points, t, convoys, actors)
+	local actors = {}
+	minerActors(fleet, sim, points, anim, actors)
+	freighterActors(fleet, sim, points, anim, actors)
+	local convoys = convoyActors(fleet, sim, points, anim, actors)
+	interceptorActors(fleet, sim, points, anim, convoys, actors)
+	local away = {}
+	scavengerActors(fleet, sim, points, anim, actors, away)
+	fleet.away = away
+	assignBerths(actors, fleet.reserved or {}, bounds)
 
-	local k = 1 - math.exp(-FX.smoothing * dt)
+	local k = reduced and 1 or 1 - math.exp(-FX.smoothing * dt)
 	local seen = {}
 	for _, a in ipairs(actors) do
 		seen[a.key] = true
@@ -407,7 +568,7 @@ function FleetMap.update(fleet, sim, t: number)
 	for key, p in pairs(fleet.pose) do
 		if not seen[key] then
 			if p.cid and fleet.fought[p.cid] and fleet.results[p.cid] ~= false and key:sub(1, 12) ~= "interceptor:" then
-				explode(fleet, p, t)
+				explode(fleet, p, anim)
 				settled[p.cid] = true
 			end
 			fleet.pose[key], fleet.track[key] = nil, nil
@@ -418,16 +579,52 @@ function FleetMap.update(fleet, sim, t: number)
 		if it.state == "disabled" and not fleet.disabled[id] then
 			fleet.disabled[id] = true
 			local p = fleet.pose["interceptor:" .. id]
-			if p then explode(fleet, p, t) end
+			if p then explode(fleet, p, anim) end
 		elseif it.state ~= "disabled" then
 			fleet.disabled[id] = nil
 		end
 	end
 
+	-- Budgets: the hulls first (poses of the hidden ones are still tracked above), then the decorative quads in priority order.
+	local budget = MapLife.budget(actors, fleet.selected, points.depot, LIFE.caps.hulls)
+	local quadsLeft = LIFE.caps.quads
+	for _, a in ipairs(budget.ranked) do
+		local want = 0
+		if not reduced and a.moving and not a.noEngine then want = FX.trail.count
+		elseif not reduced and a.working and a.sparksTo then want = LIFE.quads.count end
+		a.quadBudget, quadsLeft = MapLife.quads(quadsLeft, want)
+	end
+	fleet.chips, fleet.aggregates = buildChips(fleet, budget.ranked, budget.aggregates, bounds)
+	fleet.hiddenCount = 0
+	for _ in pairs(budget.hidden) do fleet.hiddenCount += 1 end
+
+	-- Station turrets engage only a real fight (sim.raid.fights) within range of their station.
+	local fights = {}
+	for cid in pairs(sim.raid and sim.raid.fights or {}) do
+		local convoy = convoys[cid]
+		if convoy then fights[#fights + 1] = { x = convoy.x, y = convoy.y } end
+	end
+	local turrets = {}
+	for i, tg in pairs(MapLife.turretTargets(fleet.stationList, fights, LIFE.turret.range)) do
+		local prev = fleet.turrets[i]
+		turrets[i] = { x = tg.x, y = tg.y, since = prev and prev.since or anim }
+	end
+	fleet.turrets = turrets
+
+	-- Idle and working hulls hover (2 px); a ship in transit does not.
+	if not reduced then
+		local H = LIFE.hover
+		for _, a in ipairs(budget.ranked) do
+			if a.parked or a.working then a.y += H.amp * math.sin(2 * math.pi * anim / H.period + phaseOf(a.key)) end
+		end
+	end
+
 	local sprites = {}
-	for _, a in ipairs(actors) do actorSprites(a, t, sprites) end
-	fightSprites(sim, actors, convoys, t, sprites)
-	effectSprites(fleet, t, sprites)
+	for _, a in ipairs(budget.ranked) do actorSprites(a, anim, reduced, sprites) end
+	local drawnConvoys = {}
+	for cid, c in pairs(convoys) do if budget.shown[c.key] then drawnConvoys[cid] = c end end
+	fightSprites(sim, budget.ranked, drawnConvoys, budget.shown, anim, sprites)
+	effectSprites(fleet, anim, sprites)
 	return sprites
 end
 
@@ -462,7 +659,7 @@ end
 function FleetMap.sync(fleet, sim, t: number, commands, visible: boolean)
 	local sprites = {}
 	if visible and sim then sprites = FleetMap.update(fleet, sim, t)
-	else fleet.pose, fleet.track, fleet.effects, fleet.lastT = {}, {}, {}, nil end
+	else fleet.pose, fleet.track, fleet.effects, fleet.lastT, fleet.chips, fleet.aggregates = {}, {}, {}, nil, {}, {} end
 	local want = {}
 	fleet.poses = {}
 	for _, s in ipairs(sprites) do

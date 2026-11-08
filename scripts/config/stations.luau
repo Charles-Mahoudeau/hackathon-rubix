@@ -38,11 +38,9 @@ return {
 	},
 
 	-- Animated turrets (the [PLAYER] sets of the pack, 64x64 frames). A strip is { dir, prefix, from, to, digits } (numbered
-	-- files) or { dir, file } (one file). A turret loops `idle` for `idleHold` seconds, opens, fires `fireLoops` times, repeats.
+	-- files) or { dir, file } (one file). A turret is parked on its first `idle` frame; engaged (a real fight in range) it plays `open` once, then loops `fire`.
 	turrets = {
 		fps = 12,
-		idleHold = 4,
-		fireLoops = 2,
 		kinds = {
 			XN22 = {
 				idle = { dir = "Turret_XN22[PLAYER]/AnimIdle/", prefix = "XN22Idle", from = 30, to = 38, digits = 5 },

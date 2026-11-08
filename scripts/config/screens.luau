@@ -62,6 +62,9 @@ return {
     routeThickness = 2,
     riskValue = { low = 0.2, medium = 0.6 }, -- the cosmetic risk fed to render/vfx/route for a route's colour
     animSeconds = 0.15, -- the map redraws this often (planet pulse, moving dashes); other screens use refreshSeconds
+    badgeShapeOnly = 16, -- a badge box this wide or less shows the shape alone, wider ones add the label
+    badgeAwayW = 72, -- the station and off-map badge boxes (shape + label)
+    motionButtonW = 150,
     routeSpacing = 14, -- view pixels between two dashes of a route line
   },
 

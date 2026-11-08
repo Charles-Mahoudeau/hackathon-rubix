@@ -58,6 +58,14 @@ return {
 			map_icon = { shape = "wide_rect", size_px = 7 },
 			map_scale = 1.5,
 		},
+		-- The player's Scavenger (salvage branch, GR5-104): the Bomber hull, in the player's neon. It has no shield or weapons use.
+		scavenger = {
+			hull = { source = "Bomber", sheet = K .. "Base/PNGs/Kla'ed - Bomber - Base.png" },
+			engine = { sheet = K .. "Engine/PNGs/Kla'ed - Bomber - Engine.png", frames = 10 },
+			destruction = { sheet = K .. "Destruction/PNGs/Kla'ed - Bomber - Destruction.png", frames = 8 },
+			map_icon = { shape = "wide_rect", size_px = 7 },
+			map_scale = 1.5,
+		},
 		-- The player's interceptors (privateer) and the escorts of a convoy: Fighter hull. `weapons` embeds the hull (see
 		-- the miner note), so it replaces the hull sprite while the ship fires.
 		privateer = {
@@ -104,9 +112,18 @@ return {
 		depot = { dx = 74, dy = -46, ring = 34 },
 		-- Engine trail: pixel squares (assets/textures/white.png, 4 px) behind a moving ship, drawn in the corporation's neon.
 		trail = { sheet = "textures/white.png", px = 4, count = 7, length = 46, rate = 1.8, size = 0.8, spread = 5, rear = 17, steps = { 0.15, 0.3, 2.0 } },
-		-- A cosmetic loop until the first real trip is seen (client only, never touches the sim): a miner circling Kessa and a
-		-- hauler shuttling between `from` and the depot, so the map is not empty at game start.
-		demo = { from = "ashfall", travel = 7.0, dwell = 2.5 },
+		-- GR5-104: the choreography of GR5-103. Pixels are view pixels, times are seconds.
+		life = {
+			hull_art = 28, -- px of art inside a 64 px frame; times map_scale it is the hull's box for spacing
+			hover = { amp = 2, period = 3 }, -- idle / working hover (real time, off in reduced motion)
+			quads = { count = 2, size = 2, life = 0.3, every = 0.6 }, -- mining sparks at the vein
+			caps = { hulls = 16, stations = 16, quads = 48 },
+			clear = { hull = 12, station = 8, label = 6 }, -- gaps between hulls, to station boxes, around labels
+			berth = { start = -0.6 }, -- angle (rad) of the first berth on a ring
+			badge = { size = 10, label_w = 72, label_h = 16, labelled_max = 6, marker = 14 }, -- labels show for the selected, alerts and when few
+			turret = { range = 260 }, -- a station turret only reacts to a real fight this close
+			reveal = { total = 2.0, reduced = 0.5, ring = { 0.3, 1.1 }, ringReach = 20, label = { 0.6, 1.4 } },
+		},
 	},
 
 	-- Stretch (B-0+): candidates noted only, no remap work until a branch is greenlit (raiding ships are drawn, GR5-51).

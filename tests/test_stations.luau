@@ -85,18 +85,21 @@ assert(#Stations.parts("hmc_depot", { hub = true }).modules == #Stations.parts("
 local bb0, bb1 = Stations.bounds("hmc_depot", nil, 1), Stations.bounds("hmc_depot", depot, 1)
 assert(bb1.top < bb0.top and bb1.bottom > bb0.bottom and bb1.left < bb0.left, "the full depot is bigger than the base one")
 
--- turrets: a cycle of idle, open, fire frames that loops; each kind's frames are distinct; the phase offsets the cycle
+-- turrets: parked on a still idle frame; engaged they open once, then loop the fire frames; reduced motion is one still fire frame
 local tcfg = config.turrets
 for _, kind in ipairs(Stations.turretKinds) do
-  local seq = Stations.turretSequence(kind)
-  assert(#seq > tcfg.idleHold * tcfg.fps, kind .. ": idle, open and fire")
-  assert(Stations.turretPath(kind, 0) == seq[1] and Stations.turretPath(kind, #seq / tcfg.fps) == seq[1], kind .. ": loops")
-  local distinct = {}
-  for _, f in ipairs(seq) do distinct[f] = true end
+  local parked = Stations.turretParked(kind)
+  assert(parked == Stations.turretParked(kind), kind .. ": parked is still")
+  local opening = Stations.turretEngaged(kind, 0)
+  assert(opening ~= parked, kind .. ": opening differs from parked")
+  local seen = {}
+  for i = 0, 120 do seen[Stations.turretEngaged(kind, i / tcfg.fps)] = true end
   local n = 0
-  for _ in pairs(distinct) do n += 1 end
-  assert(n > 8, kind .. ": animated, not one frame")
-  assert(Stations.turretPath(kind, 0) ~= Stations.turretPath(kind, (#seq - 1) / tcfg.fps), kind .. ": the last frame differs from the first")
+  for _ in pairs(seen) do n += 1 end
+  assert(n > 8, kind .. ": animated while engaged")
+  local first, last = Stations.turretEngaged(kind, 20), Stations.turretEngaged(kind, 20 + 1000)
+  assert(first and last, kind .. ": the fire loop never ends")
+  assert(Stations.turretEngaged(kind, 0, true) == Stations.turretEngaged(kind, 9, true), kind .. ": reduced motion is one still frame")
 end
 local anim = {}
 for _, e in ipairs(Stations.entities("hmc_depot", "active", { x = 0, y = 0 }, 1, nil, depot)) do

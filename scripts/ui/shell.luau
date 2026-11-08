@@ -224,6 +224,116 @@ local function focusArea(center, size: number, id: string, colorName: string)
     button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
 end
 
+-- GR5-104: the badges of the ships and stations on the map. A badge is a tone (palette role), a shape and a short label, so the
+-- state reads without colour: circle moving, square working, ring waiting / docked, bar warning / combat, cross AI failure.
+local function glyph(center, shape: string, size: number, colorName: string)
+  local x, y = center.x - size / 2, center.y - size / 2
+  local abs = { position = "absolute", ignorePointer = true }
+  if shape == "circle" then return { dot(center, size, colorName) } end
+  if shape == "ring" then
+    return { { style = { abs, { left = x, top = y, width = size, height = size } },
+      background = { color = UiTheme.color(colorName, 0), radius = size / 2, borderColor = UiTheme.color(colorName), borderWidth = 1.5 } } }
+  end
+  if shape == "bar" then
+    return { { style = { abs, { left = x, top = center.y - size * 0.2, width = size, height = size * 0.4 } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+  end
+  if shape == "cross" then
+    return {
+      { style = { abs, { left = x, top = center.y - 1.5, width = size, height = 3 } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+      { style = { abs, { left = center.x - 1.5, top = y, width = 3, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+    }
+  end
+  return { { style = { abs, { left = x, top = y, width = size, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+end
+
+local function hitArea(r, id: string, colorName: string)
+  return { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h },
+    background = { color = UiTheme.color(colorName, 0), radius = 3 },
+    button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
+end
+
+-- One badge at rectangle `r` (x, y, w, h): the shape alone when the box is small, shape and label when it is wide.
+local function badgeChip(font, r, badge, id: string?)
+  local out = {}
+  local small = r.w <= Screens.map.badgeShapeOnly
+  out[#out + 1] = { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = small and r.w / 2 or 3, borderColor = UiTheme.color(badge.tone, 0.8), borderWidth = 1 } }
+  if small then
+    for _, n in ipairs(glyph({ x = r.x + r.w / 2, y = r.y + r.h / 2 }, badge.shape, r.w - 4, badge.tone)) do out[#out + 1] = n end
+  else
+    for _, n in ipairs(glyph({ x = r.x + 8, y = r.y + r.h / 2 }, badge.shape, 8, badge.tone)) do out[#out + 1] = n end
+    out[#out + 1] = { style = { position = "absolute", left = r.x + 16, top = r.y, width = r.w - 18, height = r.h, justifyContent = "center", ignorePointer = true },
+      children = { text(font, badge.label, T.small, badge.tone) } }
+  end
+  if id then out[#out + 1] = hitArea(r, id, badge.tone) end
+  return out
+end
+
+local function plainChip(font, r, str: string, colorName: string)
+  return { { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, justifyContent = "center", alignItems = "center", ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = 3, borderColor = UiTheme.color(colorName, 0.8), borderWidth = 1 },
+    children = { text(font, str, T.small, colorName) } } }
+end
+
+-- The choreography layer of the map (opts.mapLife, from client/fleet_map): ship badges and their selection halo, the `+N` of
+-- hidden hulls, the legend of numbered markers, ships working off the map, the reachability reveal and the motion switch.
+local function mapLifeNodes(font, r, life, points, planetNames, t)
+  local nodes = {}
+  local function add(list) for _, n in ipairs(list) do nodes[#nodes + 1] = n end end
+  local legend = {}
+  for _, chip in ipairs(life.chips) do
+    local hull = chip.hull
+    if chip.selected then
+      for _, n in ipairs(Glow.halo({ x = hull.x + hull.w / 2, y = hull.y + hull.h / 2 }, hull.w / 2 + 4, "selected", t, false)) do nodes[#nodes + 1] = n end
+    end
+    if chip.clickable then nodes[#nodes + 1] = hitArea(hull, chip.focusId, chip.badge.tone) end
+    if chip.number then
+      add(plainChip(font, chip, tostring(chip.number), chip.badge.tone))
+      legend[#legend + 1] = { str = ("%d  %s  %s"):format(chip.number, chip.badge.label, (chip.key:match(":(.+)$") or chip.key)), tone = chip.badge.tone }
+    else
+      add(badgeChip(font, chip, chip.badge, chip.clickable and chip.focusId or nil))
+    end
+  end
+  for _, g in ipairs(life.aggregates) do add(plainChip(font, g, "+" .. g.count, "dim")) end
+  if life.hidden > 0 then legend[#legend + 1] = { str = ("+%d more ships not drawn (map is crowded)"):format(life.hidden), tone = "dim" } end
+  if #legend > 0 then
+    local y = r.y + r.h - L.gap - #legend * 14
+    for i, line in ipairs(legend) do
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = y + (i - 1) * 14, ignorePointer = true }, children = { text(font, line.str, T.small, line.tone) } }
+    end
+  end
+  if #life.away > 0 then
+    nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = r.y + L.gap, ignorePointer = true }, children = { text(font, "OFF MAP", T.small, "dim") } }
+    for i, a in ipairs(life.away) do
+      add(badgeChip(font, { x = r.x + L.gap, y = r.y + L.gap + 6 + i * 20, w = Screens.map.badgeAwayW, h = 16 }, a.badge))
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap + Screens.map.badgeAwayW + 6, top = r.y + L.gap + 8 + i * 20, ignorePointer = true },
+        children = { text(font, a.where, T.small, "dim") } }
+    end
+  end
+  local cue = life.reveal
+  if cue and points[cue.id] then
+    local c, R = points[cue.id], Screens.map.planetRadius
+    local look = Planets.planets[cue.id]
+    local neon = look and look.rim and look.rim[1] or "cyan"
+    if cue.outline or cue.ring then
+      local radius = R + (cue.ring or 4)
+      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - radius, top = c.y - radius, width = radius * 2, height = radius * 2, ignorePointer = true },
+        background = { color = UiTheme.color(neon, 0), radius = radius, borderColor = UiTheme.color(neon, cue.outline and 1 or (cue.ringAlpha or 1)), borderWidth = 2 } }
+    end
+    if cue.label > 0 then
+      local w = #(planetNames[cue.id] or cue.id) * 8 + 74
+      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - w / 2, top = c.y - R - 30, width = w, height = 18, justifyContent = "center", alignItems = "center", ignorePointer = true },
+        background = { color = UiTheme.color("bg", 0.85 * cue.label), radius = 3, borderColor = UiTheme.color(neon, cue.label), borderWidth = 1 },
+        children = { { text = { text = (planetNames[cue.id] or cue.id) .. " reachable", font = font, size = T.small, color = UiTheme.color(neon, cue.label) } } } }
+    end
+  end
+  local mw = Screens.map.motionButtonW
+  nodes[#nodes + 1] = buttonNode({ position = "absolute", left = r.x + r.w - mw - L.gap, top = r.y + r.h - 24 - L.gap, width = mw, height = 22,
+    justifyContent = "center", alignItems = "center" }, "map.motion", life.reduced and "amber" or "dim",
+    { text(font, life.reduced and "MOTION: REDUCED" or "MOTION: FULL", T.small, life.reduced and "amber" or "dim") }, life.reduced)
+  return nodes
+end
+
 -- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
 local function mapOverlay(font, r, map, opts)
   local cfg = Screens.map
@@ -295,6 +405,20 @@ local function mapOverlay(font, r, map, opts)
     title.text.align = "center"
     nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
       children = { title } }
+    -- Its state badge and the roles it hosts (LOG / MON / REF): roles live on stations, never on ships (GR5-103).
+    if st.status then
+      local chipRect = { x = st.at.x - Screens.map.badgeAwayW / 2, y = st.at.y + T.small + 6, w = Screens.map.badgeAwayW, h = 16 }
+      for _, n in ipairs(badgeChip(font, chipRect, st.status, nil)) do nodes[#nodes + 1] = n end
+      for i, tag in ipairs(st.tags or {}) do
+        nodes[#nodes + 1] = { style = { position = "absolute", left = chipRect.x + chipRect.w + 4 + (i - 1) * 34, top = chipRect.y, ignorePointer = true },
+          children = { text(font, tag, T.small, "cyan") } }
+      end
+    end
+  end
+  if opts.mapLife then
+    local names = {}
+    for _, p in ipairs(map.planets) do names[p.id] = p.name end
+    for _, n in ipairs(mapLifeNodes(font, r, opts.mapLife, points, names, t)) do nodes[#nodes + 1] = n end
   end
   return nodes
 end
@@ -1179,6 +1303,10 @@ function Shell.new() return { screen = Screens.defaultScreen, glitch = Glitch.ne
 -- Map hover / select: "map.focus.<id>" focuses a planet or market (its routes glow); the same click again clears it.
 function Shell.act(state, action): boolean
   if type(action) ~= "string" then return false end
+  if action == "map.motion" then
+    state.reduced = not state.reduced
+    return true
+  end
   local id = action:match("^map%.focus%.([%w_]+)$")
   if not id then return false end
   state.focus = (state.focus ~= id) and id or nil
