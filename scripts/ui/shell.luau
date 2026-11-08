@@ -71,6 +71,7 @@ local function panel(r, extra, plain)
   local node = { style = { rect(r), { overflow = "hidden" }, extra }, children = {} }
   if skin and not plain then
     node.image = { texture = skin.texture, slice = skin.slice, color = skin.color }
+    node.background = { color = UiTheme.color("panel", Theme.alpha.chromeFill), radius = L.radius }
   else
     node.background = { color = UiTheme.panel(), radius = L.radius, borderColor = UiTheme.line(), borderWidth = 1 }
   end
