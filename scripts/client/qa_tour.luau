@@ -48,6 +48,8 @@ end
 Tour.steps = {
 	{ name = "map", actions = { "nav.map" } },
 	{ name = "agents-editor", actions = { "nav.agents", "editor.tab.editor" } },
+	{ name = "agents-examples", actions = { "editor.examples.toggle", "editor.example.pick.miner_good" } },
+	{ name = "agents-examples-used", actions = { "editor.example.use.miner_good" } },
 	{ name = "agents-context", actions = { "editor.tab.context" } },
 	{ name = "agents-context-format-json", actions = { "context.format.2" } },
 	{ name = "team", actions = { "nav.team" } },
@@ -82,7 +84,52 @@ Tour.steps = {
 	{ name = "map-feed", actions = { "nav.map" }, hold = 4 },
 }
 
-function Tour.new() return { index = 0, nextAt = 0, done = false } end
+-- GR5-104 controlled setup (config/debug.luau `qaTour = "map"`): the same T5 company, then only map steps. Every state shown is
+-- real sim state; the steps only get the sim there: a full depot (real station_full), a raid on a convoy by the real Privateer
+-- tools, a reachability change by crossing a real unlock, pause and reduced motion through the real buttons.
+local function rivalConvoy(sim)
+	local World = require("@scripts/config/world")
+	sim.raid.convoySeq += 1
+	sim.raid.convoys[#sim.raid.convoys + 1] = { id = "C1", corp = "korvax", resource = "iridium", qty = 200, escort = 2, dest = "meridian",
+		from = sim.home, total = sim:ticks(World.freighterRoutes[sim.home]["meridian"]), elapsed = 0, state = "travel" }
+end
+
+Tour.mapSteps = {
+	{ name = "map-ambient", actions = { "nav.map" }, hold = 8 },
+	{ name = "map-ambient-later", actions = {}, hold = 8 },
+	{ name = "map-select-ship", actions = { "map.focus.ship_s1" }, hold = 4 },
+	{ name = "map-station-alert", run = function(sim)
+		local st = sim.stations[sim.home]
+		local cap = require("@scripts/sim/logistics").storageCap(sim, st)
+		st.stock.titanium = (st.stock.titanium or 0) + math.ceil(cap * 0.97)
+	end, actions = { "map.focus.ship_s1" }, hold = 6 },
+	{ name = "map-pause", actions = { "speed.pause" }, hold = 4 },
+	{ name = "map-pause-later", actions = {}, hold = 3 },
+	{ name = "map-reduced-motion", actions = { "map.motion", "speed.1" }, hold = 5 },
+	{ name = "map-full-motion", actions = { "map.motion" }, hold = 2 },
+	{ name = "map-raid-setup", run = function(sim)
+		local Cfg = require("@scripts/config/branches").raiding
+		pcall(function() sim.lifetimeRevenue = math.max(sim.lifetimeRevenue, 30000); sim:openBranch("raiding") end)
+		rivalConvoy(sim)
+		local function ok(name, args) sim:validate("privateer", { name = name, args = args or {} }); sim:apply("privateer", { name = name, args = args or {} }) end
+		pcall(ok, "scan_route", { route = "meridian" })
+		sim:run(sim:ticks(Cfg.interceptor.scanSeconds + 1))
+		pcall(ok, "intercept", { convoy = "C1" })
+		-- Only the chase is skipped; the attack is the Privateer's own decision and plays in real time.
+		for _ = 1, 120 do
+			local i1 = sim.interceptors and sim.interceptors.i1
+			if not i1 or i1.state == "alongside" then break end
+			sim:run(sim:ticks(1))
+		end
+	end, actions = { "nav.map" }, hold = 3 },
+	{ name = "map-raid-fight", actions = {}, hold = 2 },
+	{ name = "map-raid-fight-2", actions = {}, hold = 2 },
+	{ name = "map-raid-fight-3", actions = {}, hold = 2 },
+	{ name = "map-raid-fight-4", actions = {}, hold = 2 },
+	{ name = "map-raid-after", actions = {}, hold = 6 },
+}
+
+function Tour.new(kind) return { index = 0, nextAt = 0, done = false, steps = kind == "map" and Tour.mapSteps or Tour.steps } end
 
 local function firstRecordId(sim)
 	local list = sim.records.miner or {}
@@ -100,7 +147,7 @@ function Tour.update(tour, api)
 		tour.index, tour.nextAt = 1, api.now + 3
 		return true
 	end
-	local step = Tour.steps[tour.index]
+	local step = (tour.steps or Tour.steps)[tour.index]
 	if not step then
 		tour.done = true
 		return false

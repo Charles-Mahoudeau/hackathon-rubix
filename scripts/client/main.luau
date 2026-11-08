@@ -29,20 +29,27 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
-require("@scripts/client/station_fx")
+local StationFx = require("@scripts/client/station_fx")
+local MapLife = require("@scripts/client/map_life")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
 local Cues = require("@scripts/render/vfx/cues")
+local Reveal = require("@scripts/render/vfx/reveal")
+local Vfx = require("@scripts/config/vfx")
+local World = require("@scripts/config/world")
 local DebugConfig = require("@scripts/config/debug")
 local QaTour = require("@scripts/client/qa_tour")
+local MapTour = require("@scripts/client/map_tour")
+local TourMod = DebugConfig.mapTour and MapTour or QaTour
 
 -- One entity per sprite of a ship on the map (client/fleet_map.luau); `slot` finds its pose, which game.MapSprites writes.
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
 
 local state = {
-	fleet = FleetMap.new(), sim = nil, tour = DebugConfig.qaTour and QaTour.new() or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, tour = (DebugConfig.qaTour or DebugConfig.mapTour) and TourMod.new(DebugConfig.qaTour) or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
+	examples = { open = false }, -- directive examples dropdown: open, selected id, pending replace confirmation (GR5-106)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
@@ -50,11 +57,13 @@ local state = {
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), music = {}, lowComputeCheck = 0, -- sound cues and the ambient loop (GR5-23, GR5-99)
 	cueUi = nil, cueSim = nil, -- one-shot pixel cues: the UI layer that draws them, and the sim they last watched (GR5-100)
+	reveal = Reveal.new(), revealFrame = nil, -- planet reachability reveal (GR5-105)
 	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
 	-- Save / load (GR5-77): the engine's rtype.Persistence plugin behind the Persistence module, driven by client/save.luau.
 	storage = Storage.engine(), save = nil,
 }
 state.save = Save.new(state.storage)
+StationFx.bind(state.fleet)
 
 local function despawnAll(commands, list)
 	for _, e in ipairs(list) do commands:despawn(e) end
@@ -99,7 +108,34 @@ local function flushRetired(commands)
 	retired = keep
 end
 
--- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits and the planets, then draw the live quads in their own
+-- What the choreography needs from the screen before the fleet is updated: the switches, the map rectangle, the stations (for the
+-- turrets) and the rectangles ships keep clear of (cached per world / station signature, they only change with those).
+local mapReserved = { sig = nil, rects = {} }
+local function prepareMap()
+	local fleet, sim = state.fleet, state.sim
+	fleet.reduced = state.shell.reduced == true
+	fleet.selected = state.shell.focus
+	fleet.bounds = Shell.layout().main
+	local sig = tostring(state.worldSig) .. "|" .. tostring(state.stationSig)
+	if sig ~= mapReserved.sig then
+		mapReserved.sig = sig
+		mapReserved.rects = SystemMap.reserved(sim)
+		fleet.stationList = SystemMap.stations(sim)
+	end
+	-- The "off map" list (top-left) and the motion switch (bottom-right) are UI too.
+	local m, g = fleet.bounds, Theme.layout.gap
+	local rects = table.clone(mapReserved.rects)
+	rects[#rects + 1] = { x = m.x, y = m.y, w = Screens.map.badgeAwayW + 140, h = g + 8 + (#fleet.away + 1) * 20 }
+	rects[#rects + 1] = { x = m.x + m.w - Screens.map.motionButtonW - 2 * g, y = m.y + m.h - 24 - 2 * g, w = Screens.map.motionButtonW + 2 * g, h = 24 + 2 * g }
+	fleet.reserved = rects
+end
+
+local function mapLifeOpts()
+	local fleet = state.fleet
+	return { chips = fleet.chips, aggregates = fleet.aggregates, hidden = fleet.hiddenCount or 0, away = fleet.away, reduced = fleet.reduced }
+end
+
+-- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits, then draw the live quads in their own
 -- small UI layer so a burst never forces a redraw of the whole shell. Turret shots come from client/station_fx.
 local function observeCues(state, now)
 	local cues, sim = Cues.shared, state.sim
@@ -111,10 +147,22 @@ local function observeCues(state, now)
 	if cues.lastCredits ~= credits then
 		Cues.observeCredits(cues, credits, now, Shell.creditsAnchor(Model.topBar(sim).creditsText))
 	end
+	Cues.update(cues, now)
+end
+
+-- Planet reachability reveal (GR5-105): false -> true reachability of a planet plays the ~2 s sequence on the Map; the GR5-100 burst
+-- fires from it, once, at the sheet's moment. A new, loaded or reset sim only records the baseline. -> true when the shell must
+-- redraw now (a reveal starts or ends); while one plays the map redraws on Vfx.reveal.refreshSeconds.
+local function observeReveal(state, now)
+	local sim, reveal = state.sim, state.reveal
 	local lit = {}
 	for _, p in ipairs(Model.map(sim).planets) do lit[p.id] = p.lit end
-	Cues.observePlanets(cues, lit, Shell.planetPositions(), Screens.map.planetRadius, now)
-	Cues.update(cues, now)
+	Reveal.observe(reveal, lit, World.planetOrder, sim)
+	local frame, burst = Reveal.update(reveal, now, state.shell.screen == Screens.defaultScreen, Vfx.reveal.reducedMotion)
+	if burst then Cues.burstPlanet(Cues.shared, burst, Shell.planetPositions()[burst], Screens.map.planetRadius, now) end
+	local edge = (frame == nil) ~= (state.revealFrame == nil) or (frame ~= nil and state.revealFrame ~= nil and frame.id ~= state.revealFrame.id)
+	state.revealFrame = frame
+	return edge
 end
 
 local function syncCues(commands, now)
@@ -132,7 +180,8 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, missions = state.missions, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
+	local onMap = state.shell.screen == Screens.defaultScreen
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, missions = state.missions, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label and (state.revealFrame and ("%s t=%.2f"):format(state.tour.label, state.revealFrame.t) or state.tour.label) or nil, reveal = state.revealFrame, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
 	state.shell.screen = shown
 end
 
@@ -164,6 +213,23 @@ local function editorClick(action)
 		state.toast, state.inputsDirty = nil, true
 	elseif action:sub(1, 11) == "editor.tab." then
 		state.tab, state.toast, state.inputsDirty = action:sub(12), nil, true
+		state.examples = { open = false }
+	elseif action == "editor.examples.toggle" then
+		state.examples = { open = not state.examples.open, selected = state.examples.selected }
+	elseif action:sub(1, 20) == "editor.example.pick." then
+		state.examples = { open = true, selected = action:sub(21) }
+	elseif action:sub(1, 19) == "editor.example.use." then
+		local exId = action:sub(20)
+		local ok, why = Editor.applyExample(state.sim, id, state.draft, exId, state.examples.confirm == exId)
+		if ok then
+			state.examples = { open = false, selected = exId }
+			state.toast, state.inputsDirty = "Example loaded: check needs, then Save", true
+		elseif why == "confirm_replace" then
+			state.examples = { open = true, selected = exId, confirm = exId }
+		else
+			state.examples = { open = true, selected = state.examples.selected }
+			state.toast = why == "too_long" and "That example is over the directive limit." or nil
+		end
 	elseif action:sub(1, 14) == "editor.preset." then
 		Editor.applyPreset(state.sim, state.draft, action:sub(15))
 		state.toast, state.inputsDirty = nil, true
@@ -216,13 +282,21 @@ local function dispatch(action, now, utc)
 	local teamHandled, teamAgent = TeamView.act(state.sim, action)
 	if teamHandled and teamAgent then
 		Screens.editor.agent = teamAgent
+		state.examples = { open = false }
 		action = "nav.agents"
 		state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
+	end
+	local picked = type(action) == "string" and action:match("^pick%.agent%.(.+)$")
+	if picked and state.sim.agents[picked] then
+		Screens.editor.agent = picked
+		state.examples = { open = false }
+		state.draft, state.toast, state.inputsDirty, changed = Editor.newDraft(state.sim, picked), nil, true, true
 	end
 	local screen = Shell.parseAction(action, state.sim.tier)
 	if screen and screen ~= state.shell.screen then
 		state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
 		if screen == "agents" then
+			state.examples = { open = false }
 			state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, Screens.editor.agent), nil, true
 		end
 	end
@@ -250,7 +324,7 @@ engine.ecs.system("game.Shell", {
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
-		if state.tour and QaTour.update(state.tour, {
+		if state.tour and TourMod.update(state.tour, {
 			dispatch = function(a) return dispatch(a, now, utc) end, now = now, sim = function() return state.sim end,
 			setSim = function(sim) state.sim, state.draft, state.inputsDirty, state.uiSig, state.worldSig = SimHost.attach(sim), nil, true, nil, nil end,
 		}) then
@@ -264,15 +338,19 @@ engine.ecs.system("game.Shell", {
 			state.lowComputeCheck = now
 			Audio.setCondition(state.audio, "low_compute", ComputeView.topBar(state.sim).level ~= "ok", { speed = 1 })
 		end
+		-- The events a sim carries when the client first sees it (a save loaded with its offline catch-up, a reset, a new game) are
+		-- history, not news: they feed the map and shell but never the sound, so a reload cannot replay a tier or purchase cue.
+		local hydrating = Audio.firstSight(state.audio, state.sim)
 		for _, event in ipairs(state.sim:drainEvents()) do
 			-- The AI-error sound plays only when the glitch accepted the same event, so sound and flicker stay one trigger.
 			FleetMap.onEvent(state.fleet, event)
 			local glitched = Shell.onSimEvent(state.shell, event)
 			if glitched then changed = true end
-			Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
+			if not hydrating then Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched }) end
 		end
 		local glitchFrame = Shell.update(state.shell, dt)
 		observeCues(state, now)
+		if observeReveal(state, now) then changed = true end
 
 		state.draft = state.draft or Editor.newDraft(state.sim, Screens.editor.agent)
 		-- The typed text is in the input's UiText; the input's `action` says which field it is.
@@ -311,6 +389,7 @@ engine.ecs.system("game.Shell", {
 			rebuildStations(ctx.commands)
 		end
 
+		if state.shell.screen == Screens.defaultScreen then prepareMap() end
 		FleetMap.sync(state.fleet, state.sim, now, ctx.commands, state.shell.screen == Screens.defaultScreen)
 
 		local extra = ""
@@ -321,8 +400,8 @@ engine.ecs.system("game.Shell", {
 			local settings = {}
 			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
 			table.sort(settings)
-			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
-				table.concat(rates, ","), table.concat(settings, ",") }, "|")
+			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", tostring(state.examples.open), state.examples.selected or "", state.examples.confirm or "", m.totalTokens,
+				table.concat(rates, ","), table.concat(settings, ","), Screens.editor.agent, TeamView.signature(state.sim), tostring(state.sim.feedSeq) }, "|")
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
@@ -333,14 +412,15 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "branches" then extra = BranchesView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) .. tostring(state.missions.selected) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
-		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
+		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) .. tostring(state.shell.reduced) end
 		if state.shell.screen == "debug" then extra = DebugPanel.signature(state.sim, state.debug) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		extra = extra .. "|" .. Save.signature(state.save) .. "|" .. SaveView.signature(state.save, state.sim)
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		-- The map animates (planet pulse, moving route dashes), so it redraws on its own faster beat.
 		local onMap = state.shell.screen == Screens.defaultScreen
-		local due = now - state.lastRefresh >= (onMap and Screens.map.animSeconds or Screens.refreshSeconds)
+		local every = onMap and (state.revealFrame and Vfx.reveal.refreshSeconds or Screens.map.animSeconds) or Screens.refreshSeconds
+		local due = now - state.lastRefresh >= every
 		if glitchFrame or changed or (due and (onMap or sig ~= state.uiSig or #state.sim.freighters > 0)) then
 			state.uiSig, state.lastRefresh = sig, now
 			rebuildUi(ctx.commands, glitchFrame)

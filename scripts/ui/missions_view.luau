@@ -1,4 +1,4 @@
--- Missions panel view-model (GR5-9, spec §15): the current mission with its goal, hint, progress bar and a Claim button,
+-- Missions panel view-model (GR5-9, spec §15): the current mission with its brief lines, hint, progress bar and a Claim button,
 -- then every mission in order. Pure reads and sim calls, so the whole path is testable headless; the shell only lays it out.
 local Missions = require("@scripts/sim/missions")
 local Config = require("@scripts/config/missions")
@@ -41,9 +41,9 @@ function View.model(sim, view)
   if Raiding.isOpen(sim) then
     local v = Raiding.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
-    local progress = v.failed and "failed: Notoriety reached 3" or ("%d / %d wins"):format(v.wins, v.target)
+    local progress = v.failed and "Failed" or ("%d / %d wins"):format(v.wins, v.target)
     out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }), icons = rewardIcons({ credits = v.reward }),
-      goal = v.goal, progressText = progress, failed = v.failed,
+      brief = v.brief, hint = v.hint, progressText = progress, failed = v.failed,
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil,
       retry = (v.status == "active" and v.failed) and ("missions.retry." .. v.id) or nil }
   end
@@ -52,7 +52,7 @@ function View.model(sim, view)
     local v = Refining.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
     out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }), icons = rewardIcons({ credits = v.reward }),
-      goal = v.goal, progressText = ("%d / %d units"):format(math.min(v.units, v.target), v.target), hint = v.hint,
+      brief = v.brief, progressText = ("%d / %d units"):format(math.min(v.units, v.target), v.target), hint = v.hint,
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
   -- The salvage branch's mission (spec §15b.5, V2): optional, listed once the first salvage ship is owned.
@@ -60,7 +60,7 @@ function View.model(sim, view)
     local v = Salvage.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
     out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ blueprint = 1 }), icons = {},
-      goal = v.goal, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
+      brief = v.brief, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
   if view and view.selected then
@@ -74,7 +74,7 @@ function View.model(sim, view)
     p.text = "Claim the previous mission"
   end
   out.current = {
-    id = def.id, index = index, name = def.name, goal = def.goal, hint = def.hint, status = cur.status,
+    id = def.id, index = index, name = def.name, brief = def.brief, hint = def.hint, status = cur.status,
     fraction = p.fraction, percent = math.floor(p.fraction * 100), progressText = p.text, lines = p.lines,
     rewardText = "Reward: " .. rewardText(def.reward), rewardIcons = rewardIcons(def.reward),
     claim = cur.status == "complete" and ("missions.claim." .. def.id) or nil,

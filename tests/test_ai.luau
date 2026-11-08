@@ -1,6 +1,6 @@
 -- Run from repo root: luau tests/test_ai.luau   (the `@scripts` alias comes from .luaurc)
 -- GR5-15: Axis provider. A fake Axis/Relais server stands in for the network; nothing here touches the internet.
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Validator = require("@scripts/ai/validator")
 local Compute = require("@scripts/sim/compute")
 local Tools = require("@scripts/config/tools").schemas
@@ -175,7 +175,20 @@ local function failureCase(name, handler, expectLog, delay, cfgOverride, seconds
   return sim, provider, net
 end
 
-failureCase("http 500", function() return 500, "boom", 0 end, "model_http_500")
+-- GR5-92: the feed tells a provider failure, a timeout and an invalid reply apart.
+local Words = require("@scripts/config/copy")
+local function feedHas(sim, prefix)
+  for _, e in ipairs(sim.feed) do if e.kind == "error" and e.text:sub(1, #prefix) == prefix then return true end end
+  return false
+end
+do
+  local s = failureCase("http 500", function() return 500, "boom", 0 end, "model_http_500")
+  assert(feedHas(s, Words.provider.failed) and not feedHas(s, Words.provider.timeout) and not feedHas(s, Words.provider.invalid), "provider failure copy")
+  s = failureCase("unknown tool copy", modelSays('{"tool":"dig","args":{}}'), "unknown or unequipped")
+  assert(feedHas(s, Words.provider.invalid) and not feedHas(s, Words.provider.failed), "invalid reply copy")
+  s = failureCase("timeout copy", function() return "never" end, "timeout", 0, { timeoutSeconds = 5 }, 8)
+  assert(feedHas(s, Words.provider.timeout) and not feedHas(s, Words.provider.failed), "timeout copy")
+end
 failureCase("network error", function() return 0, "could not resolve host", 0 end, "could not resolve host")
 failureCase("bad json body", function() return 200, "<html>", 0 end, "model_bad_response")
 failureCase("empty reply", modelSays(""), "empty reply")
@@ -219,6 +232,70 @@ do
     peak = math.max(peak, provider.inFlight)
   end
   assert(peak == 1, "one turn in flight, got " .. peak)
+end
+
+-- ---- Hourly cap holds for requests already queued (GR5-42) ----
+do
+  local AiQueue = require("@scripts/sim/ai_queue")
+  local t = 0
+  local q = AiQueue.new({ maxConcurrent = 1, tokensPerHour = 100, windowSeconds = 3600 }, function() return t end)
+  local a = q:submit({ agentId = "a" })
+  local b, st = q:submit({ agentId = "b" })
+  eq(st, "queued")
+  local started, refused = q:complete(a, 100)
+  eq(#started, 0, "B does not start past the cap"); eq(refused[1], b, "B is refused explicitly, not left hanging")
+  eq(q:queued(), 0)
+  t = 3601
+  assert(q:submit({ agentId = "b" }), "window expired: new requests are admitted again")
+  -- reservations: a queued request that does not fit next to the one in flight waits for it, then starts
+  local r = AiQueue.new({ maxConcurrent = 2, tokensPerHour = 1000, windowSeconds = 3600 }, function() return 0 end)
+  local x = r:submit({ agentId = "x", estimate = 600 })
+  local y, yst = r:submit({ agentId = "y", estimate = 600 })
+  eq(yst, "queued", "second request over the cap is held, not started")
+  eq(select(1, r:complete(x, 300))[1], y, "starts once the first one settled")
+  assert(r:reserve(y, 700) == true, "a lone request may reserve its estimate")
+end
+
+-- ---- An invalid reply is still billed on the provider's counters ----
+do
+  local sim, provider = newSetup(modelSays('{"tool":"dig","args":{}}', 2500, 100))
+  run(sim, provider, 2)
+  assert(logHas(sim, "ERROR", "unknown or unequipped"), "reply refused")
+  eq(sim.aiQueue:tokensUsed() % 2600, 0, "known usage counted")
+  assert(sim.aiQueue:tokensUsed() >= 2600, "2500 in + 100 out billed")
+end
+
+-- ---- The reservation covers the assembled prompt (agent prompt + memory block), not just the app prompt ----
+do
+  local big = string.rep("x", 4000)
+  local server = axisServer(modelSays('{"tool":"wait","args":{"seconds":10}}'), 0)
+  clock = 0
+  local net = fakeTransport(function(req)
+    if req.url:find("/v1/agentic-config/", 1, true) then return 200, Json.encode({ system_prompt = big }), 0 end
+    if req.url:find("/session", 1, true) then return 200, Json.encode({ block = big }), 0 end
+    return server(req)
+  end)
+  local provider = Provider.new(AiConfig, { transport = net, now = now, run = "t2" })
+  local sim = Sim.new()
+  sim:setDecider(Ai.decide)
+  sim:setProvider(provider)
+  run(sim, provider, 1)
+  local rec = provider.records[1]
+  assert(rec and rec.estimated_tokens >= 2000 + AiConfig.maxOutputTokens, "estimate counts agent prompt and memory: " .. tostring(rec and rec.estimated_tokens))
+end
+
+-- ---- A response read after the deadline (stalled loop) is a timeout, never a decision ----
+do
+  clock = 0
+  local Axis = require("@scripts/ai/axis")
+  local net = fakeTransport(axisServer(function() return 200, Json.encode({ content = { { type = "text", text = "ok" } } }), 5 end, 0))
+  local axis = Axis.new(AiConfig, net)
+  axis:start({ conversation = "g5-late", userId = "g5:p", system = "s", user = "u", note = "n", maxTokens = 10 }, 0)
+  clock = 0.1; axis:update(0.1)
+  clock = 0.2; axis:update(0.2)
+  clock = 21
+  local done = axis:update(21)
+  eq(#done, 1); eq(done[1].ok, false); eq(done[1].error, "timeout")
 end
 
 -- ---- Toggle: stub <-> axis from config / debug panel ----

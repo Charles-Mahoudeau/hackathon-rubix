@@ -3,6 +3,8 @@
 local Raiding = require("./raiding")
 local Refining = require("./refining")
 local Salvage = require("./salvage")
+local Feed = require("./feed")
+local Words = require("@scripts/config/copy")
 
 local Upgrades = {}
 
@@ -135,9 +137,11 @@ function Upgrades.buy(sim, id)
   elseif it.stat == "hub" then
     up.hub = true
     sim:enterTier(sim.b.logistics.hubTier)
+    Feed.info(sim, nil, Words.unlocks.logistician)
   elseif it.stat == "commandCenter" then
     up.commandCenter = true
     sim:enterTier(sim.b.monitor.tier)
+    Feed.info(sim, nil, Words.unlocks.monitor)
   elseif it.stat == "deepNav" then
     up.deepNav, sim.deepNav = true, true
   elseif it.stat == "ship" then

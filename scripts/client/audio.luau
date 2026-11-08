@@ -10,6 +10,14 @@ function Audio.new()
 	return { rng = Cfg.pitchSeed, lastPlayed = {}, latched = {}, pending = {}, seq = 0, now = 0, muted = false, duckEnds = {}, duckLevel = 1, conditions = {} }
 end
 
+-- True the first time the client sees `sim` (a boot with its offline catch-up, a load, a reset): the events it carries then are
+-- history, not news, so the caller must not turn them into cues.
+function Audio.firstSight(state, sim): boolean
+	if state.seen == sim then return false end
+	state.seen = sim
+	return true
+end
+
 function Audio.beginFrame(state, now)
 	state.now = now
 	state.pending = {}

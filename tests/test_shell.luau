@@ -223,7 +223,7 @@ do
   assert(Debug.run(s, "setStuck"), "debug panel sets the stuck state")
   s:step()
   local n = Model.notification(s)
-  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.text:find("%+3"), "offer in the shell model")
+  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.button:find("%+3"), "offer in the shell model")
   assert(Model.signature(s, "map") ~= sigBefore, "the shell redraws when the offer appears")
   for _, screen in ipairs({ "map", "missions" }) do
     assert(#claimButtons(Shell.spec(s, screen), {}) == 1, "Claim button on " .. screen)
@@ -238,6 +238,42 @@ do
   local h2, ok2 = Model.act(s, "notice.claim")
   assert(h2 and not ok2 and s.resources.compute == 0, "a late click grants nothing")
   assert(not Model.act(s, "nav.map"), "foreign actions are not handled")
+end
+
+-- GR5-104: the map choreography overlay renders what the fleet hands it, and the motion switch is a real action.
+do
+  local function texts(spec, out)
+    out = out or {}
+    if spec.text and spec.text.text then out[#out + 1] = spec.text.text end
+    for _, c in ipairs(spec.children or {}) do texts(c, out) end
+    return out
+  end
+  local function joined(spec) return table.concat(texts(spec), "|") end
+  local hull = { x = 400, y = 300, w = 28, h = 28 }
+  local life = {
+    chips = {
+      { key = "ship:s1", focusId = "ship_s1", badge = { tone = "green", shape = "square", label = "WORK" }, selected = true, clickable = true,
+        hull = hull, x = 380, y = 278, w = 72, h = 16 },
+      { key = "ship:s2", focusId = "ship_s2", badge = { tone = "amber", shape = "bar", label = "WARN" }, hull = hull, clickable = false,
+        x = 440, y = 330, w = 14, h = 14, number = 1 },
+    },
+    aggregates = { { id = "kessa", count = 3, x = 100, y = 300, w = 30, h = 16 } },
+    hidden = 3, away = { { key = "scav:j1", where = "Tessar", badge = { tone = "green", shape = "square", label = "WORK" } } },
+    reduced = false,
+  }
+  local sim = Sim.new()
+  sim.alertTrack.stations[SystemMap.stations(sim)[1].sid] = true
+  walk((Shell.spec(sim, "map", { mapLife = life, mapStations = SystemMap.stationLabels(sim) })), "map life")
+  local on = joined((Shell.spec(sim, "map", { mapLife = life })))
+  assert(on:find("WORK") and on:find("+3") and on:find("OFF MAP") and on:find("Tessar") and on:find("MOTION: FULL"), "overlay shows chips, +N, off-map list and the motion switch")
+  assert(on:find("%\+3 more ships not drawn"), "the legend counts the hidden hulls")
+  life.reduced = true
+  assert(joined((Shell.spec(sim, "map", { mapLife = life }))):find("MOTION: REDUCED"), "the switch shows reduced motion")
+  local shellState = Shell.new()
+  assert(Shell.act(shellState, "map.motion") and shellState.reduced == true, "map.motion turns reduced motion on")
+  assert(Shell.act(shellState, "map.motion") and shellState.reduced == false, "and off again")
+  assert(Shell.act(shellState, "map.focus.ship_s1") and shellState.focus == "ship_s1", "a ship can be focused")
+  assert(#texts((Shell.spec(sim, "map", {}))) > 0 and not joined((Shell.spec(sim, "map", {}))):find("MOTION"), "no life layer without opts.mapLife")
 end
 
 print("shell OK")

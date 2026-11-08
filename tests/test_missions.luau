@@ -3,6 +3,7 @@
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
 local Missions = require("@scripts/sim/missions")
+local MissionsConfig = require("@scripts/config/missions")
 local Skills = require("@scripts/sim/skills")
 local Market = require("@scripts/sim/market")
 local Offline = require("@scripts/sim/offline")
@@ -48,13 +49,27 @@ do
   assert(select(2, Missions.claim(s, 99)) == "unknown_mission")
   local m = MissionsView.model(s)
   assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 8 and #m.rows == 8)
-  assert(m.current.hint:find("Say which ore, which vein", 1, true), "hint text from the spec")
+  assert(m.current.hint == "Name the ore, vein and return point." and #m.current.brief == 2, "hint and brief lines from the microcopy")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
   local view = MissionsView.new()
   assert(MissionsView.act(s, "missions.select.2", view))
   local selected = MissionsView.model(s, view)
   assert(selected.current.id == 2 and selected.current.locked and selected.current.progressText == "Claim the previous mission")
   assert(selected.current.claim == nil and selected.rows[1].state == "active" and selected.rows[2].state == "locked")
+end
+
+-- 1b. every displayed mission string (title, each brief line, hint) fits the 40-character label limit, branch missions included
+do
+  local Branches = require("@scripts/config/branches")
+  local defs = {}
+  for _, d in ipairs(MissionsConfig.missions) do defs[#defs + 1] = d end
+  for _, id in ipairs({ "raiding", "salvage", "refining" }) do defs[#defs + 1] = Branches[id].mission end
+  for _, d in ipairs(defs) do
+    assert(#d.name + #" (optional)" <= 40 or type(d.id) == "number" and #d.name <= 40, "title too long: " .. d.name)
+    assert(#d.brief >= 2 and #d.brief <= 3, "brief lines for mission " .. tostring(d.id))
+    for _, line in ipairs(d.brief) do assert(#line <= 40, "brief line too long: " .. line) end
+    assert(#d.hint <= 40, "hint too long: " .. d.hint)
+  end
 end
 
 -- 2. mission 1 with a precise directive completes in under 15 game minutes, from the same vein

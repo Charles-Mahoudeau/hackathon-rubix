@@ -8,7 +8,7 @@ local Market = require("@scripts/sim/market")
 local Builder = require("@scripts/sim/context_builder")
 local Renderer = require("@scripts/sim/context_renderer")
 local Persistence = require("@scripts/sim/persistence")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local LogsView = require("@scripts/ui/logs_view")
 
 local function eq(a, b, msg) if a ~= b then error((msg or "eq") .. ": expected " .. tostring(b) .. ", got " .. tostring(a), 2) end end

@@ -9,7 +9,7 @@ local Compute = require("@scripts/sim/compute")
 local Missions = require("@scripts/sim/missions")
 local Skills = require("@scripts/sim/skills")
 local Market = require("@scripts/sim/market")
-local Json = require("@scripts/sim/json")
+local Json = require("../tests/support/engine_json")
 local Provider = require("@scripts/ai/provider")
 local AiConfig = require("@scripts/config/ai")
 
