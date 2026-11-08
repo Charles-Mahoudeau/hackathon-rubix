@@ -22,7 +22,8 @@ return {
     miner = { tools = { "mine", "return", "sell", "report", "wait", "scan", "run_skill" }, startTier = 1 },
     logistician = { tools = { "store", "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
   },
-  ai = { delaySecondsMin = 2, delaySecondsMax = 4, computePerDecision = 1, vagueErrorRate = 0.5 },
+  -- cooldownSeconds: real provider only, a pause after each answer so a run of bad replies cannot hammer it
+  ai = { delaySecondsMin = 2, delaySecondsMax = 4, computePerDecision = 1, vagueErrorRate = 0.5, cooldownSeconds = 2 },
   warehouse = { capacity = 2000 },
   logMax = 200,
   seed = 1234,

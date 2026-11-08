@@ -1,6 +1,9 @@
 -- Server-side simulation core. Pure Luau, no engine deps, headless-runnable.
 local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
+local Prompt = require("@scripts/ai/prompt")
+local Tokens = require("@scripts/ai/tokens")
+local ToolSchemas = require("@scripts/config/tools")
 
 local Sim = {}
 Sim.__index = Sim
@@ -68,6 +71,21 @@ local function tierHasTool(self, agent, tool)
     if t <= agent.tier then for _, n in ipairs(list) do if n == tool then return true end end end
   end
   return false
+end
+
+-- Tool names the agent holds right now (listed in the agent's tools and unlocked by its tier), in tier order.
+function Sim:equippedTools(agentId)
+  local agent = self.agents[agentId]
+  local tiers = {}
+  for t in pairs(self.b.tiers) do tiers[#tiers + 1] = t end
+  table.sort(tiers)
+  local out = {}
+  for _, t in ipairs(tiers) do
+    if t <= agent.tier then
+      for _, name in ipairs(self.b.tiers[t]) do if agent.tools[name] then out[#out + 1] = name end end
+    end
+  end
+  return out
 end
 
 local function inRange(self, ship, planetId)
@@ -249,15 +267,81 @@ function Sim:resolveDecision(agentId, call, ctx)
   return self:apply(agentId, call)
 end
 
+-- Async AI provider (ai/provider.luau): decisions go out as requests and come back through onAiResponse. nil = the sync
+-- decider only. A decision still in flight when the provider changes is dropped and re-decided on the next tick.
+function Sim:setProvider(provider)
+  if provider ~= self.provider then
+    for id, agent in pairs(self.agents) do
+      if agent.pending and agent.pending.requestId then
+        agent.pending = nil
+        self:log("WARN", id .. ": AI provider switched, pending decision dropped")
+      end
+    end
+  end
+  self.provider = provider
+end
+
+-- A provider answer for the decision `resp.id`. Failures (error, timeout, invalid, budget) are logged and the sync decider
+-- (the stub) takes the decision instead, so the game never stalls on the network. Compute was charged on the estimate at
+-- send; it is corrected to the real token count when the provider reports one (a failed request stays charged).
+function Sim:onAiResponse(resp)
+  local agentId, agent
+  for id, a in pairs(self.agents) do
+    if a.pending and a.pending.requestId == resp.id then agentId, agent = id, a break end
+  end
+  if not agent then return end
+  local pend = agent.pending
+  agent.pending = nil
+  agent.aiReadyTick = self.tick + self:ticks(self.b.ai.cooldownSeconds)
+  local real = (resp.input_tokens or 0) + (resp.output_tokens or 0)
+  if resp.ok and real > 0 then
+    local est = resp.estimated_tokens or 0
+    local pct = est > 0 and math.floor((real - est) / est * 100 + 0.5) or 0
+    self:log("INFO", ("ai %s: tokens est %d real %d (%+d%%) in %.1fs"):format(agentId, est, real, pct, resp.seconds or 0))
+    local delta = pend.charged - Tokens.compute(real)
+    self.resources.compute = math.max(0, self.resources.compute + delta)
+  end
+  if resp.ok then
+    if resp.tool_call.reasoning ~= "" then self:log("INFO", agentId .. " reasoning: " .. resp.tool_call.reasoning) end
+    self:resolveDecision(agentId, { name = resp.tool_call.tool, args = resp.tool_call.args }, pend.ctx)
+    return
+  end
+  self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
+  if self.decide then
+    local ok, call = pcall(self.decide, self, agentId, pend.ctx)
+    if ok then
+      self:log("WARN", agentId .. ": fell back to stub")
+      self:resolveDecision(agentId, call, pend.ctx)
+    else self:log("ERROR", "decide failed: " .. tostring(call)) end
+  end
+end
+
+function Sim:requestAiDecision(agentId, agent)
+  local ctx = self:context(agentId)
+  local prompt = Prompt.build(self, agentId, ctx, ToolSchemas)
+  local rid = self.provider:request({ agent_id = agentId, prompt = prompt })
+  local est = Tokens.estimate(prompt.system) + Tokens.estimate(prompt.user) + self.provider.cfg.maxOutputTokens
+  local cost = Tokens.compute(est)
+  self.resources.compute = math.max(0, self.resources.compute - cost)
+  agent.pending = { requestId = rid, ctx = ctx, charged = cost }
+end
+
 function Sim:step()
   self.tick = self.tick + 1
+  if self.provider then
+    for _, resp in ipairs(self.provider:drain()) do self:onAiResponse(resp) end
+  end
   self:stepVeins()
   for _, ship in pairs(self.ships) do self:stepShip(ship) end
   for id, agent in pairs(self.agents) do
     local pend = agent.pending
-    if pend then
+    if pend and pend.requestId then
+      -- waiting for the provider: onAiResponse resolves it
+    elseif pend then
       pend.delay = pend.delay - 1
       if pend.delay <= 0 then agent.pending = nil; self:resolveDecision(id, pend.call, pend.ctx) end
+    elseif self.provider then
+      if self:needsDecision(id) and self.tick >= (agent.aiReadyTick or 0) then self:requestAiDecision(id, agent) end
     elseif self.decide and self:needsDecision(id) then
       local ctx = self:context(id)
       local ok, call = pcall(self.decide, self, id, ctx)
