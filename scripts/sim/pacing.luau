@@ -83,13 +83,15 @@ function Pacing.run(opts)
     sim:step()
     if sim.tier ~= tier then
       for t = tier + 1, sim.tier do
-        data.tiers[t] = { at = sim.tick * tick, credits = sim.resources.credits, revenue = sim.lifetimeRevenue }
+        data.tiers[t] = { at = sim.tick * tick, credits = sim.resources.credits, revenue = sim.lifetimeRevenue,
+          rep = sim:reputationLevel(), compute = sim.compute.lifetimeTotal }
       end
       tier = sim.tier
     end
     if i % perSecond == 0 then
       local bought = {}
       play(sim, bought)
+      if opts.onSecond then opts.onSecond(sim) end
       for _, id in ipairs(bought) do data.purchases[#data.purchases + 1] = { t = sim.tick * tick, id = id } end
     end
     if i % perSample == 0 then
@@ -98,6 +100,9 @@ function Pacing.run(opts)
   end
   if opts.keepSim then data.sim = sim end
   data.decisions, data.tokens = sim.recordSeq, sim.aiQueue:tokensUsed()
+  data.computeBilled, data.finalRep = sim.compute.lifetimeTotal, sim:reputationLevel()
+  data.missions = {}
+  for _, m in ipairs(sim.missions) do data.missions[#data.missions + 1] = m.status end
   data.finalCredits, data.finalRevenue, data.finalTier = sim.resources.credits, sim.lifetimeRevenue, sim.tier
   return data
 end
