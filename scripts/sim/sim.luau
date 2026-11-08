@@ -7,6 +7,8 @@ local ToolsConfig = require("@scripts/config/tools")
 local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local ContextSettings = require("@scripts/sim/context_settings")
+local Feed = require("@scripts/sim/feed")
+local Json = require("@scripts/sim/json")
 
 local Sim = {}
 Sim.__index = Sim
@@ -22,7 +24,7 @@ function Sim.new(opts)
   opts = opts or {}
   local b = opts.balance or Balance
   local seed = opts.seed or b.seed
-  local self = setmetatable({ b = b, tick = 0, logs = {}, seed = seed, rng = { main = seed }, tier = 1,
+  local self = setmetatable({ b = b, tick = 0, logs = {}, seed = seed, rng = { main = seed, stub = seed * 7 + 1 }, tier = 1,
     debug = { creditBoosts = 0 } }, Sim)
   -- Linear congruential stream; its whole state is rng.main, so a save can resume it exactly.
   self.rand = function()
@@ -30,6 +32,13 @@ function Sim.new(opts)
     self.rng.main = s
     return s / 2147483648
   end
+  -- Own stream for the stub's random picks (spec §10.5), so changing a directive never shifts the world's randomness.
+  self.randStub = function()
+    local s = (self.rng.stub * 1103515245 + 12345) % 2147483648
+    self.rng.stub = s
+    return s / 2147483648
+  end
+  Feed.init(self)
   self.resources = { credits = b.startCredits, compute = b.startCompute, reputation = b.startReputation }
   self.warehouse = {}
   for _, ore in ipairs(b.ores) do self.resources[ore] = 0; self.warehouse[ore] = 0 end
@@ -231,6 +240,8 @@ function Sim:validate(agentId, call)
     if ship.state ~= "idle" then return false, "ship busy" end
     if ship.cargo > 0 and ship.ore ~= vein.ore then return false, "hold holds another ore" end
     if ship.cargo >= self.b.ship.cargoCap then return false, "hold_full" end
+    local pct = args.stop_at_hold_pct
+    if pct ~= nil and (type(pct) ~= "number" or pct < 10 or pct > 100) then return false, "bad stop_at_hold_pct" end
   elseif n == "return" then
     if ship.state == "idle" then return false, "already_docked" end
     if ship.state ~= "mining" then return false, "ship busy" end
@@ -275,11 +286,13 @@ local function remember(agent, call, ok, err)
   if #h > 20 then table.remove(h, 1) end
 end
 
-function Sim:apply(agentId, call)
+-- opts.auto: the sim itself issues the call (a full hold sends the ship home); it gets no feed line of its own.
+function Sim:apply(agentId, call, opts)
   local ok, err = self:validate(agentId, call)
   remember(self.agents[agentId], call, ok, err)
   if not ok then
     self:log("ERROR", agentId .. ": rejected " .. tostring(type(call) == "table" and call.name) .. " (" .. err .. ")")
+    Feed.refused(self, agentId, call, err)
     return false, err
   end
   local args, n = call.args or {}, call.name
@@ -293,6 +306,7 @@ function Sim:apply(agentId, call)
     self.resources.credits = self.resources.credits + gain
     self.lifetimeRevenue = self.lifetimeRevenue + gain
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning()), ("+%d cr"):format(gain))
     return true, { sold = q, total = gain }
   elseif agent.type == "logistician" and n == "ship" then
     -- stock is taken at call time, so a second Logistician on the same stock or freighter gets the error (spec §8.6)
@@ -303,10 +317,16 @@ function Sim:apply(agentId, call)
     f.state, f.timer, f.load = "out", self:ticks(oneWay), { resource = args.resource, qty = q, destination = args.destination }
     f.owner = agentId
     self:log("INFO", ("%s shipped %d %s to %s on %s"):format(agentId, q, args.resource, args.destination, f.id))
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning()), ("%s on its way (%d s)"):format(f.id, oneWay))
     return true, { freighter_id = f.id, eta_s = oneWay }
   end
+  local shipCall = agent.type == "miner" and (n == "mine" or n == "return" or n == "sell" or n == "scan" or n == "wait")
+  if shipCall and n == "return" then self:finishMine(ship) end
+  local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning()) or nil
+  if shipCall and entry then ship.feedEntry = entry end
   if n == "mine" then
     local vein = self.veins[args.vein]
+    ship.stopPct, ship.mineStartTick, ship.mineStartCargo = args.stop_at_hold_pct or 100, self.tick, ship.cargo
     ship.state, ship.vein, ship.dest = "travel_out", vein, vein.planet
     ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
   elseif n == "return" then
@@ -327,13 +347,40 @@ function Sim:apply(agentId, call)
     local amt = math.min(args.amount, have, self.b.warehouse.capacity - self.warehouse[args.resource])
     self.resources[args.resource] = have - amt
     self.warehouse[args.resource] = self.warehouse[args.resource] + amt
+    Feed.finish(self, entry, ("%d %s stored"):format(amt, args.resource))
   elseif n == "report" then
     self:log("INFO", agentId .. " report: " .. tostring(args.message))
+    Feed.finish(self, entry, "sent")
+    Feed.info(self, agentId, tostring(args.message))
   elseif n == "run_skill" then
     self:log("INFO", "run_skill " .. args.name)
+    Feed.finish(self, entry, "running skill")
     return self:apply(agentId, self.skills[args.name])
   end
   return true
+end
+
+-- Feed results for the ship's open call (a mine ends when the ship leaves the vein, a trip when it docks).
+function Sim:finishMine(ship)
+  local e = ship.feedEntry
+  if e and e.tool == "mine" and e.status == "running" then
+    local gained = math.max(0, ship.cargo - (ship.mineStartCargo or 0))
+    Feed.finish(self, e, ("+%d %s (%d s)"):format(gained, ship.ore or ship.vein and ship.vein.ore or "ore",
+      math.floor((self.tick - (ship.mineStartTick or self.tick)) * self.b.tickSeconds + 0.5)))
+    ship.feedEntry = nil
+  end
+end
+
+function Sim:finishDock(ship, text)
+  local e = ship.feedEntry
+  if e and e.status == "running" then Feed.finish(self, e, text) ship.feedEntry = nil end
+end
+
+-- The reasoning the provider gave for the decision being applied (feed line detail); read once.
+function Sim:takeReasoning()
+  local r = self.nextReasoning
+  self.nextReasoning = nil
+  return r
 end
 
 -- Sell the hold at the depot (HMC) of planet `planetId`. Empties the hold and its accumulator.
@@ -344,8 +391,11 @@ function Sim:sell(ship, planetId)
     self.resources.credits = self.resources.credits + gain
     self.lifetimeRevenue = self.lifetimeRevenue + gain
     self:log("INFO", ("sold %d %s for %d"):format(ship.cargo, ship.ore, gain))
+    self:finishMine(ship)
+    local text = ("sold %d %s, +%d cr"):format(ship.cargo, ship.ore, gain)
+    if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
     ship.cargo, ship.cargoF, ship.ore = 0, 0, nil
-  end
+  else self:finishDock(ship, "docked, hold empty") end
   ship.state = "idle"
 end
 
@@ -385,11 +435,12 @@ function Sim:stepShip(ship, sharing)
       if ship.state == "travel_out" then
         ship.state = "mining"
         ship.ore = ship.vein.ore
-        if ship.vein.reserve < 1 then self:apply(ship.owner, { name = "return", args = { ship = ship.id } }) end
+        if ship.vein.reserve < 1 then self:apply(ship.owner, { name = "return", args = { ship = ship.id } }, { auto = true }) end
       else
         ship.vein = nil
         ship.crowdedBy = {}
-        if ship.cargo > 0 then self:sell(ship, ship.at) else ship.state = "idle" end
+        if ship.cargo > 0 then self:sell(ship, ship.at)
+        else self:finishDock(ship, ("docked at %s, hold empty"):format(ship.at)); ship.state = "idle" end
       end
     end
   elseif ship.state == "scanning" or ship.state == "waiting" then
@@ -398,7 +449,8 @@ function Sim:stepShip(ship, sharing)
       if ship.state == "scanning" then
         for _, v in ipairs(self.planets[ship.scanPlanet].veins) do v.scanned = true end
         self:log("INFO", "scan " .. ship.scanPlanet)
-      end
+        self:finishDock(ship, ("%d veins revealed"):format(#self.planets[ship.scanPlanet].veins))
+      else self:finishDock(ship, "done waiting") end
       ship.state = "idle"
     end
   elseif ship.state == "mining" then
@@ -412,9 +464,10 @@ function Sim:stepShip(ship, sharing)
     ship.cargoF = ship.cargoF + want
     v.reserve = v.reserve - want
     ship.cargo = math.floor(ship.cargoF + 1e-9)
-    if ship.cargo >= b.ship.cargoCap or v.reserve < 1 then
+    local stopAt = math.ceil(b.ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
+    if ship.cargo >= stopAt or v.reserve < 1 then
       if ship.cargo >= b.ship.cargoCap then ship.cargo, ship.cargoF = b.ship.cargoCap, b.ship.cargoCap end
-      self:apply(ship.owner, { name = "return", args = { ship = ship.id } })
+      self:apply(ship.owner, { name = "return", args = { ship = ship.id } }, { auto = true })
     end
   end
 end
@@ -429,15 +482,83 @@ end
 -- AI hook: decide(sim, agentId, context) -> toolCall. Swap in ai module's decide.
 function Sim:setDecider(fn) self.decide = fn end
 
+-- Error accounting (spec §8.4): 2 invalid responses, 3 provider errors, or the same failing call twice in a row
+-- stop the agent in `paused_error` until the player resumes it. A good decision from the agent's own decider resets it.
+local function errs(agent)
+  agent.errs = agent.errs or { invalid = 0, provider = 0, same = 0, lastKey = "" }
+  return agent.errs
+end
+
+function Sim:pauseAgent(agentId, why)
+  local agent = self.agents[agentId]
+  if agent.state == "paused_error" then return end
+  agent.state, agent.blockReason = "paused_error", why
+  self:log("ERROR", ("%s: paused (%s)"):format(agentId, why))
+  Feed.error(self, agentId, "paused: " .. why .. ". Fix the directive, then resume.")
+  self:emit("agent_paused_error", { agent = agentId, reason = why })
+end
+
+-- kind: "invalid" (reply or call refused) | "provider" (network/provider failure). key identifies a refused call.
+function Sim:noteFailure(agentId, kind, key)
+  local e, rules = errs(self.agents[agentId]), self.aiConfig.errorRules
+  e[kind] = e[kind] + 1
+  if key then
+    e.same = (key == e.lastKey) and e.same + 1 or 1
+    e.lastKey = key
+  end
+  if e.provider >= rules.providerErrors then
+    self:pauseAgent(agentId, ("%d provider errors in a row"):format(e.provider))
+  elseif e.invalid >= rules.invalidResponses then
+    self:pauseAgent(agentId, ("%d invalid responses in a row"):format(e.invalid))
+  elseif key and e.same >= rules.sameFailingCall then
+    self:pauseAgent(agentId, "the same call failed twice")
+  end
+end
+
+function Sim:noteSuccess(agentId)
+  self.agents[agentId].errs = nil
+end
+
+function Sim:resumeAgent(agentId)
+  local agent = self.agents[agentId]
+  if not agent or agent.state ~= "paused_error" then return false, "not_paused" end
+  agent.state, agent.blockReason, agent.errs = "idle", nil, nil
+  Feed.info(self, agentId, "resumed")
+  self:emit("agent_resumed", { agent = agentId })
+  return true
+end
+
+function Sim:setDirective(agentId, text)
+  local agent = self.agents[agentId]
+  if not agent or type(text) ~= "string" then return false, "bad_args" end
+  agent.directive = text
+  return true
+end
+
+function Sim:setOrder(agentId, text)
+  local agent = self.agents[agentId]
+  if not agent or type(text) ~= "string" then return false, "bad_args" end
+  agent.order = text
+  return true
+end
+
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,
 -- otherwise apply() re-validates every precondition against the live state.
-function Sim:resolveDecision(agentId, call, ctx)
+-- opts.fallback: the stub stands in for a failed provider, so its success must not clear that provider's error streak.
+function Sim:resolveDecision(agentId, call, ctx, opts)
   local ship = ownedShip(self, agentId)
   if self.agents[agentId].type == "miner" and ctx and ctx.ship and ctx.ship.state ~= ship.state then
     self:log("WARN", ("%s: stale decision dropped (ship was %s, now %s)"):format(agentId, ctx.ship.state, ship.state))
     return false, "stale"
   end
-  return self:apply(agentId, call)
+  local ok, err = self:apply(agentId, call)
+  if ok then
+    if not (opts and opts.fallback) then self:noteSuccess(agentId) end
+  else
+    self:noteFailure(agentId, "invalid", Json.encode(Json.map({ { "n", type(call) == "table" and call.name or "?" },
+      { "a", type(call) == "table" and call.args or {} } })))
+  end
+  return ok, err
 end
 
 function Sim:stepFreighters()
@@ -506,10 +627,12 @@ end
 
 local function setAgentState(self, agent, state, why)
   if agent.state == state then return end
+  if agent.state == "paused_error" then return end -- only resumeAgent leaves it
   agent.state = state
   if state == "no_compute" then
     agent.blockReason = why
     self:log("WARN", ("%s: no_compute (%s)"):format(agent.id, why))
+    Feed.error(self, agent.id, "no_compute: " .. why)
     self:emit("agent_no_compute", { agent = agent.id, reason = why })
   else
     agent.blockReason = nil
@@ -568,21 +691,27 @@ function Sim:onAiResponse(resp)
   setAgentState(self, agent, "idle")
   if resp.ok then
     if resp.tool_call.reasoning ~= "" then self:log("INFO", agentId .. " reasoning: " .. resp.tool_call.reasoning) end
+    self.nextReasoning = resp.tool_call.reasoning ~= "" and resp.tool_call.reasoning or nil
     self:resolveDecision(agentId, { name = resp.tool_call.tool, args = resp.tool_call.args }, pend.ctx)
+    self.nextReasoning = nil
     return
   end
   self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
+  Feed.error(self, agentId, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
+  self:noteFailure(agentId, resp.kind == "invalid" and "invalid" or "provider")
+  if agent.state == "paused_error" then return end
   if self.decide then
     local ok, call = pcall(self.decide, self, agentId, pend.ctx)
     if ok then
       self:log("WARN", agentId .. ": fell back to stub")
-      self:resolveDecision(agentId, call, pend.ctx)
+      self:resolveDecision(agentId, call, pend.ctx, { fallback = true })
     else self:log("ERROR", "decide failed: " .. tostring(call)) end
   end
 end
 
 -- Step 6 of the tick (spec §3): decide for every agent that is allowed to.
 function Sim:stepAgent(id, agent)
+  if agent.state == "paused_error" then return end
   local pend = agent.pending
   if pend and pend.provider then
     if pend.started and not pend.pid then

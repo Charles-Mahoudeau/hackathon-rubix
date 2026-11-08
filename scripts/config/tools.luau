@@ -10,8 +10,9 @@ end
 return {
   order = { "mine", "return", "sell", "store", "scan", "report", "wait", "run_skill", "ship" },
   schemas = {
-    mine = { description = "Fly to a vein, mine it until the hold is full.",
-      args = { vein = str("known vein id", { required = true }) } },
+    mine = { description = "Fly to a vein, mine it, stop at the target hold %.",
+      args = { vein = str("known vein id", { required = true }),
+        stop_at_hold_pct = { type = "integer", min = 10, max = 100, desc = "default 100" } } },
     ["return"] = { description = "Fly back to a dock.",
       args = { to = str("default home", { enum = { "home", "local_depot" } }) } },
     sell = { description = "Sell the hold (Miner, docked) or a warehouse stock (Logistician) at a buyer.",
