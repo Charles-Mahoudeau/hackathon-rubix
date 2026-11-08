@@ -1063,7 +1063,8 @@ function Sim:onAiResponse(resp)
   agent.pending = nil
   local realIn, realOut = resp.input_tokens or 0, resp.output_tokens or 0
   local rec, info = DecisionLog.find(self, pend.rec), {}
-  if resp.ok and realIn + realOut > 0 then
+  -- Usage is billed whenever the provider reports it, also on an invalid reply: the model spent those tokens.
+  if realIn + realOut > 0 then
     local est = resp.estimated_tokens or 0
     local real = realIn + realOut
     local pct = est > 0 and math.floor((real - est) / est * 100 + 0.5) or 0
