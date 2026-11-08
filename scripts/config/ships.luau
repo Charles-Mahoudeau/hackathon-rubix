@@ -2,7 +2,7 @@
 -- Source pack: Foozle Void Fleet Pack 1 (CC0), Kla'ed faction. Sprites are coloured in the pack; the
 -- palette-swap shader (GR5-3) remaps them to the 8-colour theme and the neon colour is the
 -- `corp_tint` shader parameter (corporation-driven). Until GR5-3 lands they render as-is.
-local K = "assets/ships/Kla'ed/"
+local K = "ships/Kla'ed/" -- relative to assets/, like every other texture path
 
 return {
 	pack = { name = "Void Fleet Pack 1", author = "Foozle", license = "CC0", credits_required = false },
@@ -12,6 +12,17 @@ return {
 
 	-- All pack sheets are 64px-tall horizontal strips (128px for Battlecruiser/Dreadnought bases).
 	frame_px = 64,
+
+	-- Remap luminance thresholds for these (coloured, not pure grey) sprites. The shader default (0.25/0.5/0.85) sends
+	-- ~60% of a hull to the background colour; these keep the silhouette. `tier_glow` (0..1) lowers all three by
+	-- `glow_shift` so higher miner tiers read brighter.
+	remap = { steps = { 0.15, 0.30, 0.60 }, glow_shift = 0.08 },
+
+	-- Draw layers (engine strip sits behind the hull) and engine-strip animation.
+	layers = { engine = 9, hull = 10 },
+	engine_fps = 12,
+	-- Hull size in world units at scale 1.
+	size = 64,
 
 	ships = {
 		miner = {
