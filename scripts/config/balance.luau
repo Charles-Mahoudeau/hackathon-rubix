@@ -45,7 +45,7 @@ return {
       logistics_hub = { name = "Logistics hub", stat = "hub", cost = 20000, needs = "warehouse", rep = 1, desc = "Tier 4: freighters, ship tool, Logistician, Halcyon, Meridian" },
       deep_nav = { name = "Deep-range nav", stat = "deepNav", cost = 8000, tier = 4, needs = "engine_mk3", desc = "Reach Lumen Rift" },
       -- spec §6.5: T4 + Reputation 2; enters T5 (Monitor agent, Alerts panel).
-      command_center = { name = "Command center", stat = "commandCenter", cost = 15000, tier = 4, rep = 2, desc = "Tier 5: Monitor agent, Alerts panel" },
+      command_center = { name = "Command center", stat = "commandCenter", cost = 160000, tier = 4, rep = 2, desc = "Tier 5: Monitor agent, Alerts panel" },
     },
   },
   waitMinSeconds = 10,
