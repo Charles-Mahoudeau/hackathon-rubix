@@ -671,6 +671,18 @@ local function editorScreen(font, r, m, opts)
   local function field(x, w, title, c, value, empty)
     local b = box(font, x, r.y + e.boxY, w, e.boxHeight, title, 170)
     local inner = w - 2 * L.pad
+    -- The input tree is drawn under the shell, so the box is a see-through frame with opaque strips around the field.
+    b.background.color = UiTheme.color("panel", 0)
+    b.image = nil
+    local fy, fh = e.fieldY, e.fieldHeight
+    local strips = {
+      { 1, 1, w - 2, fy - 1 }, { 1, fy + fh, w - 2, e.boxHeight - fy - fh - 1 },
+      { 1, fy, L.pad - 1, fh }, { w - L.pad, fy, L.pad, fh },
+    }
+    for i, sr in ipairs(strips) do
+      table.insert(b.children, i, { style = { position = "absolute", left = sr[1], top = sr[2], width = sr[3], height = sr[4] },
+        background = { color = UiTheme.color("panel") } })
+    end
     b.children[#b.children + 1] = at(w - L.pad - 160, 8, text(font, (c.state == "over" and "ERROR " or "") .. c.text .. " tokens", T.small, counterColor(c)), 160, 16)
     b.children[#b.children + 1] = at(L.pad, e.barY, limitBar(c, inner))
     b.children[#b.children + 1] = scrollBox(L.pad, e.previewY, inner, e.previewHeight,
@@ -679,6 +691,9 @@ local function editorScreen(font, r, m, opts)
   end
   out[#out + 1] = field(x0, e.directiveWidth, "DIRECTIVE (permanent)", m.directive, draft.directive, "(empty directive)")
   out[#out + 1] = field(x0 + e.directiveWidth + e.gap, ow, "ORDER (one-off, until cleared)", m.order, draft.order, "(no order)")
+  -- Input text is not clipped by the engine: a long directive runs on into the gap between the boxes, so the gap is covered too.
+  out[#out + 1] = { style = { position = "absolute", left = x0 + e.directiveWidth, top = r.y + e.boxY + e.fieldY, width = e.gap, height = e.fieldHeight, ignorePointer = true },
+    background = { color = UiTheme.color("bg") } }
 
   -- actions
   local acts = panel({ x = x0, y = r.y + e.actionsY, w = dw, h = e.actionsHeight }, nil)
@@ -1502,7 +1517,7 @@ function Shell.inputsSpec(draft, opts)
   local font = opts.font
   local f, e = Shell.editorFields(), Screens.editor
   local function field(rect, value: string, action: string, placeholder: string)
-    return { style = { position = "absolute", left = rect.x, top = rect.y, width = rect.w, height = rect.h, justify = "center", paddingX = 8 },
+    return { style = { position = "absolute", left = rect.x, top = rect.y, width = rect.w, height = rect.h, justify = "center", paddingX = 8, overflow = "hidden" },
       background = { color = UiTheme.color("bg"), radius = L.radius, borderColor = UiTheme.color("cyan", 0.5), borderWidth = 1 },
       text = { text = value, font = font, size = T.body, color = UiTheme.color("text") },
       input = { action = action, placeholder = placeholder } }
