@@ -268,17 +268,29 @@ local function mapOverlay(font, r, map, opts)
   end
   -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
-  local function label(center, name, sub, colorName, subColor, below)
+  -- `alpha` (a reveal fading a label in or out) tints the text; `backing` puts a panel behind it so it stays readable over the world.
+  local function label(center, name, sub, colorName, subColor, below, alpha: number?, backing: number?)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
     title.text.align = "center"
     if line then line.text.align = "center" end
+    if alpha then
+      title.text.color = UiTheme.color(colorName, alpha)
+      if line then line.text.color = UiTheme.color(subColor or "dim", alpha) end
+    end
     local left = math.max(r.x + L.gap, math.min(center.x - 90, r.x + r.w - 180 - L.gap))
+    if backing and backing > 0 then
+      local h = math.ceil(T.body * Fit.lineHeight) + 2 * math.ceil(T.small * Fit.lineHeight) + 8
+      nodes[#nodes + 1] = { style = { position = "absolute", left = left - 4, top = center.y + below - 3, width = 188, height = h, ignorePointer = true },
+        background = { color = UiTheme.color("panel", backing), radius = 3 } }
+    end
     return { style = { position = "absolute", left = left, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
       children = { title, line } }
   end
+  local reveal = opts.reveal
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
     local sub = p.lit and table.concat(p.ores, ", ") or ("Locked: " .. p.condition)
+    local revealing = p.lit and reveal ~= nil and reveal.id == p.id
     if p.lit then
       local look = Planets.planets[p.id]
       local neon = look.rim and look.rim[1] or "cyan"
@@ -288,7 +300,27 @@ local function mapOverlay(font, r, map, opts)
       end
       nodes[#nodes + 1] = focusArea(c, cfg.planetRadius * 2, p.id, neon)
     end
-    nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    if revealing then
+      local rv = Vfx.reveal
+      if reveal.dim > 0 then nodes[#nodes + 1] = dot(c, cfg.planetRadius * 2, rv.dim.color, reveal.dim) end
+      local ring = reveal.ring
+      if reveal.outline then ring = { grow = 0, alpha = 1, stroke = rv.ring.stroke } end
+      if ring then
+        local rr = cfg.planetRadius + ring.grow
+        nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - rr, top = c.y - rr, width = rr * 2, height = rr * 2, ignorePointer = true },
+          background = { color = UiTheme.color(rv.ring.color, 0), radius = rr, borderColor = UiTheme.color(rv.ring.color, ring.alpha), borderWidth = ring.stroke } }
+      end
+      -- Locked reason fades out over the first half of the label span, the real name and available state fade in over the second (never both at once: two overlapping lines are unreadable), over one panel backing.
+      if reveal.labelMix < 1 then
+        local locked = "Locked: " .. Model.unlockCondition(p.id)
+        nodes[#nodes + 1] = label(c, p.name, locked, "dim", Theme.semantic.warning, cfg.planetRadius + 8, math.max(0, 1 - 2 * reveal.labelMix), reveal.backing)
+      end
+      if reveal.labelMix > 0 then
+        nodes[#nodes + 1] = label(c, p.name, sub, "text", "dim", cfg.planetRadius + 8, math.max(0, 2 * reveal.labelMix - 1), reveal.labelMix < 1 and 0 or reveal.backing)
+      end
+    else
+      nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    end
   end
   for _, m in ipairs(map.markets) do
     local c = points[m.id]
