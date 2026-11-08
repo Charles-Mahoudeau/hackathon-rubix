@@ -9,6 +9,7 @@ local function rewardText(r)
   local parts = {}
   if r.credits then parts[#parts + 1] = ("%d cr"):format(r.credits) end
   if r.compute then parts[#parts + 1] = ("%d Compute"):format(r.compute) end
+  if r.archiveSlot then parts[#parts + 1] = ("+%d Archive slot"):format(r.archiveSlot) end
   return table.concat(parts, " + ")
 end
 

@@ -3,6 +3,9 @@
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
 local Missions = require("@scripts/sim/missions")
+local Skills = require("@scripts/sim/skills")
+local Market = require("@scripts/sim/market")
+local Offline = require("@scripts/sim/offline")
 local Persistence = require("@scripts/sim/persistence")
 local MissionsView = require("@scripts/ui/missions_view")
 local Shell = require("@scripts/ui/shell")
@@ -39,12 +42,12 @@ end
 -- 1. framework: mission 1 is active from the first tick, 2 and 3 are locked, nothing is claimable
 do
   local s = Sim.new()
-  assert(#s.missions == 3 and status(s, 1) == "active" and status(s, 2) == "locked" and status(s, 3) == "locked")
+  assert(#s.missions == 5 and status(s, 1) == "active" and status(s, 2) == "locked" and status(s, 3) == "locked")
   local ok, err = Missions.claim(s, 1)
   assert(not ok and err == "not_complete", "cannot claim an unfinished mission")
   assert(select(2, Missions.claim(s, 99)) == "unknown_mission")
   local m = MissionsView.model(s)
-  assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 3 and #m.rows == 3)
+  assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 5 and #m.rows == 5)
   assert(m.current.hint:find("Say which ore, which vein", 1, true), "hint text from the spec")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
 end
@@ -175,7 +178,7 @@ do
   assert(status(s, 3) == "complete", "1,000 revenue at 0 Compute")
   local credits = s.resources.credits
   assert(Missions.claim(s, 3) and s.resources.credits == credits + 800)
-  assert(MissionsView.model(s).allDone and #MissionsView.model(s).rows == 3)
+  assert(not MissionsView.model(s).allDone and MissionsView.model(s).current.id == 4 and #MissionsView.model(s).rows == 5)
 
   -- exactly 15 Compute is allowed
   s = open3()
@@ -236,12 +239,115 @@ do
   local spec, shown = Shell.spec(s, "missions", {})
   assert(shown == "missions")
   local all = table.concat(texts(spec), "\n")
-  assert(all:find("Clear orders", 1, true) and all:find("MISSION 1 / 3", 1, true) and all:find("0 / 3 trips in a row", 1, true))
+  assert(all:find("Clear orders", 1, true) and all:find("MISSION 1 / 5", 1, true) and all:find("0 / 3 trips in a row", 1, true))
   assert(not buttons(spec)["missions.claim.1"], "no Claim button before the goal is met")
   s.missions[1].status = "complete"
   local done = Shell.spec(s, "missions", {})
   assert(buttons(done)["missions.claim.1"], "Claim button once complete")
   assert(Model.signature(s, "missions", MissionsView.signature(s)) ~= Model.signature(Sim.new(), "missions", MissionsView.signature(Sim.new())))
+end
+
+local function skillLoop(name, vein)
+  return { name = name, agent_type = "miner", params = {}, loop = true,
+    steps = { { tool = "mine", args = { vein = vein } }, { tool = "return" }, { tool = "sell" } } }
+end
+
+-- Sim with missions 1-3 claimed and mission 4 open.
+local function open4()
+  local s = Sim.new()
+  Market.quiet(s.market)
+  for i = 1, 3 do s.missions[i].status = "claimed" end
+  s:run(2)
+  assert(status(s, 4) == "active")
+  return s
+end
+
+-- 10. mission 4: save a skill, then 500 credits from skill steps (also offline); manual and AI sales do not count
+do
+  local s = open4()
+  local p = Missions.progress(s, s.missions[4])
+  assert(p.text == "Save a skill first" and not p.lines[1].done)
+  call(s, "mine", { vein = "K1", stop_at_hold_pct = 100 }) -- a hand-driven sale earns credits but is not a skill step
+  assert(s.missions[4].earned == 0, "manual sales do not count")
+  assert(Skills.save(s, skillLoop("loop-k1", "K1"), { agent = "miner" }))
+  s:run(1)
+  p = Missions.progress(s, s.missions[4])
+  assert(p.lines[1].done and not p.lines[2].done and p.text == "0 / 500 cr from skill steps", p.text)
+  assert(Skills.assign(s, "miner", "loop-k1", {}))
+  assert(runUntil(s, function() return status(s, 4) == "complete" end, 20000), "skill credits complete mission 4")
+  assert(s.missions[4].earned >= 500 and s.compute.lifetimeTotal == 0, "earned with no Compute")
+  assert(Missions.progress(s, s.missions[4]).fraction == 1)
+  local slots = s:archiveCapacity()
+  local credits = s.resources.credits
+  assert(Missions.claim(s, 4) and s.resources.credits == credits, "reward is an Archive slot, not credits")
+  assert(s:archiveCapacity() == slots + 1 and s.upgrades.archive == 0, "+1 Archive slot, purchases untouched")
+  assert(MissionsView.model(s).rows[4].reward == "+1 Archive slot")
+  assert(status(s, 5) == "locked" and MissionsView.model(s).current.progressText == "Build the warehouse and the trading post")
+end
+
+-- 10b. mission 4 offline: the skill earns while away; a save made before the skill existed still loads with missions 4-5
+do
+  local s = open4()
+  assert(Skills.save(s, skillLoop("loop-k1", "K1"), { agent = "miner" }))
+  assert(Skills.assign(s, "miner", "loop-k1", {}))
+  Offline.run(s, 1800)
+  s:run(2)
+  assert(status(s, 4) == "complete", "offline skill credits count")
+  local old = Persistence.serialize(s, 1)
+  old.state.missions = { old.state.missions[1], old.state.missions[2], old.state.missions[3] }
+  local r = assert(Persistence.restore(old))
+  assert(#r.missions == 5 and r.missions[4].status == "locked" and r.missions[5].status == "locked", "old save gains missions 4-5")
+end
+
+-- 11. mission 5: needs warehouse + trading post; only Orbis units paid >= 1.5x the Kessa HMC price count
+do
+  local s = Sim.new()
+  Market.quiet(s.market)
+  s.tier = 3
+  for _, a in pairs(s.agents) do a.tier = 3 end
+  for i = 1, 4 do s.missions[i].status = "claimed" end
+  s:run(2)
+  assert(status(s, 5) == "locked" and MissionsView.model(s).current.locked)
+  s.upgrades.warehouse = true
+  s:run(2)
+  assert(status(s, 5) == "locked", "the warehouse alone is not enough")
+  s.upgrades.tradingPost = true
+  s:run(2)
+  assert(status(s, 5) == "active")
+  local function units() return s.missions[5].units end
+  local function trip(buyer, pct)
+    call(s, "mine", { vein = "K1", stop_at_hold_pct = pct or 100 })
+    call(s, "sell", { buyer = buyer })
+  end
+  for _ = 1, 6 do trip("hmc") end
+  assert(units() == 0 and status(s, 5) == "active", "selling to HMC never counts")
+  local res = s.market.markets.orbis.res.titanium
+  res.s = 0.7 -- 6 x 0.7 = 4.2 cr/unit < 1.5 x 3.0
+  trip("orbis")
+  assert(units() == 0, "below 1.5x the HMC price does not count: " .. units())
+  res.s = 1
+  trip("orbis", 50)
+  assert(units() == 50, "50 units at 6 cr: " .. units())
+  for _ = 1, 4 do trip("orbis") end
+  assert(units() == 450 and status(s, 5) == "active")
+  assert(Missions.progress(s, s.missions[5]).text == "450 / 500 units to Orbis at 1.5x the HMC price")
+  trip("orbis")
+  assert(status(s, 5) == "complete", "500 qualifying units")
+  local credits = s.resources.credits
+  assert(Missions.claim(s, 5) and s.resources.credits == credits + 2000)
+  assert(MissionsView.model(s).allDone)
+end
+
+-- 11b. the Orbis hook alone (the Logistician's warehouse sale calls it too): 500 units at the baseline price complete it
+do
+  local s = Sim.new()
+  Market.quiet(s.market)
+  s.tier = 3
+  s.upgrades.warehouse, s.upgrades.tradingPost = true, true
+  for i = 1, 4 do s.missions[i].status = "claimed" end
+  s:run(2)
+  Missions.onOrbisSale(s, "cobalt", 500, Market.price(s.market, "orbis", "cobalt"))
+  assert(status(s, 5) == "complete")
 end
 
 print("missions OK")

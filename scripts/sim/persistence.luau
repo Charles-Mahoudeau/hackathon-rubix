@@ -6,6 +6,7 @@ local Sim = require("./sim")
 local Upgrades = require("./upgrades")
 local Market = require("./market")
 local Offline = require("./offline")
+local Missions = require("./missions")
 
 local Persistence = {}
 
@@ -68,6 +69,9 @@ function Persistence.restore(data, opts)
   local st = Sim.deepCopy(data.state)
   for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "missions" }) do
     if st[key] ~= nil then sim[key] = st[key] end
+  end
+  for i, fresh in ipairs(Missions.new()) do -- older saves hold fewer missions: the new ones start locked
+    if not sim.missions[i] then sim.missions[i] = fresh end
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
   for k, v in pairs(st.warehouse) do sim.warehouse[k] = v end

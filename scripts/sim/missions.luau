@@ -3,6 +3,8 @@
 -- per mission, saved with the game). Rewards are paid on claim and are NOT revenue (they never count toward tiers or mission 3).
 -- Pure Luau, headless, no UI calls: the panel (ui/missions_view.luau) reads progress() and calls claim() / retry().
 local Config = require("@scripts/config/missions")
+local World = require("@scripts/config/world")
+local DecisionLog = require("./decision_log")
 
 local Missions = {}
 
@@ -28,6 +30,8 @@ end
 local function begin(sim, e, d)
   if d.check == "streak" then e.streaks = {}
   elseif d.check == "scout" then e.scanner, e.scanned, e.sold = false, false, false
+  elseif d.check == "skillcredit" then e.saved, e.earned = false, 0
+  elseif d.check == "orbis" then e.units = 0
   elseif d.check == "frugal" then e.baseRevenue, e.baseCompute, e.failed = sim.lifetimeRevenue, sim.compute.lifetimeTotal, false end
 end
 
@@ -41,13 +45,23 @@ end
 
 local function startMet(sim, d)
   local s = d.start
-  return s == nil or s.tier == nil or sim.tier >= s.tier
+  if s == nil then return true end
+  if s.tier and sim.tier < s.tier then return false end
+  for _, u in ipairs(s.upgrades or {}) do if not sim.upgrades[u] then return false end end
+  return true
 end
+
+local UPGRADE_LABEL = { warehouse = "the warehouse", tradingPost = "the trading post" }
 
 -- Why the current mission has not started: nil once its `start` holds.
 function Missions.lockReason(sim, d)
   local s = d.start
   if s and s.tier and sim.tier < s.tier then return ("Reach tier %d"):format(s.tier) end
+  local need = {}
+  for _, u in ipairs(s and s.upgrades or {}) do
+    if not sim.upgrades[u] then need[#need + 1] = UPGRADE_LABEL[u] or u end
+  end
+  if #need > 0 then return "Build " .. table.concat(need, " and ") end
   return nil
 end
 
@@ -73,6 +87,16 @@ function Missions.progress(sim, e)
       lines[#lines + 1] = { text = label, done = done[i] == true }
     end
     return { fraction = n / #d.steps, text = ("%d / %d steps"):format(n, #d.steps), lines = lines }
+  elseif d.check == "skillcredit" then
+    local earned = math.min(e.earned or 0, d.credits)
+    local done = { e.saved, e.saved and earned >= d.credits }
+    local lines = {}
+    for i, label in ipairs(d.steps) do lines[#lines + 1] = { text = label, done = done[i] == true } end
+    if not e.saved then return { fraction = 0, text = "Save a skill first", lines = lines } end
+    return { fraction = earned / d.credits, text = ("%d / %d cr from skill steps"):format(math.floor(earned), d.credits), lines = lines }
+  elseif d.check == "orbis" then
+    local n = math.min(e.units or 0, d.units)
+    return { fraction = n / d.units, text = ("%d / %d units to Orbis at %.1fx the HMC price"):format(n, d.units, d.minRatio), lines = {} }
   else
     local earned = math.max(0, sim.lifetimeRevenue - e.baseRevenue)
     local spent = computeSpent(sim, e)
@@ -90,6 +114,11 @@ local function check(sim, e, d)
     if e.scanner and sim.veins[d.vein] and sim.veins[d.vein].scanned then e.scanned = true end
     return e.scanner and e.scanned and e.sold
   end
+  if d.check == "skillcredit" then
+    if next(sim.skills) ~= nil then e.saved = true end
+    return e.saved and (e.earned or 0) >= d.credits
+  end
+  if d.check == "orbis" then return (e.units or 0) >= d.units end
   if computeSpent(sim, e) > d.computeMax then e.failed = true end
   return not e.failed and sim.lifetimeRevenue - e.baseRevenue >= d.revenue
 end
@@ -134,6 +163,29 @@ function Missions.onSale(sim, ship)
   Missions.update(sim)
 end
 
+-- Money came in (Sim:credit) from the decision `recordId`: a skill step's sale counts for mission 4 ("skill:<name>" source).
+function Missions.onCredit(sim, recordId, gain)
+  local e, d = Missions.current(sim)
+  if not e or e.status ~= "active" or d.check ~= "skillcredit" or gain <= 0 then return end
+  local rec = DecisionLog.find(sim, recordId)
+  if rec and rec.source and rec.source:sub(1, 6) == "skill:" then
+    e.earned = (e.earned or 0) + gain
+    Missions.update(sim)
+  end
+end
+
+-- Units sold to Orbis at `unit` credits each (priced before the saturation drop): only units paid at least `minRatio` times
+-- the reference planet's HMC depot price for that ore count for mission 5.
+function Missions.onOrbisSale(sim, ore, qty, unit)
+  local e, d = Missions.current(sim)
+  if not e or e.status ~= "active" or d.check ~= "orbis" then return end
+  local hmc = World.planets[d.refPlanet].depotRate * World.ores[ore].basePrice
+  if unit >= d.minRatio * hmc then
+    e.units = (e.units or 0) + qty
+    Missions.update(sim)
+  end
+end
+
 -- The Claim button. Pays the reward once; the next mission opens on the next update. -> ok, err
 function Missions.claim(sim, id)
   local d = defOf(id)
@@ -145,9 +197,11 @@ function Missions.claim(sim, id)
       local r = d.reward
       if r.credits then sim.resources.credits += r.credits end
       if r.compute then sim.compute:grant(r.compute) end
+      if r.archiveSlot then sim.upgrades.archiveBonus = (sim.upgrades.archiveBonus or 0) + r.archiveSlot end
       e.status = "claimed"
-      sim:log("INFO", ("mission %d claimed: +%d cr%s"):format(d.id, r.credits or 0, r.compute and (" +%d Compute"):format(r.compute) or ""))
-      sim:emit("mission_claimed", { id = d.id, reward = { credits = r.credits, compute = r.compute } })
+      sim:log("INFO", ("mission %d claimed: +%d cr%s%s"):format(d.id, r.credits or 0, r.compute and (" +%d Compute"):format(r.compute) or "",
+        r.archiveSlot and (" +%d Archive slot"):format(r.archiveSlot) or ""))
+      sim:emit("mission_claimed", { id = d.id, reward = { credits = r.credits, compute = r.compute, archiveSlot = r.archiveSlot } })
       Missions.update(sim)
       return true, r
     end
