@@ -23,6 +23,7 @@ local Raiding = require("@scripts/sim/raiding")
 local Refining = require("@scripts/sim/refining")
 local Salvage = require("@scripts/sim/salvage")
 local Registry = require("@scripts/sim/branches/registry")
+local Words = require("@scripts/config/copy")
 local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
 
@@ -91,6 +92,7 @@ function Sim.new(opts)
   for _, def in ipairs(self.registry.list) do
     if def.unlock and def.unlock.startsOpen then Registry.open(self, def.id, true) end
   end
+  Feed.info(self, nil, Words.unlocks.tier[1])
   self.skills = {}
   self.market = Market.new(self.rng, b.tickSeconds, function(kind, text)
     self:emit("market_notice", { kind = kind, text = text })
@@ -290,6 +292,7 @@ function Sim:enterTier(t)
   self.tier = t
   for _, agent in pairs(self.agents) do agent.tier = t end
   self:log("INFO", ("tier %d reached"):format(t))
+  Feed.info(self, nil, Words.unlocks.tier[t])
   self:emit("tier_up", { tier = t })
 end
 
@@ -841,7 +844,7 @@ function Sim:pauseAgent(agentId, why)
   if agent.state == "paused_error" then return end
   agent.state, agent.blockReason = "paused_error", why
   self:log("ERROR", ("%s: paused (%s)"):format(agentId, why))
-  Feed.error(self, agentId, "paused: " .. why .. ". Fix the directive, then resume.")
+  Feed.error(self, agentId, why)
   self:emit("agent_paused_error", { agent = agentId, reason = why })
 end
 
@@ -854,11 +857,11 @@ function Sim:noteFailure(agentId, kind, key)
     e.lastKey = key
   end
   if e.provider >= rules.providerErrors then
-    self:pauseAgent(agentId, ("%d provider errors in a row"):format(e.provider))
+    self:pauseAgent(agentId, Words.pause.provider)
   elseif e.invalid >= rules.invalidResponses then
-    self:pauseAgent(agentId, ("%d invalid responses in a row"):format(e.invalid))
+    self:pauseAgent(agentId, Words.pause.invalid)
   elseif key and e.same >= rules.sameFailingCall then
-    self:pauseAgent(agentId, "the same call failed twice")
+    self:pauseAgent(agentId, Words.pause.same)
   end
 end
 
@@ -1021,7 +1024,7 @@ local function setAgentState(self, agent, state, why)
   if state == "no_compute" then
     agent.blockReason = why
     self:log("WARN", ("%s: no_compute (%s)"):format(agent.id, why))
-    Feed.error(self, agent.id, "no_compute: " .. why)
+    Feed.error(self, agent.id, why)
     self:emit("agent_no_compute", { agent = agent.id, reason = why })
   else
     agent.blockReason = nil
@@ -1094,7 +1097,8 @@ function Sim:onAiResponse(resp)
     return
   end
   self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
-  Feed.error(self, agentId, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
+  local shown = resp.kind == "invalid" and Words.provider.invalid or (resp.error == "timeout" and Words.provider.timeout or Words.provider.failed)
+  Feed.error(self, agentId, ("%s (%s)"):format(shown, tostring(resp.error)))
   DecisionLog.failed(self, rec, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
   self:noteFailure(agentId, resp.kind == "invalid" and "invalid" or "provider")
   if agent.state == "paused_error" then return end
@@ -1144,7 +1148,7 @@ function Sim:stepAgent(id, agent)
   local prompt = Prompt.build(self, id)
   local canSend, reason = self.compute:canSend(prompt.input, id)
   if not canSend then
-    setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or "not enough Compute")
+    setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or Words.notEnoughCompute)
     return
   end
   setAgentState(self, agent, "idle")

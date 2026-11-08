@@ -6,6 +6,7 @@ local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
 local Skills = require("@scripts/sim/skills")
+local Words = require("@scripts/config/copy")
 local Screens = require("@scripts/config/screens")
 local ExamplesConfig = require("@scripts/config/directive_examples")
 local PromptLibrary = require("@scripts/sim/prompt_library")
@@ -32,6 +33,14 @@ function Editor.canSave(sim, draft)
   local e = sim.compute.cfg.editor
   return Compute.estimateTokens(sim.compute.cfg, draft.directive) <= e.directiveMaxTokens
     and Compute.estimateTokens(sim.compute.cfg, draft.order) <= e.orderMaxTokens
+end
+
+-- Which limit blocks saving, in the words of config/copy.luau (nil when both texts fit).
+function Editor.limitNote(directive, order)
+  local parts = {}
+  if directive.state == "over" then parts[#parts + 1] = Words.editor.directiveOver end
+  if order.state == "over" then parts[#parts + 1] = Words.editor.orderOver end
+  return #parts > 0 and table.concat(parts, " ") or nil
 end
 
 -- Tools the agent owns but cannot use yet, each with the actual requirement.
@@ -98,11 +107,14 @@ function Editor.model(sim, agentId, draft)
   end
 
   local saved = Editor.newDraft(sim, agentId)
+  local directiveCounter = counter(cfg, draft.directive, cfg.editor.directiveMaxTokens)
+  local orderCounter = counter(cfg, draft.order, cfg.editor.orderMaxTokens)
   return {
     agentId = agentId,
-    directive = counter(cfg, draft.directive, cfg.editor.directiveMaxTokens),
-    order = counter(cfg, draft.order, cfg.editor.orderMaxTokens),
+    directive = directiveCounter,
+    order = orderCounter,
     canSave = Editor.canSave(sim, draft),
+    limitNote = Editor.limitNote(directiveCounter, orderCounter),
     dirty = draft.directive ~= saved.directive or draft.order ~= saved.order,
     orderActive = agent.order ~= "",
     orderSource = (agent.order ~= "" and agent.orderSource) or nil,
