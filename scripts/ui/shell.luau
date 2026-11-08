@@ -1018,6 +1018,17 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
+-- The HMC emergency-advance banner (spec §8.5): text and a Claim button, over the top right of the main panel.
+local function noticeBanner(font, r, n)
+  local c = Screens.notice
+  local btn = buttonNode({ width = c.buttonWidth, height = 28, justify = "center", alignItems = "center" }, n.action, "cyan",
+    { text(font, n.button, T.small, "cyan") }, true)
+  local textW = c.width - c.buttonWidth - 3 * L.pad
+  return withChildren(panel({ x = r.x + r.w - c.width - c.margin, y = r.y + c.margin, w = c.width, h = c.height },
+    { direction = "row", alignItems = "center", gap = 12, paddingX = L.pad }, true),
+    { text(font, Fit.truncate(n.text, T.small, textW), T.small, Theme.semantic.warning, { width = textW }), btn })
+end
+
 -- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", logs = LogsView.new() state, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
@@ -1081,6 +1092,8 @@ function Shell.spec(sim, screenId: string, opts)
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end
+  local notice = Model.notification(sim)
+  if notice then children[#children + 1] = noticeBanner(font, rects.main, notice) end
   for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
   local shift = opts.glitch and opts.glitch.slices[1] and opts.glitch.slices[1].shift or 0
   return Fit.apply({

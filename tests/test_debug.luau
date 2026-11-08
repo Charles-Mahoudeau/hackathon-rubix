@@ -98,7 +98,7 @@ do
   assert(shown == "debug")
   local actions = walk(spec, {})
   local function offered(a) for _, x in ipairs(actions) do if x == a then return true end end return false end
-  for _, a in ipairs({ "debug.addCredits", "debug.addCompute", "debug.setTier.3", "debug.revealVeins", "debug.triggerShortage",
+  for _, a in ipairs({ "debug.addCredits", "debug.addCompute", "debug.setStuck", "debug.setTier.3", "debug.revealVeins", "debug.triggerShortage",
     "debug.simulateAway.1", "debug.setProvider.stub", "debug.setProvider.axis", "debug.lastPrompt", "debug.resetSave" }) do
     assert(offered(a), "panel button missing: " .. a)
   end
