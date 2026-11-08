@@ -48,6 +48,17 @@ return {
     inbox = true,
     warehouse = true,
   },
+  -- Agent editor (spec §9.4, GR5-5). Limits are in tokens of the text itself (ceil(utf8_length / charsPerToken)).
+  editor = {
+    directiveMaxTokens = 400, -- permanent instruction
+    orderMaxTokens = 100,     -- one-off, from the next decision until cleared
+    amberFraction = 0.9,      -- the counter turns amber from this share of the limit
+    savedToast = "Applied: takes effect on the agent's next decision",
+    presets = {
+      vague = { label = "Vague", directive = "mine" },
+      precise = { label = "Precise", directive = "Mine cobalt on K3 until the hold is 100%, then sell at HMC. If the vein is empty, scan K3 and pick the richest vein." },
+    },
+  },
   feedMax = 200, -- agent feed lines kept (spec §12)
   -- spec §8.4: an agent stops (paused_error) until the player resumes it
   errorRules = { invalidResponses = 2, providerErrors = 3, sameFailingCall = 2 },

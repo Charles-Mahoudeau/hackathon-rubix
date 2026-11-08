@@ -7,6 +7,7 @@ local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
+local Editor = require("@scripts/ui/agent_editor")
 local Glitch = require("@scripts/render/vfx/glitch")
 
 local Shell = {}
@@ -173,6 +174,94 @@ local function mapOverlay(font, r, map)
   return nodes
 end
 
+
+-- Agent editor (GR5-5). Fields are absolute view-pixel rectangles shared by the shell (holes) and the inputs tree.
+function Shell.editorFields()
+  local m, e = Shell.layout().main, Screens.editor
+  local x, w = m.x + L.pad, e.leftWidth - 2 * L.pad
+  return {
+    directive = { x = x, y = m.y + e.directiveY, w = w, h = e.fieldHeight },
+    order = { x = x, y = m.y + e.orderY, w = w, h = e.fieldHeight },
+  }
+end
+
+-- Child of `parent` at (x, y) relative to it.
+local function at(x: number, y: number, node, w: number?, h: number?)
+  local style = { position = "absolute", left = x, top = y, width = w, height = h }
+  node.style = node.style and { style, node.style } or style
+  return node
+end
+
+local function button(font, label: string, action: string, colorName: string, w: number)
+  return { style = { width = w, height = 28, justify = "center", alignItems = "center" },
+    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(colorName, 0.6), borderWidth = 1 },
+    button = { action = action, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) },
+    children = { text(font, label, T.small, colorName) } }
+end
+
+local function editorScreen(font, r, m, opts)
+  local e = Screens.editor
+  local counterColor = function(c) return c.amber and Theme.semantic.warning or "dim" end
+  local left = {}
+  local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "AGENT EDITOR  " .. m.agentId, T.small, "dim"))
+  nodeAt(L.pad, e.directiveY - 22, text(font, "Directive (permanent)", T.body, "text"))
+  nodeAt(e.leftWidth - L.pad - 150, e.directiveY - 22, text(font, m.directive.text .. " tokens", T.body, counterColor(m.directive)))
+  nodeAt(L.pad, e.orderY - 22, text(font, "Order (one-off, until cleared)", T.body, "text"))
+  nodeAt(e.leftWidth - L.pad - 150, e.orderY - 22, text(font, m.order.text .. " tokens", T.body, counterColor(m.order)))
+  local x = L.pad
+  for _, preset in ipairs(opts.presets) do
+    nodeAt(x, e.buttonsY, button(font, preset.label, "editor.preset." .. preset.key, "dim", 80))
+    x += 88
+  end
+  nodeAt(x + 16, e.buttonsY, button(font, "Clear order", "editor.clear_order", "dim", 110))
+  nodeAt(x + 134, e.buttonsY, button(font, "Save", "editor.save", m.canSave and "cyan" or "dim", 80))
+  local note = opts.toast or (not m.canSave and "Over the limit: cannot be saved." or (m.dirty and "Unsaved changes." or nil))
+  if note then
+    nodeAt(L.pad, e.toastY, text(font, note, T.small, opts.toast and "green" or (not m.canSave and Theme.semantic.warning or "dim")))
+  end
+  local leftPanel = panel({ x = r.x, y = r.y, w = e.leftWidth, h = r.h }, nil)
+  withChildren(leftPanel, left)
+
+  local rows = {
+    text(font, "COST OF ONE DECISION", T.small, "dim"),
+    text(font, m.cost.text, T.heading, "cyan"),
+    text(font, ("%d input + %d output = %d tokens"):format(m.inputTokens, m.outputTokens, m.totalTokens), T.small, "dim"),
+    text(font, "", T.small, "dim"),
+  }
+  for _, name in ipairs({ "rules", "directive", "order", "context", "tools" }) do
+    rows[#rows + 1] = text(font, ("%-10s %5d tokens"):format(name, m.sections[name]), T.body, "text")
+  end
+  rows[#rows + 1] = text(font, "", T.small, "dim")
+  for _, f in ipairs(m.formats) do
+    rows[#rows + 1] = text(font, ("Context %-7s %5d tokens%s"):format(f.format, f.context, f.active and "  (in use)" or ""), T.small, f.active and "cyan" or "dim")
+  end
+  rows[#rows + 1] = text(font, "", T.small, "dim")
+  rows[#rows + 1] = text(font, "TOOLS (each one is paid in every prompt)", T.small, "dim")
+  for _, t in ipairs(m.tools) do rows[#rows + 1] = text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") end
+  rows[#rows + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
+  local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
+  return leftPanel, withChildren(rightPanel, rows)
+end
+
+-- The two text inputs, in their own tree (see config/screens.luau editor). `draft` gives their starting text.
+function Shell.inputsSpec(draft, opts)
+  opts = opts or {}
+  local font = opts.font
+  local f, e = Shell.editorFields(), Screens.editor
+  local function field(rect, value: string, action: string, placeholder: string)
+    return { style = { position = "absolute", left = rect.x, top = rect.y, width = rect.w, height = rect.h, justify = "center", paddingX = 8 },
+      background = { color = UiTheme.color("bg"), radius = L.radius, borderColor = UiTheme.color("cyan", 0.5), borderWidth = 1 },
+      text = { text = value, font = font, size = T.body, color = UiTheme.color("text") },
+      input = { action = action, placeholder = placeholder } }
+  end
+  return { style = { position = "absolute", left = 0, top = 0, width = L.view.w, height = L.view.h },
+    children = {
+      field(f.directive, draft.directive, "editor.directive", e.placeholder.directive),
+      field(f.order, draft.order, "editor.order", e.placeholder.order),
+    } }
+end
+
 -- The whole screen as a spec for engine.ui.spawn. opts = { font, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
@@ -191,6 +280,11 @@ function Shell.spec(sim, screenId: string, opts)
     mapPanel.background.color = UiTheme.color("panel", 0)
     children[#children + 1] = mapPanel
     for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim))) do children[#children + 1] = n end
+  elseif screenId == "agents" and sim.agents[Screens.editor.agent] then
+    local id = Screens.editor.agent
+    local a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim) })
+    children[#children + 1] = a
+    children[#children + 1] = b
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end

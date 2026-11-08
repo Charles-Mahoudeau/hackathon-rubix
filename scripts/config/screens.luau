@@ -58,6 +58,14 @@ return {
     convoyDot = 6,
   },
 
+  -- Agent editor (GR5-5): view pixels inside the main panel. The two text inputs are their own UI tree, so typing never
+  -- loses focus when the shell redraws; the shell leaves a hole at each field.
+  editor = {
+    leftWidth = 600, fieldHeight = 36, directiveY = 60, orderY = 136, buttonsY = 200, toastY = 244, costX = 624,
+    agent = "miner", -- the agent the screen edits until there are several (GR5-28)
+    placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)" },
+  },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed
