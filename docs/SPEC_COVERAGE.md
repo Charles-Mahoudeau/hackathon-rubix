@@ -18,7 +18,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 4 | GR5-75 | Tool results (§11) stored as `{}`: `recent` and logs blank | Gameplay | todo |
 | 5 | GR5-76 | Stub interpreter incomplete (§10.5) | Gameplay | todo |
 | 6 | GR5-74 | Emergency advance has no notification/button | Gameplay | todo |
-| 7 | GR5-77 | Save/load, autosave, offline catch-up not wired | Gameplay | todo |
+| 7 | GR5-77 | Save/load, autosave, offline catch-up not wired | Gameplay | in review |
 | 8 | GR5-83 | M1/M6/M8 acceptance tests the spec asks for | Gameplay | todo |
 | 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | done |
 | 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | backlog |
@@ -60,7 +60,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 |---|---|---|---|
 | 3 tick, speeds, pause | DONE | `balance.luau` tick 0.1 s, speeds {1,4,16}; `clock.luau`; `test_speed.luau` | |
 | 3 tick order | PARTIAL | `Sim:step` | Markets before ships; skills/triggers merged. No gameplay effect (GR5-85 records it) |
-| 3 autosave / on quit | MISSING | No caller of `Persistence.save` | GR5-77 |
+| 3 autosave / on quit | DONE (window-close path unverified in engine) | `client/save.luau` autosave every 30 s real + save on `rtype.Closed`; `tests/test_save.luau`, engine selftest, real client run (DECISIONS GR5-77) | GR5-77 |
 | 4.1-4.4 resources, planets, veins, markets | DONE | `world.luau`, `test_market.luau` §1 | |
 | 4.5 freighter routes / risk | PARTIAL | Routes match; risk only cosmetic in `config/screens.luau` | Allowed by spec |
 | 5.1 stats, travel, crowding | DONE | `travelTicks`, `crowdingFor`, `test_multi.luau:59` | |
@@ -96,7 +96,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 12.3 prompt versions, compare | DONE | `versions.luau`, `test_versions.luau` | Compare UI unverified (GR5-89) |
 | 13.1-13.4 skills | DONE | `skills.luau`, `checkParams`, `Skills.record`, wake-AI on abort | |
 | 13.5 studio UI | UNVERIFIED | `test_studio.luau` | GR5-89 |
-| 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Only reachable from debug (GR5-72, GR5-77) |
+| 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Now run at launch from `client/save.luau`, summary shown as a modal over any screen (GR5-77) |
 | 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M4 counts a skill saved before the mission opened (accepted, DECISIONS.md GR5-80) |
 | 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | |
 | 15b.1 ladders | DONE | `config/branches.luau` | |
@@ -104,7 +104,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 15b.5 V1-V3 missions, 15b.6 stubs | DONE | `missions_view.luau`, branch tests | |
 | 16.1 folder layout | PARTIAL | Real layout `scripts/{config,sim,ai,ui,client,server,render}` | Mapping below; GR5-85 |
 | 16.2 messages / net protocol | MISSING | No `net/protocol.luau`; client runs a local sim | GR5-88 (Engine), GR5-87, GR5-79 |
-| 16.3 save | PARTIAL | `persistence.luau` complete and tested (`test_persistence.luau`) | Never called (GR5-77) |
+| 16.3 save | PARTIAL | `persistence.luau` + `client/storage.luau` on `rtype.Persistence`; `test_save.luau`, `server/selftest.luau` | Called at boot, every 30 s and on quit (GR5-77) |
 | 16.4 debug panel | PARTIAL | `sim/debug.luau` has 9 actions; `ui/debug.luau` never spawned; `config/debug.luau` hard-codes enabled | GR5-72, GR5-86 |
 | 16.5 leave room | PARTIAL | `Sim:deliver` | No `sender` field (GR5-85) |
 | 17 demo path | PARTIAL | Speed buttons, editor presets, Shop, Logs->skill, "Simulate 1 h away", warehouse purchase work | Agents inert (GR5-71), no credit boost (GR5-72), Orbis step needs Station panel (GR5-73) |

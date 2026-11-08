@@ -48,6 +48,21 @@ function Model.topBar(sim)
   }
 end
 
+-- The HMC emergency-advance notification (spec §8.5), or nil while the sim is not offering it.
+function Model.notification(sim)
+  local offer = sim.offer
+  if not offer then return nil end
+  local grant = offer.compute or sim.b.bailout.grantCompute
+  return { kind = offer.kind, text = ("HMC: out of Compute and credits. +%d free Compute."):format(grant),
+    button = "Claim", action = "notice.claim", compute = grant }
+end
+
+-- A click on the notification -> handled, ok, err. Only the sim decides whether the claim is still allowed.
+function Model.act(sim, action)
+  if action ~= "notice.claim" then return false end
+  return true, sim:acceptEmergencyAdvance()
+end
+
 -- Nav entries visible at `tier` (spec §6.6), in order. `active` marks the current screen.
 function Model.nav(tier: number, active: string?)
   local out = {}
@@ -145,12 +160,14 @@ end
 -- What the main panel says when a screen has nothing yet; nil for the screens that always have content (map).
 function Model.emptyState(screenId: string) return Screens.empty[screenId] end
 
--- The latest feed lines (newest last), each { text, status, agent }.
+-- The latest feed lines (newest last), each { text, status, agent, tool, agentType }.
 function Model.feed(sim)
   local out, list = {}, sim.feed or {}
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
-    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source }
+    local who = e.agent and sim.agents and sim.agents[e.agent]
+    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
+      tool = e.tool, agentType = who and who.type or nil }
   end
   return out
 end
@@ -163,6 +180,7 @@ function Model.signature(sim, screenId: string, extra: string?)
   for _, c in ipairs(top.speed) do parts[#parts + 1] = c.action .. (c.active and "+" or "-") end
   parts[#parts + 1] = ("%s|%s|%s|%s|%d|%s|%s|%s"):format(top.creditsText, top.computeText, top.reputationText, top.tierText,
     round(top.computeFraction * 100), top.computeLevel, tostring(top.budgetReached), tostring(top.buy.affordable))
+  parts[#parts + 1] = Model.notification(sim) and "notice" or "-"
   for _, p in ipairs(Model.map(sim).planets) do parts[#parts + 1] = p.id .. (p.lit and "+" or "-") end
   for _, m in ipairs(Model.map(sim).markets) do parts[#parts + 1] = m.id end
   for _, l in ipairs(Model.feed(sim)) do parts[#parts + 1] = l.text .. l.status end

@@ -1,5 +1,6 @@
 -- Save / load (spec §16.3). Pure Luau: turns a Sim into a JSON-able table and back. File access is the caller's
--- `storage` ({ read(path) -> string?, write(path, text) -> boolean, err? }) because the engine has no file API yet [ENGINE].
+-- `storage` ({ read(path) -> text | nil | nil + code, write(path, text) -> ok, err? }): the client backs it with rtype.Persistence
+-- (client/storage.luau), tests with memoryStorage. A read that fails on an existing file returns nil + a code (never a silent new game).
 -- Only mutable state is saved; planets, ore data and balance come from config, so a rebalance applies to old saves.
 local Json = require("./json")
 local Sim = require("./sim")
@@ -234,7 +235,8 @@ end
 
 -- Returns sim, or nil + error { code = "no_file" | "corrupt" | "unknown_schema", message }. Never writes.
 function Persistence.load(storage, path, opts)
-  local text = storage.read(path)
+  local text, readError = storage.read(path)
+  if text == nil and readError then return nil, err("corrupt", ("save %s cannot be read: %s"):format(path, tostring(readError))) end
   if text == nil then return nil, err("no_file", "no save at " .. path) end
   local data, e = parse(text)
   if not data then return nil, e end
@@ -247,7 +249,8 @@ end
 -- never destroys it); opts.force skips that check (reset). Returns true, or false + error.
 function Persistence.save(sim, storage, path, savedAt, opts)
   if not (opts and opts.force) then
-    local existing = storage.read(path)
+    local existing, readError = storage.read(path)
+    if existing == nil and readError then return false, err("corrupt", ("save %s cannot be read, not overwriting: %s"):format(path, tostring(readError))) end
     if existing ~= nil then
       local _, e = parse(existing)
       if e and e.code == "unknown_schema" then return false, e end
