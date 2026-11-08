@@ -23,6 +23,19 @@ return {
 
   semantic = { success = "green", warning = "amber", error = "amber", neutral = "dim", player = "cyan" },
 
+  -- Design tokens (M9): what each palette colour MEANS on screen. Screens name a token, never a raw colour, so a branch row,
+  -- an agent light and an alert read the same everywhere. Values are palette names, checked by tests/test_art.luau.
+  tokens = {
+    surface = { screen = "bg", panel = "panel", field = "bg", row = "panel", border = "dim" },
+    text = { primary = "text", secondary = "dim", accent = "cyan", disabled = "dim" },
+    -- One accent per branch row; raiding takes magenta, the rival-A neon, because that is where the player meets rivals.
+    branch = { mining = "cyan", refining = "text", salvage = "green", raiding = "magenta" },
+    -- Agent and ship lights. `acting` and `active` are the same light; unknown states fall back to `idle`.
+    state = { idle = "dim", acting = "cyan", active = "cyan", pending = "amber", executing = "green", paused_error = "amber",
+      no_compute = "amber", locked = "dim" },
+    alert = { info = "cyan", success = "green", warning = "amber", error = "amber" },
+  },
+
   font = { path = "fonts/jetbrains_mono.json" }, -- the single font of the game (SIL OFL 1.1, assets/fonts/OFL.txt)
   type = { title = 22, heading = 16, body = 14, small = 12 },
 

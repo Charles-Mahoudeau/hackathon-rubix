@@ -55,7 +55,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	if state.ui then commands:despawn(state.ui) end
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
 	state.shell.screen = shown
 end
 
@@ -135,6 +135,7 @@ engine.ecs.system("game.Shell", {
 
 		for click in ctx.events.read("rtype.UiClicked") do
 			if editorClick(click.action) then changed = true end
+			if Shell.act(state.shell, click.action) then changed = true end
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
 			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
@@ -190,10 +191,13 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "branches" then extra = BranchesView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
+		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
-		local due = now - state.lastRefresh >= Screens.refreshSeconds
-		if glitchFrame or changed or (due and (sig ~= state.uiSig or #state.sim.freighters > 0)) then
+		-- The map animates (planet pulse, moving route dashes), so it redraws on its own faster beat.
+		local onMap = state.shell.screen == Screens.defaultScreen
+		local due = now - state.lastRefresh >= (onMap and Screens.map.animSeconds or Screens.refreshSeconds)
+		if glitchFrame or changed or (due and (onMap or sig ~= state.uiSig or #state.sim.freighters > 0)) then
 			state.uiSig, state.lastRefresh = sig, now
 			rebuildUi(ctx.commands, glitchFrame)
 		end

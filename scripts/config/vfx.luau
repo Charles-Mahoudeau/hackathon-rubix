@@ -31,7 +31,26 @@ return {
 		idle = { color = "dim", alpha = 0.2, pulseHz = 0.0, radius = 1.0 },
 		pending = { color = "amber", alpha = 0.6, pulseHz = 1.5, radius = 1.15 },
 		executing = { color = "green", alpha = 0.9, pulseHz = 0.0, radius = 1.25 },
+		active = { color = "cyan", alpha = 0.7, pulseHz = 0.0, radius = 1.2 },
+		error = { color = "amber", alpha = 0.95, pulseHz = 2.5, radius = 1.3 }, -- paused_error: the pulse is the only motion
+		selected = { color = "cyan", alpha = 0.8, pulseHz = 0.8, radius = 1.3 }, -- hovered / selected map node
 	},
+	-- Agent / ship state -> halo above. Anything not listed is `idle`.
+	haloOfState = { acting = "active", active = "active", paused_error = "error", no_compute = "pending", pending = "pending", executing = "executing" },
+	-- UI glow: a halo is a stack of translucent discs (view pixels), outermost first. Alpha is the halo alpha times `alphaStep`^layer.
+	glow = {
+		layers = 3,
+		spread = 5, -- extra radius per layer
+		alphaStep = 0.45,
+		dot = 8, -- the state light next to a row
+		accentBar = 4, -- width of a branch row accent
+		node = 9, -- base radius of a market / station node halo
+		planet = { pad = 6, pulseHz = 0.18, lockedAlpha = 0.0 }, -- ring radius beyond the planet disc; slow, so planets feel alive
+		routeUnderlay = { size = 5, alpha = 0.18 }, -- soft dots under an active or focused route line
+		focusScale = 1.6, -- route dot size multiplier while focused
+	},
+	-- Error glitch overlay (drawn behind every text, never over the feed strip where the reason is shown).
+	glitchOverlay = { barHeight = 2, splitHeight = 2, maxBars = 3, flashAlpha = 0.5 },
 	trail = {
 		maxPoints = 12,
 		sampleInterval = 0.05, -- seconds between trail points
