@@ -58,7 +58,7 @@ function Sim.new(opts)
   Clock.init(self)
   Feed.init(self)
   DecisionLog.init(self)
-  self.resources = { credits = b.startCredits, compute = b.startCompute, reputation = b.startReputation }
+  self.resources = { credits = b.startCredits, compute = b.startCompute }
   self.warehouse = {}
   for _, ore in ipairs(b.ores) do self.resources[ore] = 0; self.warehouse[ore] = 0 end
   self.lifetimeRevenue = 0
@@ -149,7 +149,7 @@ end
 function Sim:emit(name, data)
   local e = self.events
   e[#e + 1] = { tick = self.tick, name = name, data = data }
-  if #e > 500 then table.remove(e, 1) end
+  if #e > self.b.eventQueueMax then table.remove(e, 1) end
 end
 
 -- Real seconds, for the t_real_* stamps of the decision log. The sim never reads a clock itself: the host injects one
@@ -397,7 +397,7 @@ function Sim:validate(agentId, call)
     if ship.cargo > 0 and ship.ore ~= vein.ore then return false, "hold holds another ore" end
     if ship.cargo >= ship.cargoCap then return false, "hold_full" end
     local pct = args.stop_at_hold_pct
-    if pct ~= nil and (type(pct) ~= "number" or pct < 10 or pct > 100) then return false, "bad stop_at_hold_pct" end
+    if pct ~= nil and (type(pct) ~= "number" or pct < self.b.holdPct.min or pct > self.b.holdPct.max) then return false, "bad stop_at_hold_pct" end
     if args.to ~= nil and args.to ~= "home" and args.to ~= "local_depot" then return false, "bad dock" end
   elseif n == "return" then
     if ship.state == "idle" then return false, "already_docked" end
@@ -457,14 +457,14 @@ end
 
 -- Apply a validated call. Invalid => logged ERROR, ignored.
 -- A call enters the agent's history; an accepted one gets its §11 result table when the action ends (Sim:setResult).
-local function remember(agent, call, ok, err)
+local function remember(agent, call, ok, err, keep)
   if not agent or type(call) ~= "table" or type(call.name) ~= "string" then return nil end
   local h = agent.history
   agent.histSeq = (agent.histSeq or 0) + 1
   local args = {}
   if type(call.args) == "table" then for k, v in pairs(call.args) do if k ~= "ship" then args[k] = v end end end -- `ship` is the sim's own routing key
   h[#h + 1] = { id = agent.histSeq, tool = call.name, args = args, ok = ok, result = ok and {} or { error = err } }
-  if #h > 20 then table.remove(h, 1) end
+  if #h > keep then table.remove(h, 1) end
   return agent.histSeq
 end
 
@@ -493,7 +493,7 @@ function Sim:apply(agentId, call, opts)
   local who = self.agents[agentId]
   if who and who.type == "logistician" then who.waitUntil = self.tick + self:ticks(self.b.logistics.cooldownSeconds) end
   local ok, err = self:validate(agentId, call)
-  local histId = remember(self.agents[agentId], call, ok, err)
+  local histId = remember(self.agents[agentId], call, ok, err, self.b.historyKeep)
   local rec = opts and opts.record
   if opts and opts.skill then rec = DecisionLog.skillStep(self, agentId, opts.skill) end
   if not ok then
