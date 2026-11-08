@@ -35,6 +35,12 @@ end
 
 function Feed.formatCall(tool, args) return ("%s(%s)"):format(tool, fmtArgs(tool, args or {})) end
 
+-- A feed line as the UI font can draw it: the UI font is ASCII (+ Latin-1) only, and saves written before the feed switched to
+-- "->" still hold the arrow glyph (U+2192), which would draw as "?". Every screen that shows feed text goes through this.
+function Feed.display(text: string): string
+  return (text:gsub("\226\134\146", "->"))
+end
+
 function Feed.init(sim) sim.feed, sim.feedSeq = {}, 0 end
 
 local function push(sim, entry)

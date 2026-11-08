@@ -16,7 +16,10 @@ for _, stage in ipairs({ "warehouse", "tradingPost", "hub", "commandCenter" }) d
 for id in pairs(config.stations) do
   Stations.entities(id, "idle", { x = 0, y = 0 }, 1, nil, all)
   for _, t in ipairs(Stations.parts(id, all).turrets) do
-    if t.kind then for _, f in ipairs(Stations.turretSequence(t.kind)) do assets.texture(f) end end
+    if t.kind then
+      assets.texture(Stations.turretParked(t.kind))
+      for i = 0, 63 do assets.texture(Stations.turretEngaged(t.kind, i / config.turrets.fps, false)) end
+    end
   end
 end
 local list = {}

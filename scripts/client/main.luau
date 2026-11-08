@@ -29,7 +29,8 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
-require("@scripts/client/station_fx")
+local StationFx = require("@scripts/client/station_fx")
+local MapLife = require("@scripts/client/map_life")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
@@ -46,7 +47,7 @@ local TourMod = DebugConfig.mapTour and MapTour or QaTour
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
 
 local state = {
-	fleet = FleetMap.new(), sim = nil, tour = (DebugConfig.qaTour or DebugConfig.mapTour) and TourMod.new() or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, tour = (DebugConfig.qaTour or DebugConfig.mapTour) and TourMod.new(DebugConfig.qaTour) or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	examples = { open = false }, -- directive examples dropdown: open, selected id, pending replace confirmation (GR5-106)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
@@ -61,6 +62,7 @@ local state = {
 	storage = Storage.engine(), save = nil,
 }
 state.save = Save.new(state.storage)
+StationFx.bind(state.fleet)
 
 local function despawnAll(commands, list)
 	for _, e in ipairs(list) do commands:despawn(e) end
@@ -103,6 +105,33 @@ local function flushRetired(commands)
 		if r.frames <= 0 then commands:despawn(r.entity) else keep[#keep + 1] = r end
 	end
 	retired = keep
+end
+
+-- What the choreography needs from the screen before the fleet is updated: the switches, the map rectangle, the stations (for the
+-- turrets) and the rectangles ships keep clear of (cached per world / station signature, they only change with those).
+local mapReserved = { sig = nil, rects = {} }
+local function prepareMap()
+	local fleet, sim = state.fleet, state.sim
+	fleet.reduced = state.shell.reduced == true
+	fleet.selected = state.shell.focus
+	fleet.bounds = Shell.layout().main
+	local sig = tostring(state.worldSig) .. "|" .. tostring(state.stationSig)
+	if sig ~= mapReserved.sig then
+		mapReserved.sig = sig
+		mapReserved.rects = SystemMap.reserved(sim)
+		fleet.stationList = SystemMap.stations(sim)
+	end
+	-- The "off map" list (top-left) and the motion switch (bottom-right) are UI too.
+	local m, g = fleet.bounds, Theme.layout.gap
+	local rects = table.clone(mapReserved.rects)
+	rects[#rects + 1] = { x = m.x, y = m.y, w = Screens.map.badgeAwayW + 140, h = g + 8 + (#fleet.away + 1) * 20 }
+	rects[#rects + 1] = { x = m.x + m.w - Screens.map.motionButtonW - 2 * g, y = m.y + m.h - 24 - 2 * g, w = Screens.map.motionButtonW + 2 * g, h = 24 + 2 * g }
+	fleet.reserved = rects
+end
+
+local function mapLifeOpts()
+	local fleet = state.fleet
+	return { chips = fleet.chips, aggregates = fleet.aggregates, hidden = fleet.hiddenCount or 0, away = fleet.away, reduced = fleet.reduced }
 end
 
 -- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits, then draw the live quads in their own
@@ -150,7 +179,8 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label and (state.revealFrame and ("%s t=%.2f"):format(state.tour.label, state.revealFrame.t) or state.tour.label) or nil, reveal = state.revealFrame, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
+	local onMap = state.shell.screen == Screens.defaultScreen
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label and (state.revealFrame and ("%s t=%.2f"):format(state.tour.label, state.revealFrame.t) or state.tour.label) or nil, reveal = state.revealFrame, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
 	state.shell.screen = shown
 end
 
@@ -358,6 +388,7 @@ engine.ecs.system("game.Shell", {
 			rebuildStations(ctx.commands)
 		end
 
+		if state.shell.screen == Screens.defaultScreen then prepareMap() end
 		FleetMap.sync(state.fleet, state.sim, now, ctx.commands, state.shell.screen == Screens.defaultScreen)
 
 		local extra = ""
@@ -380,7 +411,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "branches" then extra = BranchesView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
-		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
+		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) .. tostring(state.shell.reduced) end
 		if state.shell.screen == "debug" then extra = DebugPanel.signature(state.sim, state.debug) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		extra = extra .. "|" .. Save.signature(state.save) .. "|" .. SaveView.signature(state.save, state.sim)

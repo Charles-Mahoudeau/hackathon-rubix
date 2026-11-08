@@ -75,31 +75,28 @@ do
   local d = math.sqrt((hull.x - k.x) ^ 2 + (hull.y - k.y) ^ 2)
   assert(math.abs(d - FX.depot.ring) < 6, "parked on the depot ring, got " .. d)
   assert(not find(sprites, "ship:s1:trail:0"), "a parked ship leaves no trail")
-  local frames = {}
+  -- Engines animate only in transit: a parked ship's flame is a still frame.
+  local still = {}
   for i = 0, 19 do
     local sp = FleetMap.update(fleet, s, t + i / 15)
-    frames[find(sp, "ship:s1:engine").frame] = true
+    still[find(sp, "ship:s1:engine").frame] = true
     for _, x in ipairs(sp) do checkSprite(x) end
   end
   local n = 0
-  for _ in pairs(frames) do n += 1 end
-  assert(n >= 3, "the engine flame animates (" .. n .. " frames)")
+  for _ in pairs(still) do n += 1 end
+  assert(n == 1, "a parked engine does not animate (" .. n .. " frames)")
 end
 
--- 1b. The map is never empty: a demo miner and hauler run until the first real activity, big enough to see, with a trail.
+-- 1b. GR5-104: only cosmetic demo ships (no badge) beside the real miner at game start, big enough to see.
 do
   local s, fleet = Sim.new(), FleetMap.new()
   local sprites, t = play(fleet, s, 0, 1.0, {})
   local miner, hauler = find(sprites, "demo:miner:hull"), find(sprites, "demo:hauler:hull")
-  assert(miner and hauler and find(sprites, "demo:miner:engine"), "demo ships at game start")
+  assert(miner and hauler, "cosmetic demo ships at game start (two ships on the map)")
   for _, h in ipairs({ miner, hauler, find(sprites, "ship:s1:hull") }) do
     assert(h.scale * 28 >= 40 and h.corp == "player", "hulls are 40+ px (28 px of art in the frame) in the player's colour")
   end
-  local trail = {}
-  for _, sp in ipairs(sprites) do if sp.key:match("^demo:miner:trail:") then trail[#trail + 1] = sp end end
-  assert(#trail == FX.trail.count and trail[1].sheet == FX.trail.sheet and trail[1].steps, "a pixel trail behind the demo miner")
-  local fx, fy = math.sin(miner.rot), -math.cos(miner.rot)
-  for _, sp in ipairs(trail) do assert((sp.x - miner.x) * fx + (sp.y - miner.y) * fy < 0, "trail particles sit behind the ship") end
+  assert(#fleet.chips == 1 and fleet.chips[1].badge.label == "DOCK" and fleet.chips[1].badge.tone == "dim", "a docked miner wears a dim DOCK badge; the demo ships wear none")
   -- The hauler really crosses between Kessa and the depot over the loop.
   local minX, maxX = math.huge, -math.huge
   for i = 0, 200 do
@@ -144,6 +141,12 @@ do
     end
   end
   assert(trails == FX.trail.count, "a flying miner has a pixel trail")
+  local frames = {}
+  for i = 0, 19 do frames[find(FleetMap.update(fleet, s, t + i / 15), "ship:s1:engine").frame] = true end
+  local nf = 0
+  for _ in pairs(frames) do nf += 1 end
+  assert(nf >= 3, "the engine flame animates in transit (" .. nf .. " frames)")
+  assert(fleet.chips[1].badge.label == "TRAVEL" and fleet.chips[1].badge.tone == "cyan", "a travelling miner wears a cyan TRAVEL badge")
   local dx, dy = points.ashfall.x - dp.x, points.ashfall.y - dp.y
   assert(math.abs(math.atan2(dx, -dy) - b.rot) < 0.2, "nose points at the destination")
 end
@@ -196,8 +199,19 @@ do
   local itc, cv = find(sprites, "interceptor:i1:hull"), find(sprites, "convoy:C1:hull")
   assert(math.sqrt((itc.x - cv.x) ^ 2 + (itc.y - cv.y) ^ 2) < 80, "alongside the convoy")
 
+  -- A station right under the convoy: with no fight its turret stays parked; the real fight engages it, and a pause keeps it.
+  fleet.stationList = { { at = { x = cv.x + 20, y = cv.y } } }
+  sprites, t = play(fleet, s, t, 0.5, seen)
+  assert(next(fleet.turrets) == nil, "no fight, no turret fire, even with a convoy right above the station")
+
   ok("attack")
   sprites, t = play(fleet, s, t, 4, seen)
+  assert(fleet.turrets[1] and fleet.turrets[1].since, "the real fight engages the station turret")
+  s.paused = true
+  local since = fleet.turrets[1].since
+  sprites, t = play(fleet, s, t, 0.5, seen)
+  assert(fleet.turrets[1] and fleet.turrets[1].since == since, "pause keeps the actual turret state")
+  s.paused = false
   assert(find(sprites, "convoy:C1:shield") and find(sprites, "interceptor:i1:shield"), "shields while fighting")
   assert(find(sprites, "interceptor:i1:hull").sheet:find("Weapons"), "weapon flash replaces the hull while firing")
   assert(seen.bullet and seen.torpedo and seen.wave, "projectiles and the impact wave appear: " .. table.concat((function() local l = {} for k in pairs(seen) do l[#l + 1] = k end table.sort(l) return l end)(), ","))
@@ -261,7 +275,7 @@ do
   }
   local s, fleet = Sim.new(), FleetMap.new()
   local n = FleetMap.sync(fleet, s, 0, commands, true)
-  assert(n >= 2 and nextId == n, "every sprite spawned an entity (real miner, demo ships, trails)")
+  assert(n >= 2 and nextId == n, "every sprite spawned an entity (the real miner: hull and engine)")
   for _, desc in ipairs(spawned) do
     local r = desc["rtype.SpriteRenderer"]
     assert(desc["rtype.Transform"] and r.texture and r.material and r.source.z > 0 and r.source.z == r.source.w and desc["game.MapSprite"].slot)
