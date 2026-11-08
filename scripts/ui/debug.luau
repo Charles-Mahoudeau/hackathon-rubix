@@ -34,7 +34,7 @@ function DebugPanel.spawn(commands, style)
     children[#children + 1] = {
       style = { padding = 6, justify = "center" },
       background = { color = style.button, radius = 4 },
-      button = { action = DebugPanel.actionOf(e), hovered = style.hovered },
+      button = { action = DebugPanel.actionOf(e), normal = style.button, hovered = style.hovered },
       children = { { text = { text = e.label, font = style.font, size = 14, color = style.text } } },
     }
   end

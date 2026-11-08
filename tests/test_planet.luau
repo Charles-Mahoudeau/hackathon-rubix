@@ -79,4 +79,11 @@ local locked = SystemMap.look("varn", false)
 assert(locked.rim == Planets.locked.rim and locked.seed == Planets.planets.varn.seed, "locked look keeps the shape, greys the colours")
 assert(Planets.planets.varn.rim and Planets.planets.varn.rim ~= Planets.locked.rim, "a lit planet has its own ring")
 
+-- Shader colour uniforms are linear light (the swapchain is sRGB): cyan 0x19E6FF has a linear green of ~0.79, not 0.90.
+do
+  local m = materials["planet.kessa"]
+  assert(m and m.values.land1.y < 0.85 and m.values.land1.y > 0.7, "planet palette uniforms are linear, not raw sRGB")
+  assert(m.values.land1.x < 0.02, "linear red of 0x19 is ~0.01")
+end
+
 print("planet OK")

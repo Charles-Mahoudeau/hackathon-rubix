@@ -52,8 +52,26 @@ local function rebuildWorld(commands)
 	end
 end
 
+-- A UI tree spawned this frame has no computed layout until the next one and is not drawn before then, so despawning the
+-- old tree in the same frame leaves a blank frame (the flicker). Old trees live on for a few frames, then go.
+local RETIRE_FRAMES = 2
+local retired = {}
+
+local function retire(entity)
+	if entity then retired[#retired + 1] = { entity = entity, frames = RETIRE_FRAMES } end
+end
+
+local function flushRetired(commands)
+	local keep = {}
+	for _, r in ipairs(retired) do
+		r.frames -= 1
+		if r.frames <= 0 then commands:despawn(r.entity) else keep[#keep + 1] = r end
+	end
+	retired = keep
+end
+
 local function rebuildUi(commands, glitchFrame)
-	if state.ui then commands:despawn(state.ui) end
+	retire(state.ui)
 	local shown
 	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
 	state.shell.screen = shown
@@ -64,6 +82,7 @@ end
 local function syncInputs(commands)
 	local editing = state.shell.screen == "agents" and state.tab == "editor"
 	if state.inputs and (not editing or state.inputsDirty) then
+		-- Not retired like the shell tree: two live fields with the same action would both feed UiTextChanged.
 		commands:despawn(state.inputs)
 		state.inputs = nil
 	end
@@ -202,5 +221,6 @@ engine.ecs.system("game.Shell", {
 			rebuildUi(ctx.commands, glitchFrame)
 		end
 		syncInputs(ctx.commands)
+		flushRetired(ctx.commands)
 	end,
 })
