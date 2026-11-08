@@ -26,7 +26,7 @@ assert(sim.resources.credits > credits0, "credits rise: " .. credits0 .. " -> " 
 
 local mined, sold = false, false
 for _, e in ipairs(sim.feed) do
-  if e.kind == "call" and e.text:find("^mine%(K1, 90%%%) → %+%d+ titanium") then mined = true end
+  if e.kind == "call" and e.text:find("^mine%(K1, 90%%%) %-> %+%d+ titanium") then mined = true end
   if e.kind == "info" and e.text:find("sold", 1, true) then sold = true end
 end
 assert(mined, "feed has a mine(K1, 90%) line (the call covers the return trip)")

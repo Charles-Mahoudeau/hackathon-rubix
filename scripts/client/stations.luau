@@ -38,6 +38,11 @@ local function reached(def, upgrades)
 	return out
 end
 
+-- The stages of a station reached with `upgrades`, in order.
+function Stations.stagesReached(stationId: string, upgrades)
+	return reached(config.stations[stationId], upgrades)
+end
+
 -- Every module, turret and debris entry a station shows with `upgrades`: base first (hub first), then stage by stage.
 function Stations.parts(stationId: string, upgrades)
 	local def = config.stations[stationId]
