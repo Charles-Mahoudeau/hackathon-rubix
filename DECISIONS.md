@@ -1,5 +1,10 @@
 # Decisions
 
+- 2026-11-07 — GR5-21: icons kept as vector SVG with `currentColor` (not pixelated), tinted at runtime from the theme table; reason: GR5-3 theme not in repo yet, vector tint keeps one source of truth. Icon picks listed in tools/build_icons.py; attribution generated to CREDITS_ICONS.md.
+- 2026-11-07 — GR5-24: icon modules are globals `IconSet` (scripts/ui/icon_set.luau, generated) and `IconStyle`; icon_set sorts before icon_style so no require is needed. Reason: AYLO has no `require`.
+- 2026-11-07 — GR5-22 VFX modules return pure draw-parameter tables (render/vfx/*.luau, config/vfx.luau); the actual shader/draw calls are wired later once the engine's rendering API is documented. Reason: no render API in the repo/template, and logic stays headless-testable.
+- 2026-11-07 — Glitch source whitelist lives in config (`allowedSources = ai_error`); UI/log code must call `glitch.trigger(g, "ai_error")` from the ERROR event only. Reason: acceptance criterion "never from idle/hover".
+- 2026-11-07 — GR5-24: VFX modules are globals (`VfxConfig`, `Bloom`, `Glitch`, `Halo`, `Route`, `Trail`) under `scripts/config/vfx.luau` and `scripts/render/vfx/*`, since AYLO has no `require` and loads scripts/ in sorted order. Test needs a loader that does the same (no standalone `luau` interpreter is available here, so vfx_test is unexecuted locally).
 - 2026-11-07 — Planets: one parameterised fragment shader (`assets/shaders/planet.glsl`) rewritten from Deep-Fold's MIT algorithm rather than copying defold-pixel-planets files — that repo has no license file (GitHub reports none), only a credit-to-Deep-Fold README.
 - 2026-11-07 — Planets: one shader for all 4 planets (land/water/clouds via uniforms; waterLevel 0 + no clouds = barren/lava), instead of one shader per Deep-Fold variant — simplest, one asset pipeline.
 - 2026-11-07 — Planets: drawn as an `rtype.SpriteRenderer` on a shared 4x4 white texture (`assets/textures/white.png`) because `ShapeRenderer` has no material field. That texture is shared by all planets, not a per-planet asset.
