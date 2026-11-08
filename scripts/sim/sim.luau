@@ -396,7 +396,7 @@ function Sim:validate(agentId, call)
     if not vein or not veinKnown(vein) then return false, "unknown vein" end
     if not inRange(self, ship, vein.planet) then return false, "out_of_range" end
     if vein.reserve < 1 then return false, "vein_depleted" end
-    if ship.state ~= "idle" then return false, "ship busy" end
+    if ship.state ~= "idle" and not (ship.state == "mining" and ship.vein.planet == vein.planet) then return false, "ship busy" end
     if ship.cargo > 0 and ship.ore ~= vein.ore then return false, "hold holds another ore" end
     if ship.cargo >= ship.cargoCap then return false, "hold_full" end
     local pct = args.stop_at_hold_pct
@@ -418,7 +418,7 @@ function Sim:validate(agentId, call)
     if buyer ~= "hmc" and buyer ~= "orbis" then return false, "buyer_locked" end
     if buyer == "orbis" and not self:marketUnlocked("orbis") then return false, "buyer_locked" end
     if args.planet ~= nil and (not self.planets[args.planet] or not inRange(self, ship, args.planet)) then
-      return false, "bad depot"
+      return false, "out_of_range"
     end
     if ship.state ~= "idle" then return false, "not_docked" end
     if buyer == "orbis" and (ship.at ~= self.home or not self:hasWarehouse()) then return false, "not_docked" end
@@ -584,6 +584,8 @@ function Sim:apply(agentId, call, opts)
     ship.stopBecause = opts and opts.because or "recalled"
     self:finishMine(ship)
   end
+  local previousVein = n == "mine" and ship.state == "mining" and ship.vein or nil
+  if previousVein then self:finishMine(ship) end
   local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
   if shipCall and entry then ship.feedEntry, ship.recordId = entry, rid end
   -- an automatic call has no feed line: its history row is resolved straight from the ship's dock
@@ -596,7 +598,11 @@ function Sim:apply(agentId, call, opts)
     -- the dock the full hold goes to: the sim issues that `return` itself, so the stub's choice rides on the mine call
     ship.returnTo = args.to
     ship.state, ship.vein, ship.dest = "travel_out", vein, vein.planet
-    ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
+    if previousVein then
+      ship.timer = self:ticks(math.max(World.minVeinHopSeconds, World.jumpSeconds * math.abs(previousVein.jumps - vein.jumps)) * ship.engineMult)
+    else
+      ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
+    end
   elseif n == "return" then
     local dest = args.to == "local_depot" and ship.at or self.home
     ship.state, ship.dest = "travel_back", dest
