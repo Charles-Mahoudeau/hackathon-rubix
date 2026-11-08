@@ -49,6 +49,7 @@ for _, def in pairs(Config.ships) do
   for _, part in ipairs({ "hull", "engine", "destruction", "shield", "weapons" }) do if def[part] then sheets[def[part].sheet] = true end end
 end
 for _, p in pairs(Config.projectiles) do sheets[p.sheet] = true end
+sheets[FX.trail.sheet] = true
 local function checkSprite(sp)
   assert(sheets[sp.sheet], "unknown sheet " .. tostring(sp.sheet))
   assert(sp.frame >= 0 and sp.frame == math.floor(sp.frame), "integer frame " .. sp.key)
@@ -56,18 +57,21 @@ local function checkSprite(sp)
   assert(sp.x == sp.x and sp.y == sp.y and sp.rot == sp.rot, "no NaN pose " .. sp.key)
 end
 
+local function depotOf(points) return { x = points.kessa.x + FX.depot.dx, y = points.kessa.y + FX.depot.dy } end
+
 -- 1. T1: a docked miner is drawn next to Kessa with an animated engine.
 do
   local s, fleet, seen = Sim.new(), FleetMap.new(), {}
   local points = FleetMap.points()
   local sprites, t = play(fleet, s, 0, 1.0, seen)
   local hull, engine = find(sprites, "ship:s1:hull"), find(sprites, "ship:s1:engine")
-  assert(hull and engine and #sprites == 2, "a miner is a hull and an engine")
+  assert(hull and engine, "a miner is a hull and an engine")
   assert(engine.layer < hull.layer, "engine behind the hull")
   assert(hull.sheet:find("Support ship %- Base") and engine.sheet:find("Support ship %- Engine"))
-  local k = points.kessa
+  local k = depotOf(points)
   local d = math.sqrt((hull.x - k.x) ^ 2 + (hull.y - k.y) ^ 2)
-  assert(d > 44 and d < 120, "parked on a ring around Kessa, got " .. d)
+  assert(math.abs(d - FX.depot.ring) < 6, "parked on the depot ring, got " .. d)
+  assert(not find(sprites, "ship:s1:trail:0"), "a parked ship leaves no trail")
   local frames = {}
   for i = 0, 19 do
     local sp = FleetMap.update(fleet, s, t + i / 15)
@@ -77,6 +81,35 @@ do
   local n = 0
   for _ in pairs(frames) do n += 1 end
   assert(n >= 3, "the engine flame animates (" .. n .. " frames)")
+end
+
+-- 1b. The map is never empty: a demo miner and hauler run until the first real activity, big enough to see, with a trail.
+do
+  local s, fleet = Sim.new(), FleetMap.new()
+  local sprites, t = play(fleet, s, 0, 1.0, {})
+  local miner, hauler = find(sprites, "demo:miner:hull"), find(sprites, "demo:hauler:hull")
+  assert(miner and hauler and find(sprites, "demo:miner:engine"), "demo ships at game start")
+  for _, h in ipairs({ miner, hauler, find(sprites, "ship:s1:hull") }) do
+    assert(h.scale * 28 >= 40 and h.corp == "player", "hulls are 40+ px (28 px of art in the frame) in the player's colour")
+  end
+  local trail = {}
+  for _, sp in ipairs(sprites) do if sp.key:match("^demo:miner:trail:") then trail[#trail + 1] = sp end end
+  assert(#trail == FX.trail.count and trail[1].sheet == FX.trail.sheet and trail[1].steps, "a pixel trail behind the demo miner")
+  local fx, fy = math.sin(miner.rot), -math.cos(miner.rot)
+  for _, sp in ipairs(trail) do assert((sp.x - miner.x) * fx + (sp.y - miner.y) * fy < 0, "trail particles sit behind the ship") end
+  -- The hauler really crosses between the vein and the depot over the loop.
+  local minX, maxX = math.huge, -math.huge
+  for i = 0, 200 do
+    local h = find(FleetMap.update(fleet, s, t + i * 0.1), "demo:hauler:hull")
+    minX, maxX = math.min(minX, h.x), math.max(maxX, h.x)
+  end
+  local p = FleetMap.points()
+  assert(maxX - minX > math.abs(p.ashfall.x - depotOf(p).x) * 0.6, "the hauler travels")
+  -- The first real activity ends it for good.
+  s.ships.s1.state = "mining"
+  assert(not find(FleetMap.update(fleet, s, t + 30), "demo:miner:hull"), "demo gone when a real miner works")
+  s.ships.s1.state = "idle"
+  assert(not find(FleetMap.update(fleet, s, t + 31), "demo:hauler:hull"), "and it does not come back")
 end
 
 -- 2. A travelling miner flies from Kessa towards the vein, nose first, and the flame speeds up.
@@ -92,7 +125,18 @@ do
   local b = find(FleetMap.update(fleet, s, t + 1 / 30), "ship:s1:hull")
   local points = FleetMap.points()
   assert(math.abs(b.x - a.x) + math.abs(b.y - a.y) > 20, "the ship moved")
-  local dx, dy = points.ashfall.x - points.kessa.x, points.ashfall.y - points.kessa.y
+  local dp = depotOf(points)
+  assert(math.abs(a.x - dp.x) < 1 and math.abs(a.y - dp.y) < 1, "a trip starts at the depot")
+  local fwdX, fwdY = math.sin(b.rot), -math.cos(b.rot)
+  local trails = 0
+  for _, sp in ipairs(FleetMap.update(fleet, s, t + 1 / 30)) do
+    if sp.key:match("^ship:s1:trail:") then
+      trails += 1
+      assert((sp.x - b.x) * fwdX + (sp.y - b.y) * fwdY < 0, "trail behind the flying miner")
+    end
+  end
+  assert(trails == FX.trail.count, "a flying miner has a pixel trail")
+  local dx, dy = points.ashfall.x - dp.x, points.ashfall.y - dp.y
   assert(math.abs(math.atan2(dx, -dy) - b.rot) < 0.2, "nose points at the destination")
 end
 
@@ -106,9 +150,10 @@ do
   local sprites = FleetMap.update(fleet, s, 0)
   local hull = find(sprites, "freighter:F1:hull")
   assert(hull and hull.sheet:find("Frigate %- Base") and find(sprites, "freighter:F1:engine").sheet:find("Frigate %- Engine"))
-  assert(hull.scale > find(sprites, "ship:s1:hull").scale, "freighter is bigger than the miner")
+  assert(hull.scale * 39 > find(sprites, "ship:s1:hull").scale * 28, "freighter is bigger than the miner (39 vs 28 px of art)")
   local p = FleetMap.points()
-  assert(hull.x > math.min(p.kessa.x, p.orbis.x) and hull.x < math.max(p.kessa.x, p.orbis.x), "between the two ends")
+  local dp = depotOf(p)
+  assert(hull.x >= math.min(dp.x, p.orbis.x) - 1 and hull.x <= math.max(dp.x, p.orbis.x) + 1, "between the depot and the market")
   f.state, f.load = "back", nil
   assert(find(FleetMap.update(fleet, s, 0.1), "freighter:F1:hull"), "still drawn on the way back")
 end
@@ -207,17 +252,19 @@ do
     despawn = function(_, e) despawned[e] = true end,
   }
   local s, fleet = Sim.new(), FleetMap.new()
-  assert(FleetMap.sync(fleet, s, 0, commands, true) == 2 and nextId == 2, "hull + engine spawned")
+  local n = FleetMap.sync(fleet, s, 0, commands, true)
+  assert(n >= 2 and nextId == n, "every sprite spawned an entity (real miner, demo ships, trails)")
   for _, desc in ipairs(spawned) do
     local r = desc["rtype.SpriteRenderer"]
-    assert(desc["rtype.Transform"] and r.texture and r.material and r.source.z == 64 and r.source.w == 64 and desc["game.MapSprite"].slot)
+    assert(desc["rtype.Transform"] and r.texture and r.material and r.source.z > 0 and r.source.z == r.source.w and desc["game.MapSprite"].slot)
   end
-  assert(FleetMap.sync(fleet, s, 0.1, commands, true) == 2 and nextId == 2, "nothing respawned")
+  assert(FleetMap.sync(fleet, s, 0.1, commands, true) == n and nextId == n, "nothing respawned")
   local slot = spawned[1]["game.MapSprite"].slot
   local transform, renderer = { position = {}, scale = {} }, { source = {} }
   FleetMap.apply(fleet, slot, transform, renderer)
-  assert(transform.position.x and transform.scale.x > 0 and renderer.source.z == 64)
-  assert(FleetMap.sync(fleet, s, 0.2, commands, false) == 0 and despawned[1] and despawned[2], "leaving the map despawns the ships")
+  assert(transform.position.x and transform.scale.x > 0 and renderer.source.z > 0)
+  assert(FleetMap.sync(fleet, s, 0.2, commands, false) == 0, "leaving the map clears it")
+  for i = 1, n do assert(despawned[i], "entity " .. i .. " despawned") end
 end
 
 print("fleet map tests passed")
