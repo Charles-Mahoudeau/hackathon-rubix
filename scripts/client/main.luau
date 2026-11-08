@@ -24,11 +24,12 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
+require("@scripts/client/station_fx")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
 
 local state = {
-	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
@@ -49,6 +50,15 @@ local function rebuildWorld(commands)
 	end
 	if state.shell.screen == Screens.defaultScreen then
 		for _, desc in ipairs(SystemMap.entities(state.sim)) do state.world[#state.world + 1] = commands:spawn(desc) end
+	end
+end
+
+-- The stations are their own layer so a station growing or going active never respawns the background (GR5-52).
+local function rebuildStations(commands)
+	despawnAll(commands, state.stationLayer)
+	state.stationLayer = {}
+	if state.shell.screen == Screens.defaultScreen then
+		for _, desc in ipairs(SystemMap.stationEntities(state.sim)) do state.stationLayer[#state.stationLayer + 1] = commands:spawn(desc) end
 	end
 end
 
@@ -189,6 +199,12 @@ engine.ecs.system("game.Shell", {
 		if worldSig ~= state.worldSig then
 			state.worldSig = worldSig
 			rebuildWorld(ctx.commands)
+		end
+
+		local stationSig = state.shell.screen .. "|" .. SystemMap.stationSignature(state.sim)
+		if stationSig ~= state.stationSig then
+			state.stationSig = stationSig
+			rebuildStations(ctx.commands)
 		end
 
 		local extra = ""
