@@ -5,16 +5,32 @@
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
 local Sim = require("@scripts/sim/sim")
+local Clock = require("@scripts/sim/clock")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
+local ComputeView = require("@scripts/ui/compute_view")
+local LogsView = require("@scripts/ui/logs_view")
+local ShopView = require("@scripts/ui/shop_view")
+local FleetView = require("@scripts/ui/fleet_view")
+local MissionsView = require("@scripts/ui/missions_view")
+local AlertsView = require("@scripts/ui/alerts_view")
+local BranchesView = require("@scripts/ui/branches_view")
+local ArchiveView = require("@scripts/ui/archive_view")
+local SkillStudio = require("@scripts/ui/skill_studio")
+local TeamView = require("@scripts/ui/team_view")
+local OfflineView = require("@scripts/ui/offline_view")
+local MarketView = require("@scripts/ui/market_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
 
 local state = {
-	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil, acc = 0,
+	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
+	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
+	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
+	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 }
 
 local function despawnAll(commands, list)
@@ -36,14 +52,14 @@ end
 local function rebuildUi(commands, glitchFrame)
 	if state.ui then commands:despawn(state.ui) end
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
 	state.shell.screen = shown
 end
 
 -- The editor's two text inputs live in their own tree so a shell redraw never drops the focus. Respawned only when the
 -- draft changes from outside the fields (screen entry, preset, save, clear), never while the player types.
 local function syncInputs(commands)
-	local editing = state.shell.screen == "agents"
+	local editing = state.shell.screen == "agents" and state.tab == "editor"
 	if state.inputs and (not editing or state.inputsDirty) then
 		commands:despawn(state.inputs)
 		state.inputs = nil
@@ -59,9 +75,14 @@ local function editorClick(action)
 	if action == "editor.save" then
 		local ok, msg = Editor.save(state.sim, id, state.draft)
 		state.toast = ok and msg or nil
+	elseif action == "editor.lock" then
+		local a = state.sim.agents[id]
+		state.sim:setMonitorLock(id, not (a and a.monitorLock))
 	elseif action == "editor.clear_order" then
 		Editor.clearOrder(state.sim, id, state.draft)
 		state.toast, state.inputsDirty = nil, true
+	elseif action:sub(1, 11) == "editor.tab." then
+		state.tab, state.toast, state.inputsDirty = action:sub(12), nil, true
 	elseif action:sub(1, 14) == "editor.preset." then
 		Editor.applyPreset(state.sim, state.draft, action:sub(15))
 		state.toast, state.inputsDirty = nil, true
@@ -82,12 +103,7 @@ engine.ecs.system("game.Shell", {
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
-		state.acc += dt
-		local step = state.sim.b.tickSeconds
-		while state.acc >= step do
-			state.sim:step()
-			state.acc -= step
-		end
+		Clock.advance(state.sim, dt)
 		local changed = false
 		for _, event in ipairs(state.sim:drainEvents()) do
 			if Shell.onSimEvent(state.shell, event) then changed = true end
@@ -106,6 +122,27 @@ engine.ecs.system("game.Shell", {
 
 		for click in ctx.events.read("rtype.UiClicked") do
 			if editorClick(click.action) then changed = true end
+			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
+			if LogsView.act(state.logs, click.action) then changed = true end
+			if ShopView.act(state.sim, click.action) then changed = true end
+			if FleetView.act(state.sim, click.action) then changed = true end
+			if MissionsView.act(state.sim, click.action) then changed = true end
+			if AlertsView.act(state.sim, click.action) then changed = true end
+			if BranchesView.act(state.sim, click.action) then changed = true end
+			if ArchiveView.act(state.sim, click.action) then changed = true end
+			local handled, openScreen = SkillStudio.act(state.sim, state.studio, click.action)
+			if handled then changed = true end
+			if openScreen and openScreen ~= state.shell.screen then
+				state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
+			end
+			if OfflineView.act(state.sim, click.action) then changed = true end
+			if Clock.act(state.sim, click.action) then changed = true end
+			local teamHandled, teamAgent = TeamView.act(state.sim, click.action)
+			if teamHandled and teamAgent then
+				Screens.editor.agent = teamAgent
+				click = { action = "nav.agents" }
+				state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
+			end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
@@ -124,8 +161,23 @@ engine.ecs.system("game.Shell", {
 		local extra = ""
 		if state.shell.screen == "agents" and state.sim.agents[Screens.editor.agent] then
 			local m = Editor.model(state.sim, Screens.editor.agent, state.draft)
-			extra = table.concat({ state.draft.directive, state.draft.order, state.toast or "", m.totalTokens }, "|")
+			local rates = {}
+			for _, row in ipairs(ComputeView.agentRows(state.sim)) do rates[#rates + 1] = row.id .. row.computePerHour .. row.state end
+			local settings = {}
+			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
+			table.sort(settings)
+			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
+				table.concat(rates, ","), table.concat(settings, ",") }, "|")
 		end
+		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
+		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
+		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
+		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
+		if state.shell.screen == "alerts" then extra = AlertsView.signature(state.sim) end
+		if state.shell.screen == "branches" then extra = BranchesView.signature(state.sim) end
+		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
+		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
+		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		local due = now - state.lastRefresh >= Screens.refreshSeconds
 		if glitchFrame or changed or (due and (sig ~= state.uiSig or #state.sim.freighters > 0)) then

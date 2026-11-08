@@ -4,6 +4,7 @@ local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
 local ComputeView = require("@scripts/ui/compute_view")
+local Clock = require("@scripts/sim/clock")
 
 local Model = {}
 
@@ -34,9 +35,13 @@ function Model.topBar(sim)
     credits = round(sim.resources.credits),
     creditsText = Model.thousands(round(sim.resources.credits)) .. " cr",
     compute = c.compute, computeLevel = c.level, computeText = ("%.1f"):format(c.compute),
-    computeFraction = c.budget.fraction, budgetReached = c.budget.reached,
+    computeCreditsText = ("%d cr"):format(math.floor(c.computeCredits + 0.5)),
+    computeFraction = c.budget.fraction, budgetReached = c.budget.reached, budgetMessage = c.budget.message,
+    budgetPercent = round(c.budget.fraction * 100), teamPerHour = c.teamPerHour,
+    buy = ComputeView.buyOptions(sim, 1)[1],
     reputation = rep, reputationText = ("Rep %d"):format(rep.level),
     tier = sim.tier, tierText = ("T%d"):format(sim.tier),
+    speed = Clock.controls(sim),
   }
 end
 
@@ -105,6 +110,18 @@ function Model.map(sim)
         seconds = World.freighterRoutes[r.from][r.to] }
     end
   end
+  -- An outpost adds its own routes (spec D21); the colour follows the trip length.
+  for _, sid in ipairs(sim.stationOrder) do
+    if sid ~= sim.home then
+      for _, mid in ipairs(World.marketOrder) do
+        if shown[mid] then
+          local seconds = World.freighterRoutes[sid][mid]
+          local low = seconds <= cfg.safeRouteSeconds
+          routes[#routes + 1] = { from = sid, to = mid, risk = low and "low" or "medium", color = low and "safe" or "risky", seconds = seconds }
+        end
+      end
+    end
+  end
   local convoys = {}
   for _, f in ipairs(sim.freighters) do
     local l = f.load
@@ -124,7 +141,7 @@ function Model.feed(sim)
   local out, list = {}, sim.feed or {}
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
-    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind }
+    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source }
   end
   return out
 end
@@ -134,7 +151,9 @@ function Model.signature(sim, screenId: string, extra: string?)
   local top, parts = Model.topBar(sim), {}
   parts[#parts + 1] = screenId
   parts[#parts + 1] = extra or ""
-  parts[#parts + 1] = ("%s|%s|%s|%s|%d"):format(top.creditsText, top.computeText, top.reputationText, top.tierText, round(top.computeFraction * 100))
+  for _, c in ipairs(top.speed) do parts[#parts + 1] = c.action .. (c.active and "+" or "-") end
+  parts[#parts + 1] = ("%s|%s|%s|%s|%d|%s|%s|%s"):format(top.creditsText, top.computeText, top.reputationText, top.tierText,
+    round(top.computeFraction * 100), top.computeLevel, tostring(top.budgetReached), tostring(top.buy.affordable))
   for _, p in ipairs(Model.map(sim).planets) do parts[#parts + 1] = p.id .. (p.lit and "+" or "-") end
   for _, m in ipairs(Model.map(sim).markets) do parts[#parts + 1] = m.id end
   for _, l in ipairs(Model.feed(sim)) do parts[#parts + 1] = l.text .. l.status end

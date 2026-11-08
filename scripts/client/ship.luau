@@ -46,7 +46,7 @@ function Ship.parts(kind: string, corp: string, tier: number?, position, time: n
 	assert(def, "Ship: unknown ship kind '" .. tostring(kind) .. "'")
 	local t = def.tiers and def.tiers[math.clamp(tier or 1, 1, #def.tiers)] or nil
 	local glow = t and t.tier_glow or 0
-	local material = Remap.material(corp, Ship.steps(glow))
+	local material = Remap.material(corp, { steps = Ship.steps(glow) })
 	local scale = def.scale or 1
 	local transform = { position = position or { x = 0, y = 0 }, scale = { x = scale, y = scale } }
 

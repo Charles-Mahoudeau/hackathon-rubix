@@ -5,6 +5,7 @@ local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
+local Skills = require("@scripts/sim/skills")
 
 local Editor = {}
 
@@ -53,6 +54,9 @@ function Editor.model(sim, agentId, draft)
     canSave = Editor.canSave(sim, draft),
     dirty = draft.directive ~= saved.directive or draft.order ~= saved.order,
     orderActive = agent.order ~= "",
+    orderSource = (agent.order ~= "" and agent.orderSource) or nil,
+    -- the Monitor lock: only shown once a Monitor is hired, and never for the Monitor itself
+    lock = (sim.agents.monitor and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
     sections = p.sections,
     inputTokens = p.input,
     outputTokens = cfg.estimatedOutputTokens,
@@ -61,7 +65,7 @@ function Editor.model(sim, agentId, draft)
     formats = formats,
     format = p.format,
     tools = Prompt.toolWeights(sim, agentId),
-    skills = { slots = sim:skillSlots(agentId), used = 0 },
+    skills = { slots = sim:skillSlots(agentId), used = Skills.count(sim), active = agent.activeSkill, params = agent.skillParams },
   }
 end
 

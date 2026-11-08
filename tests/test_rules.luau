@@ -5,6 +5,7 @@ local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
 local AiQueue = require("@scripts/sim/ai_queue")
 local AiConfig = require("@scripts/config/ai")
+local Market = require("@scripts/sim/market")
 
 for _, m in { Balance, Sim, Ai, AiQueue, AiConfig } do table.freeze(m) end
 
@@ -132,7 +133,9 @@ do
   local function station()
     local s = Sim.new()
     s:addAgent("logistician_1", "logistician", { tier = 4 }); s:addAgent("logistician_2", "logistician", { tier = 4 })
+    s:enterTier(4)
     s.warehouse.cobalt, s.warehouse.titanium = 500, 500
+    Market.quiet(s.market) -- no random price events: the delivery prices are the plain demand x base
     return s
   end
   local s = station()

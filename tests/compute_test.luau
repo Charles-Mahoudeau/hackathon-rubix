@@ -142,6 +142,8 @@ for _, row in ipairs(pAll.rows) do rowsByKey[row.key] = row end
 assert(not rowsByKey.prices_orbis.available and rowsByKey.prices_orbis.unlockTier == 3 and rowsByKey.prices_hmc.available)
 assert(not Prompt.build(w, "miner").contextText:find("prices.orbis", 1, true))
 w.tier = 3
+assert(not Prompt.build(w, "miner").contextText:find("prices.orbis", 1, true), "orbis needs the trading post, not the tier")
+w.upgrades.tradingPost = true
 assert(Prompt.build(w, "miner").contextText:find("prices.orbis", 1, true), "orbis prices appear once unlocked")
 
 -- no_compute: one feed message, buying a pack resumes the agent

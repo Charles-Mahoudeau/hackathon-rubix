@@ -9,6 +9,12 @@ local Settings = {}
 Settings.order = { "prices_hmc", "prices_orbis", "prices_halcyon", "prices_meridian", "price_trends", "format",
   "recent_results", "veins", "inbox", "warehouse" }
 
+-- The settings a Monitor has (spec §9.2.4); the other agent types have the ones above.
+Settings.monitorOrder = { "agent_detail", "show_skills", "show_veins", "show_prices", "format" }
+
+-- Panel order for an agent type.
+function Settings.orderFor(agentType) return agentType == "monitor" and Settings.monitorOrder or Settings.order end
+
 local recentOptions = {}
 for i = 0, Ai.recentMax do recentOptions[#recentOptions + 1] = i end
 
@@ -23,11 +29,16 @@ Settings.options = {
   veins = { "vein", "planet", "all" },
   inbox = { false, true },
   warehouse = { false, true },
+  agent_detail = { "summary", "results" },
+  show_skills = { false, true },
+  show_veins = { false, true },
+  show_prices = { false, true },
 }
 
 -- The cheapest option of each setting: the weight of an option is measured against it.
 Settings.minimal = { prices_hmc = "off", prices_orbis = false, prices_halcyon = false, prices_meridian = false,
-  price_trends = false, format = "compact", recent_results = 0, veins = "vein", inbox = false, warehouse = false }
+  price_trends = false, format = "compact", recent_results = 0, veins = "vein", inbox = false, warehouse = false,
+  agent_detail = "summary", show_skills = false, show_veins = false, show_prices = false }
 
 function Settings.defaults()
   local d = {}
@@ -66,9 +77,9 @@ function Settings.available(sim, key)
   local marketOf = { prices_orbis = "orbis", prices_halcyon = "halcyon", prices_meridian = "meridian" }
   if marketOf[key] then
     local m = World.markets[marketOf[key]]
-    return sim.tier >= m.unlockTier, m.unlockTier
+    return sim:marketUnlocked(marketOf[key]), m.unlockTier
   end
-  if key == "warehouse" then return sim.tier >= Balance.warehouse.unlockTier, Balance.warehouse.unlockTier end
+  if key == "warehouse" then return sim:hasWarehouse(), Balance.warehouse.unlockTier end
   return true, 1
 end
 

@@ -105,10 +105,14 @@ end
 function Compute:grant(amount) self.resources.compute = snap(self.cfg, self.resources.compute + amount) end
 
 -- Compute per hour spent by one agent, averaged over the last rateWindowSeconds of game time.
+function Compute:span()
+  local c = self.cfg.compute
+  return math.min(c.rateWindowSeconds, math.max(c.rateMinElapsedSeconds, self.clock() - self.started))
+end
+
 function Compute:agentRatePerHour(agentId)
   self:_prune()
-  local c, now = self.cfg.compute, self.clock()
-  local span = math.min(c.rateWindowSeconds, math.max(c.rateMinElapsedSeconds, now - self.started))
+  local now, span = self.clock(), self:span()
   local total = 0
   for _, e in ipairs(self.spend) do
     if e.t >= now - span and (agentId == nil or e.agent == agentId) then total = total + e.cost end

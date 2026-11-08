@@ -9,9 +9,6 @@ local SHADER = "shaders/palette_remap.glsl"
 local shader
 local cache = {}
 
--- Tests set Remap.assets to a stub: the Luau CLI has no `engine` global.
-local function assets() return Remap.assets or engine.assets end
-
 local function color(name: string)
 	local hex = Theme.palette[name]
 	assert(hex, "Remap: colour '" .. tostring(name) .. "' is not in the theme palette")
@@ -27,15 +24,25 @@ function Remap.ramp(corp: string)
 	return out
 end
 
--- steps (optional): { t1, t2, t3 } luminance thresholds between the four ramp colours; the shader default when nil.
--- Sprites that are not pure greyscale (ships) pass their own so the hull does not collapse onto the background colour.
-function Remap.material(corp: string, steps: { number }?)
-	local key = steps and (corp .. "|" .. table.concat(steps, ",")) or corp
+-- Remap.assets is set by tests to a stub: the Luau CLI has no `engine` global.
+local function assets() return Remap.assets or engine.assets end
+
+-- opts (all optional): steps = { a, b, c } luminance cuts, brightness, emissiveScale (see the shader). Materials are
+-- cached per corporation and option set.
+function Remap.material(corp: string, opts: { steps: { number }?, brightness: number?, emissiveScale: number? }?)
+	local o = opts or {}
+	local key = corp
+	if opts then
+		local s = o.steps or {}
+		key = string.format("%s|%s|%s|%s,%s,%s", corp, tostring(o.brightness), tostring(o.emissiveScale), tostring(s[1]), tostring(s[2]), tostring(s[3]))
+	end
 	if cache[key] then return cache[key] end
 	local ramp = Remap.ramp(corp)
 	shader = shader or assets().shader(SHADER)
 	local values = { ramp0 = color(ramp[1]), ramp1 = color(ramp[2]), ramp2 = color(ramp[3]), ramp3 = color(ramp[4]) }
-	if steps then values.steps = { x = steps[1], y = steps[2], z = steps[3] } end
+	if o.steps then values.steps = { x = o.steps[1], y = o.steps[2], z = o.steps[3] } end
+	if o.brightness then values.brightness = o.brightness end
+	if o.emissiveScale then values.emissiveScale = o.emissiveScale end
 	cache[key] = assets().material({ name = "remap." .. key, shader = shader, values = values })
 	return cache[key]
 end

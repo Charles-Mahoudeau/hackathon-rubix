@@ -19,6 +19,7 @@ end
 -- name: "stub" | "axis". `run` names the conversation (a new game = a new run = fresh agent memory).
 function AiHost.select(sim, name, run)
   assert(name == "stub" or name == "axis", "AiHost.select: unknown provider " .. tostring(name))
+  sim:setRealClock(AxisHttp.now)
   sim:setProvider(name == "axis" and axisProvider(run or tostring(sim.b.seed)) or nil)
 end
 

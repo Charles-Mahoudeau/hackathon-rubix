@@ -24,7 +24,7 @@ assert(hullC.material ~= hullM.material, "corporation colour is a material value
 for _, corp in ipairs({ "player", "rivalA", "rivalB" }) do
   Ship.parts("miner", corp, 1, { x = 0, y = 0 })
   local ramp = Remap.ramp(corp)
-  local def = materials["remap." .. corp .. "|" .. table.concat(Ship.steps(0), ",")]
+  local def = materials["remap." .. string.format("%s|nil|nil|%s", corp, table.concat(Ship.steps(0), ","))]
   assert(def, "material for " .. corp)
   assert(def.values.ramp2.x ~= nil and Theme.corps[corp] == ramp[3], "neon of the ramp is the corporation's")
   assert(def.values.steps.x == Config.remap.steps[1], "ship thresholds passed to the shader")

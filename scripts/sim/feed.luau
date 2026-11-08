@@ -1,16 +1,26 @@
 -- Agent feed (spec §12): one line per tool call and its result, e.g. `mine(K3, 100%) → +100 cobalt (80 s)`.
 -- Sim-side data plus events only; the UI reads `sim.feed` and listens to `feed_event`.
 local Ai = require("@scripts/config/ai")
+local DecisionLog = require("@scripts/sim/decision_log")
 
 local Feed = {}
 
 local function fmtArgs(tool, a)
   if tool == "mine" then return ("%s, %d%%"):format(tostring(a.vein), a.stop_at_hold_pct or 100) end
   if tool == "return" then return a.to or "home" end
-  if tool == "sell" then return a.resource and ("%s, %s"):format(a.resource, tostring(a.qty or "all")) or (a.planet or "") end
+  if tool == "sell" then
+    local where = a.buyer and a.buyer ~= "hmc" and (" @" .. a.buyer) or ""
+    return (a.resource and ("%s, %s"):format(a.resource, tostring(a.qty or "all")) or (a.planet or "")) .. where
+  end
+  if tool == "store" then return ("%s, %s"):format(tostring(a.resource), tostring(a.qty or "all")) end
+  if tool == "ship" then return ("%s, %s -> %s"):format(tostring(a.resource), tostring(a.qty or "all"), tostring(a.destination)) end
+  if tool == "run_skill" then return tostring(a.name) end
   if tool == "wait" then return tostring(a.seconds) end
-  if tool == "report" then return "player" end
+  if tool == "report" then return a.to or "player" end
   if tool == "scan" then return tostring(a.planet) end
+  if tool == "set_order" then return ("%s, %q"):format(tostring(a.agent), tostring(a.text)) end
+  if tool == "assign_skill" then return ("%s, %s"):format(tostring(a.agent), tostring(a.skill)) end
+  if tool == "pause_agent" or tool == "resume_agent" then return tostring(a.agent) end
   return ""
 end
 
@@ -29,15 +39,16 @@ local function push(sim, entry)
 end
 
 -- A call accepted by the sim. It stays "running" until `Feed.finish` gives it a result.
-function Feed.begin(sim, agentId, call, reasoning)
+function Feed.begin(sim, agentId, call, reasoning, recordId)
   return push(sim, { agent = agentId, kind = "call", status = "running", tool = call.name, args = call.args or {},
-    reasoning = reasoning, text = Feed.formatCall(call.name, call.args) })
+    reasoning = reasoning, recordId = recordId, text = Feed.formatCall(call.name, call.args) })
 end
 
 function Feed.finish(sim, entry, resultText, ok)
   if not entry or entry.status ~= "running" then return end
   entry.status = ok == false and "failed" or "ok"
   entry.text = entry.text .. " → " .. resultText
+  if entry.recordId then DecisionLog.finished(sim, entry.recordId, resultText, ok) end
   sim:emit("feed_event", { entry = entry, update = true })
 end
 
@@ -48,7 +59,7 @@ function Feed.refused(sim, agentId, call, err)
     text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. " → ERROR " .. tostring(err) })
 end
 
-function Feed.info(sim, agentId, text) return push(sim, { agent = agentId, kind = "info", text = text }) end
+function Feed.info(sim, agentId, text, source) return push(sim, { agent = agentId, kind = "info", text = text, source = source }) end
 function Feed.error(sim, agentId, text) return push(sim, { agent = agentId, kind = "error", text = text }) end
 
 return Feed
