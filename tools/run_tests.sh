@@ -11,6 +11,8 @@ echo "== check_icons"
 "$dir/tools/check_icons.sh" || status=1
 echo "== check_ui_assets"
 "$dir/tools/check_ui_assets.sh" || status=1
+echo "== check_station_assets"
+"$dir/tools/check_station_assets.sh" || status=1
 for t in "$dir"/tests/*.luau; do
   echo "== $(basename "$t")"
   luau "$t" || status=1
