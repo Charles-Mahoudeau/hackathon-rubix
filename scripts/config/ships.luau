@@ -120,7 +120,7 @@ return {
 			caps = { hulls = 16, stations = 16, quads = 48 },
 			clear = { hull = 12, station = 8, label = 6 }, -- gaps between hulls, to station boxes, around labels
 			berth = { start = -0.6 }, -- angle (rad) of the first berth on a ring
-			badge = { size = 10, label_w = 72, label_h = 16, labelled_max = 6, marker = 14 }, -- labels show for the selected, alerts and when few
+			badge = { size = 10, label_w = 80, label_h = 16, labelled_max = 6, marker = 14 }, -- labels show for the selected, alerts and when few
 			turret = { range = 260 }, -- a station turret only reacts to a real fight this close
 			reveal = { total = 2.0, reduced = 0.5, ring = { 0.3, 1.1 }, ringReach = 20, label = { 0.6, 1.4 } },
 		},

@@ -41,7 +41,7 @@ local QaTour = require("@scripts/client/qa_tour")
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
 
 local state = {
-	fleet = FleetMap.new(), sim = nil, tour = DebugConfig.qaTour and QaTour.new() or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, tour = DebugConfig.qaTour and QaTour.new(DebugConfig.qaTour) or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
