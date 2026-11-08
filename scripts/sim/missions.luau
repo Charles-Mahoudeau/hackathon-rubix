@@ -5,6 +5,7 @@
 local Config = require("@scripts/config/missions")
 local World = require("@scripts/config/world")
 local DecisionLog = require("./decision_log")
+local Logistics = require("./logistics")
 
 local Missions = {}
 
@@ -32,6 +33,25 @@ local function begin(sim, e, d)
   elseif d.check == "scout" then e.scanner, e.scanned, e.sold = false, false, false
   elseif d.check == "skillcredit" then e.saved, e.earned = false, 0
   elseif d.check == "orbis" then e.units = 0
+  elseif d.check == "teamwork" then
+    e.startTick, e.failed, e.lastTick, e.agents, e.earned, e.mining, e.crowded = sim.tick, false, -1, {}, {}, {}, {}
+    for _, sid in ipairs(sim.shipOrder) do
+      local owner = sim.ships[sid].owner
+      if owner then
+        e.agents[#e.agents + 1] = owner
+        e.earned[owner], e.mining[owner], e.crowded[owner] = 0, 0, 0
+      end
+    end
+  elseif d.check == "divide" then
+    e.startTick, e.failed, e.errors, e.lastTick, e.agents, e.deliveries = sim.tick, false, 0, -1, {}, {}
+    for _, sid in ipairs(sim.stationOrder) do
+      local at = Logistics.logisticiansAt(sim, sid)
+      if #at >= 2 then
+        e.station = sid
+        for _, id in ipairs(at) do e.agents[#e.agents + 1] = id; e.deliveries[id] = 0 end
+        break
+      end
+    end
   elseif d.check == "frugal" then e.baseRevenue, e.baseCompute, e.failed = sim.lifetimeRevenue, sim.compute.lifetimeTotal, false end
 end
 
@@ -48,6 +68,14 @@ local function startMet(sim, d)
   if s == nil then return true end
   if s.tier and sim.tier < s.tier then return false end
   for _, u in ipairs(s.upgrades or {}) do if not sim.upgrades[u] then return false end end
+  if s.ships and #sim.shipOrder < s.ships then return false end
+  if s.logisticians then
+    local found = false
+    for _, sid in ipairs(sim.stationOrder) do
+      if #Logistics.logisticiansAt(sim, sid) >= s.logisticians then found = true end
+    end
+    if not found then return false end
+  end
   return true
 end
 
@@ -62,6 +90,8 @@ function Missions.lockReason(sim, d)
     if not sim.upgrades[u] then need[#need + 1] = UPGRADE_LABEL[u] or u end
   end
   if #need > 0 then return "Build " .. table.concat(need, " and ") end
+  if s and s.ships and #sim.shipOrder < s.ships then return ("Buy mining ship #%d"):format(s.ships) end
+  if s and s.logisticians then return ("Hire %d Logisticians at one station"):format(s.logisticians) end
   return nil
 end
 
@@ -69,6 +99,14 @@ local function streakBest(e)
   local best = 0
   for _, s in pairs(e.streaks or {}) do if s.n > best then best = s.n end end
   return best
+end
+
+local function windowTicks(sim, d) return sim:ticks(d.minutes * 60) end
+
+-- Share of a Miner's mining ticks spent on a vein shared with another ship, in percent.
+local function crowdPct(e, id)
+  local m = e.mining[id] or 0
+  return m > 0 and 100 * (e.crowded[id] or 0) / m or 0
 end
 
 -- Progress of an active mission: fraction 0..1 and the lines the panel shows under the bar.
@@ -97,6 +135,30 @@ function Missions.progress(sim, e)
   elseif d.check == "orbis" then
     local n = math.min(e.units or 0, d.units)
     return { fraction = n / d.units, text = ("%d / %d units to Orbis at %.1fx the HMC price"):format(n, d.units, d.minRatio), lines = {} }
+  elseif d.check == "teamwork" then
+    local lines, sum = {}, 0
+    for _, id in ipairs(e.agents) do
+      local earned = e.earned[id] or 0
+      sum += math.min(1, earned / d.creditsEach)
+      lines[#lines + 1] = { text = ("%s: %d / %d cr, crowded %d%%"):format(id, math.floor(earned), d.creditsEach,
+        math.floor(crowdPct(e, id) + 0.5)), done = earned >= d.creditsEach and crowdPct(e, id) < d.crowdMaxPct }
+    end
+    local left = math.max(0, windowTicks(sim, d) - (sim.tick - e.startTick))
+    local text = ("%d:%02d left"):format(math.floor(left / 600), math.floor(left / 10) % 60)
+    if e.failed then text = "Window over, goals missed - retry" end
+    return { fraction = #e.agents > 0 and sum / #e.agents or 0, text = text, failed = e.failed == true, lines = lines }
+  elseif d.check == "divide" then
+    local lines, sum = {}, 0
+    for _, id in ipairs(e.agents) do
+      local n = e.deliveries[id] or 0
+      sum += math.min(1, n / d.deliveries)
+      lines[#lines + 1] = { text = ("%s: %d / %d deliveries"):format(id, n, d.deliveries), done = n >= d.deliveries }
+    end
+    lines[#lines + 1] = { text = ("%d stock or freighter errors"):format(e.errors), done = e.errors == 0 }
+    local left = math.max(0, windowTicks(sim, d) - (sim.tick - e.startTick))
+    local text = ("%d:%02d left"):format(math.floor(left / 600), math.floor(left / 10) % 60)
+    if e.failed then text = "Failed (an error or too few deliveries) - retry" end
+    return { fraction = #e.agents > 0 and sum / #e.agents or 0, text = text, failed = e.failed == true, lines = lines }
   else
     local earned = math.max(0, sim.lifetimeRevenue - e.baseRevenue)
     local spent = computeSpent(sim, e)
@@ -119,6 +181,30 @@ local function check(sim, e, d)
     return e.saved and (e.earned or 0) >= d.credits
   end
   if d.check == "orbis" then return (e.units or 0) >= d.units end
+  if d.check == "teamwork" or d.check == "divide" then
+    if e.lastTick ~= sim.tick then -- check() also runs after a sale: count each tick once
+      e.lastTick = sim.tick
+      if d.check == "teamwork" and not e.failed then
+        for _, id in ipairs(e.agents) do
+          local ship = sim:ownedShip(id)
+          if ship and ship.state == "mining" then
+            e.mining[id] += 1
+            if #ship.crowdedBy > 0 then e.crowded[id] += 1 end
+          end
+        end
+      end
+    end
+    if e.failed or sim.tick - e.startTick < windowTicks(sim, d) then return false end
+    local ok = #e.agents >= 2
+    for _, id in ipairs(e.agents) do
+      if d.check == "teamwork" then
+        if (e.earned[id] or 0) < d.creditsEach or crowdPct(e, id) >= d.crowdMaxPct then ok = false end
+      elseif (e.deliveries[id] or 0) < d.deliveries then ok = false end
+    end
+    if d.check == "divide" and e.errors > 0 then ok = false end
+    if not ok then e.failed = true end
+    return ok
+  end
   if computeSpent(sim, e) > d.computeMax then e.failed = true end
   return not e.failed and sim.lifetimeRevenue - e.baseRevenue >= d.revenue
 end
@@ -164,13 +250,39 @@ function Missions.onSale(sim, ship)
 end
 
 -- Money came in (Sim:credit) from the decision `recordId`: a skill step's sale counts for mission 4 ("skill:<name>" source).
-function Missions.onCredit(sim, recordId, gain)
+function Missions.onCredit(sim, recordId, gain, agentId)
   local e, d = Missions.current(sim)
-  if not e or e.status ~= "active" or d.check ~= "skillcredit" or gain <= 0 then return end
+  if not e or e.status ~= "active" or gain <= 0 then return end
+  if d.check == "teamwork" then
+    if e.earned[agentId or ""] and not e.failed then e.earned[agentId] += gain end
+    return
+  end
+  if d.check ~= "skillcredit" then return end
   local rec = DecisionLog.find(sim, recordId)
   if rec and rec.source and rec.source:sub(1, 6) == "skill:" then
     e.earned = (e.earned or 0) + gain
     Missions.update(sim)
+  end
+end
+
+-- A freighter shipped by `agentId` delivered (Sim:stepFreighters): counts for mission 7.
+function Missions.onDelivery(sim, agentId)
+  local e, d = Missions.current(sim)
+  if not e or e.status ~= "active" or d.check ~= "divide" or e.failed then return end
+  if e.deliveries[agentId or ""] and sim.tick - e.startTick < windowTicks(sim, d) then e.deliveries[agentId] += 1 end
+end
+
+-- A tool call of `agentId` was refused with `err` (Sim:apply): a stock or freighter conflict fails mission 7 at once.
+function Missions.onError(sim, agentId, err)
+  local e, d = Missions.current(sim)
+  if not e or e.status ~= "active" or d.check ~= "divide" or e.failed or not e.deliveries[agentId] then return end
+  for _, code in ipairs(d.errors) do
+    if err == code then
+      e.errors += 1
+      e.failed = true
+      sim:log("WARN", ("mission %d: %s got %s, the mission needs a restart"):format(d.id, agentId, err))
+      return
+    end
   end
 end
 
@@ -197,11 +309,17 @@ function Missions.claim(sim, id)
       local r = d.reward
       if r.credits then sim.resources.credits += r.credits end
       if r.compute then sim.compute:grant(r.compute) end
+      if r.freighter then
+        local st = e.station and sim.stations[e.station] and e.station or sim.home
+        for _ = 1, r.freighter do sim:addFreighter(st) end
+        e.rewardStation = st
+      end
       if r.archiveSlot then sim.upgrades.archiveBonus = (sim.upgrades.archiveBonus or 0) + r.archiveSlot end
       e.status = "claimed"
       sim:log("INFO", ("mission %d claimed: +%d cr%s%s"):format(d.id, r.credits or 0, r.compute and (" +%d Compute"):format(r.compute) or "",
-        r.archiveSlot and (" +%d Archive slot"):format(r.archiveSlot) or ""))
-      sim:emit("mission_claimed", { id = d.id, reward = { credits = r.credits, compute = r.compute, archiveSlot = r.archiveSlot } })
+        r.archiveSlot and (" +%d Archive slot"):format(r.archiveSlot) or "",
+        r.freighter and (" +%d freighter"):format(r.freighter) or ""))
+      sim:emit("mission_claimed", { id = d.id, reward = { credits = r.credits, compute = r.compute, archiveSlot = r.archiveSlot, freighter = r.freighter } })
       Missions.update(sim)
       return true, r
     end

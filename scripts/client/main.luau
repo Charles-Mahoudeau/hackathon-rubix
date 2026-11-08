@@ -14,6 +14,7 @@ local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
+local TeamView = require("@scripts/ui/team_view")
 local OfflineView = require("@scripts/ui/offline_view")
 local MarketView = require("@scripts/ui/market_view")
 local UiTheme = require("@scripts/ui/theme")
@@ -122,6 +123,12 @@ engine.ecs.system("game.Shell", {
 			if ArchiveView.act(state.sim, click.action) then changed = true end
 			if OfflineView.act(state.sim, click.action) then changed = true end
 			if Clock.act(state.sim, click.action) then changed = true end
+			local teamHandled, teamAgent = TeamView.act(state.sim, click.action)
+			if teamHandled and teamAgent then
+				Screens.editor.agent = teamAgent
+				click = { action = "nav.agents" }
+				state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
+			end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
@@ -151,6 +158,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
 		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
+		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end

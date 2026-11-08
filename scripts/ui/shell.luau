@@ -15,6 +15,7 @@ local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
+local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
@@ -657,6 +658,31 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Team (GR5-28, spec §8.6): one monospace row per agent, a click opens its editor.
+local function teamScreen(font, r, m)
+  local c = Screens.team
+  local kids = {}
+  local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
+  nodeAt(L.pad, L.pad, text(font, ("TEAM  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
+  local fmt = "%-14s %-12s %-10s %-16s %9s %9s %6s"
+  nodeAt(L.pad, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors"), T.small, "dim"))
+  local y, rowW = c.rowY + 8, r.w - 2 * L.pad
+  for _, row in ipairs(m.rows) do
+    local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors)
+    local color = (row.state == "paused_error" or row.errors > 0) and Theme.semantic.warning or (row.netPerHour < 0 and Theme.semantic.warning or "text")
+    nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
+      background = { color = UiTheme.color("panel", 0), radius = 2 },
+      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
+      children = { text(font, line, T.small, color) } }, rowW, c.rowHeight)
+    y += c.rowHeight
+  end
+  for _, ship in ipairs(m.idleShips) do
+    nodeAt(L.pad, y + 4, text(font, ("%s  idle: %s"):format(ship.id, FleetView.why(ship.why) or "no agent"), T.small, Theme.semantic.warning))
+    y += c.rowHeight
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Archive (GR5-10, spec §13/§14): company-wide skills with who runs them, the slot count, the demo "Simulate 1 h away"
 -- button and the "While you were away" box.
 local function archiveScreen(font, r, m)
@@ -775,6 +801,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
   elseif screenId == "fleet" and sim.tier >= 4 then
     children[#children + 1] = fleetScreen(font, rects.main, FleetView.model(sim))
+  elseif screenId == "team" then
+    children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
   elseif screenId == "archive" and (sim.skills and next(sim.skills) or sim.lastOfflineReport) then
