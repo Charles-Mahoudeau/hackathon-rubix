@@ -93,6 +93,10 @@ return {
   -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
   shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
 
+  -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
+  missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
+    buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360 },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed

@@ -12,6 +12,7 @@ local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
 local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
+local MissionsView = require("@scripts/ui/missions_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
 local Shell = {}
@@ -453,6 +454,49 @@ local function shopScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Missions (GR5-9, spec §15): the current mission (goal, hint, progress bar, reward, Claim), then every mission in order.
+local function missionsScreen(font, r, m)
+  local c = Screens.missions
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  local width = r.w - 2 * L.pad
+  local function wrapped(str, colorName)
+    return { style = { maxWidth = width }, text = { text = str, font = font, size = T.body, color = UiTheme.color(colorName), wrap = true } }
+  end
+  local cur = m.current
+  if cur then
+    nodeAt(L.pad, L.pad, text(font, ("MISSION %d / %d"):format(cur.index, m.total), T.small, "dim"))
+    nodeAt(L.pad, c.nameY, text(font, cur.name, T.heading, "cyan"))
+    nodeAt(L.pad, c.goalY, wrapped(cur.goal, "text"))
+    nodeAt(L.pad, c.hintY, wrapped("Hint: " .. cur.hint, "dim"))
+    if cur.locked then
+      nodeAt(L.pad, c.barY, text(font, cur.progressText, T.body, Theme.semantic.warning))
+    else
+      local barColor = cur.status == "complete" and "green" or "cyan"
+      nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
+        background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
+        children = { { style = { height = "100%", width = ("%d%%"):format(cur.percent) },
+          background = { color = UiTheme.color(barColor), radius = 2 } } } })
+      nodeAt(L.pad, c.barY + c.barHeight + 6, text(font, cur.progressText, T.small, cur.retry and Theme.semantic.warning or "text"))
+      for i, line in ipairs(cur.lines) do
+        nodeAt(L.pad, c.barY + c.barHeight + 28 + (i - 1) * 18, text(font, (line.done and "[x] " or "[ ] ") .. line.text, T.small, line.done and "green" or "dim"))
+      end
+    end
+    nodeAt(L.pad, c.rewardY, text(font, cur.rewardText, T.body, "text"))
+    if cur.claim then nodeAt(L.pad, c.buttonY, button(font, "Claim", cur.claim, "green", c.buttonWidth)) end
+    if cur.retry then nodeAt(L.pad, c.buttonY, button(font, "Retry", cur.retry, Theme.semantic.warning, c.buttonWidth)) end
+  else
+    nodeAt(L.pad, L.pad, text(font, "ALL MISSIONS CLAIMED", T.heading, "green"))
+  end
+  for i, row in ipairs(m.rows) do
+    local y = c.listY + (i - 1) * c.rowHeight
+    local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
+    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    nodeAt(c.rewardX, y, text(font, row.reward, T.small, color))
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- The two text inputs, in their own tree (see config/screens.luau editor). `draft` gives their starting text.
 function Shell.inputsSpec(draft, opts)
   opts = opts or {}
@@ -508,6 +552,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = b
   elseif screenId == "shop" then
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
+  elseif screenId == "missions" then
+    children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end
