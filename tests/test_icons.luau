@@ -67,6 +67,7 @@ assert(red and red[1] > red[3], "a failed call's icon takes the error colour")
 -- the UI click cue is routed and plays at x16 too
 local a = Audio.new()
 Audio.beginFrame(a, 0)
-local play = Audio.onEvent(a, { name = "ui_click" }, { speed = 1 })
+Audio.onEvent(a, { name = "ui_click" }, { speed = 1 })
+local play = Audio.flush(a)[1]
 assert(play and play.cue == "click" and play.file == Cfg.cues.click.file)
 print("icons OK")

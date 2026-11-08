@@ -136,6 +136,7 @@ function Log.accepted(sim, rec, call, fallback)
   rec.t_real_received = rec.t_real_received or now(sim)
   countError(sim, rec)
   emit(sim, rec, true)
+  if rec.source == "ai" and not fallback then sim:emit("decision_accepted", { agent = rec.agent_id, id = rec.id }) end
 end
 
 -- The action ended (a feed line got its result).
