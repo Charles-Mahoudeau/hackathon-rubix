@@ -192,6 +192,7 @@ function Sim:credit(agentId, recordId, gain)
   self.resources.credits = self.resources.credits + gain
   self.lifetimeRevenue = self.lifetimeRevenue + gain
   if agentId then DecisionLog.earned(self, agentId, recordId, gain) end
+  Missions.onCredit(self, recordId, gain)
   local t = self.tally
   if t and agentId then t.credits[agentId] = (t.credits[agentId] or 0) + gain end
 end
@@ -419,8 +420,10 @@ function Sim:apply(agentId, call, opts)
   if agent.type == "logistician" and n == "sell" then
     local q = stockQty(self, args)
     local gain
+    local orbisUnit
     if args.buyer == "orbis" then
-      local _, total = Market.sell(self.market, "orbis", args.resource, q)
+      local total
+      orbisUnit, total = Market.sell(self.market, "orbis", args.resource, q)
       gain = math.floor(total)
     else
       gain = math.floor(q * self.planets[agent.station].depotRate * World.ores[args.resource].basePrice)
@@ -429,6 +432,7 @@ function Sim:apply(agentId, call, opts)
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
     Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
     self:credit(agentId, rid, gain)
+    if orbisUnit then Missions.onOrbisSale(self, args.resource, q, orbisUnit) end
     return true, { sold = q, total = gain }
   elseif agent.type == "logistician" and n == "ship" then
     -- stock is taken at call time, so a second Logistician on the same stock or freighter gets the error (spec §8.6)
@@ -527,15 +531,17 @@ function Sim:sell(ship, planetId, opts)
   ship.sellOnArrival = nil
   if ship.cargo > 0 and ship.ore then
     local qty = (type(opts.qty) == "number") and math.min(opts.qty, ship.cargo) or ship.cargo
-    local gain
+    local gain, orbisUnit
     if opts.buyer == "orbis" then
-      local _, total = Market.sell(self.market, "orbis", ship.ore, qty)
+      local total
+      orbisUnit, total = Market.sell(self.market, "orbis", ship.ore, qty)
       gain = math.floor(total)
     else
       gain = math.floor(qty * self.planets[planetId].depotRate * World.ores[ship.ore].basePrice)
     end
     self:log("INFO", ("sold %d %s for %d"):format(qty, ship.ore, gain))
     self:credit(ship.owner, ship.recordId, gain)
+    if orbisUnit then Missions.onOrbisSale(self, ship.ore, qty, orbisUnit) end
     self:finishMine(ship)
     local text = ("sold %d %s, +%d cr"):format(qty, ship.ore, gain)
     if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
@@ -708,7 +714,7 @@ function Sim:setOrder(agentId, text) return setText(self, agentId, "order", text
 function Sim:archiveCapacity()
   local n = 0
   for tier, count in pairs(self.b.skillSlots) do if tier <= self.tier and count > n then n = count end end
-  return n + self.upgrades.archive + (self:hasWarehouse() and self.b.warehouse.extraSkillSlots or 0)
+  return n + self.upgrades.archive + (self.upgrades.archiveBonus or 0) + (self:hasWarehouse() and self.b.warehouse.extraSkillSlots or 0)
 end
 
 function Sim:skillSlots(agentId) return self:archiveCapacity() end

@@ -24,5 +24,20 @@ return {
       revenue = 1000, computeMax = 15,
       reward = { credits = 800 },
     },
+    {
+      id = 4, name = "Remember", check = "skillcredit", -- opens when mission 3 is claimed
+      goal = "Save a skill, then earn 500 credits from skill steps (online or offline).",
+      hint = "Skill steps cost no Compute. Save a routine that works, run it, and let it earn while you are away.",
+      credits = 500,
+      steps = { "Save a skill", "Earn credits from skill steps" },
+      reward = { archiveSlot = 1 },
+    },
+    {
+      id = 5, name = "Better buyers", check = "orbis", start = { upgrades = { "warehouse", "tradingPost" } },
+      goal = "Sell 500 units to Orbis at a unit price of at least 1.5x the Kessa HMC price for that resource.",
+      hint = "Turn Orbis prices on in the agent's context (watch the token cost), then tell it who to sell to.",
+      units = 500, minRatio = 1.5, refPlanet = "kessa",
+      reward = { credits = 2000 },
+    },
   },
 }
