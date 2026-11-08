@@ -3,18 +3,14 @@
 -- the engine asset calls run only when a function is called, so requiring this module on the server is harmless.
 -- All colours come from the `palette` there (the 8-colour theme), so a planet cannot leave it.
 local config = require("@scripts/config/planets")
+local Linear = require("@scripts/client/linear")
 
 local Planet = {}
 
 local function paletteColor(name: string)
 	local hex = config.palette[name]
 	assert(hex, "Planet: colour '" .. tostring(name) .. "' is not in the planets config palette")
-	return {
-		x = bit32.extract(hex, 16, 8) / 255,
-		y = bit32.extract(hex, 8, 8) / 255,
-		z = bit32.extract(hex, 0, 8) / 255,
-		w = 1,
-	}
+	return Linear.fromHex(hex)
 end
 
 local shader, texture

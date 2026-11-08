@@ -119,7 +119,7 @@ do
   walk(inputsSpec)
   assert(inputs == 2, "directive and order inputs: " .. inputs)
   local f = Shell.editorFields()
-  assert(f.directive.y + f.directive.h < f.order.y and f.order.x == f.directive.x, "fields do not overlap")
+  assert(f.directive.x + f.directive.w < f.order.x and f.order.y == f.directive.y, "fields sit side by side without overlapping")
   assert(buttons["editor.save"] and buttons["editor.clear_order"] and buttons["editor.preset.vague"] and buttons["editor.preset.precise"])
 end
 

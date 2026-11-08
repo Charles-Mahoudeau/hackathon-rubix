@@ -136,13 +136,14 @@ function Log.accepted(sim, rec, call, fallback)
   rec.t_real_received = rec.t_real_received or now(sim)
   countError(sim, rec)
   emit(sim, rec, true)
+  if rec.source == "ai" and not fallback then sim:emit("decision_accepted", { agent = rec.agent_id, id = rec.id }) end
 end
 
 -- The action ended (a feed line got its result).
-function Log.finished(sim, recordId, text, ok)
+function Log.finished(sim, recordId, text, ok, data)
   local rec = Log.find(sim, recordId)
   if not rec or rec.result then return end
-  rec.result = { ok = ok ~= false, result = text, error = ok == false and text or nil }
+  rec.result = { ok = ok ~= false, result = text, error = ok == false and text or nil, data = data }
   countError(sim, rec)
   emit(sim, rec, true)
 end

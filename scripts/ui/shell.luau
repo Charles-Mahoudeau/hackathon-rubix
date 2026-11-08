@@ -1,11 +1,12 @@
 -- The UI shell (GR5-3): top bar, left nav, main panel, bottom agent feed, and the system map drawn over the main panel.
 -- Everything here is a pure description (engine.ui specs) built from ui/shell_model.luau, so it can be tested headless;
 -- only Shell.spawn touches the engine. Colours come from config/theme.luau through ui/theme.luau, nothing else.
--- Panels are a Pixel Holo UI nine-patch image tinted by the theme (opts.skin, from UiTheme.panelSkin). Without a skin
--- (headless tests) they fall back to a translucent node with a hairline border. Neither bakes a glow: the only bloom is
+-- Panels, buttons and gauges are Pixel Holo UI nine-patch images tinted by the theme (opts.skin, from UiTheme.panelSkin).
+-- Without a skin (headless tests) they fall back to translucent nodes with a hairline border. Neither bakes a glow: the only bloom is
 -- the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
+local Words = require("@scripts/config/copy")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
@@ -20,16 +21,24 @@ local ArchiveView = require("@scripts/ui/archive_view")
 local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
+local StationView = require("@scripts/ui/station_view")
+local DebugPanel = require("@scripts/ui/debug")
+local SaveView = require("@scripts/ui/save_view")
+local SaveConfig = require("@scripts/config/save")
 local Glitch = require("@scripts/render/vfx/glitch")
 local Route = require("@scripts/render/vfx/route")
 local Vfx = require("@scripts/config/vfx")
 local Planets = require("@scripts/config/planets")
 local Glow = require("@scripts/ui/glow")
+local Fit = require("@scripts/ui/fit")
+local Icon = require("@scripts/ui/icon")
 
 local Shell = {}
 
 local L = Theme.layout
 local T = Theme.type
+local ICON = Theme.layout.icon -- icon sizes in px
+local TOP_BAR = { titleMargin = 16, gap = 24 } -- the heading's right margin and the row gap of the top bar (topBar below)
 
 -- Rectangles in view pixels. Absolute layout keeps the world-drawn planets and the UI labels on the same coordinates.
 function Shell.layout()
@@ -56,6 +65,17 @@ function Shell.planetPositions()
   return out
 end
 
+-- Where the credits value sits in the top bar, in view pixels: { x = centre, y = centre of the value line, w = its width }.
+-- Mirrors topBar's row: padding, the GRIDMIND heading (+ its margin), the row gap, then the Credits cell (label line, value line).
+function Shell.creditsAnchor(creditsText: string)
+  local top = Shell.layout().top
+  local x = top.x + L.pad + Fit.textWidth("GRIDMIND", T.heading) + TOP_BAR.titleMargin + TOP_BAR.gap
+  local w = Fit.textWidth(creditsText, T.heading)
+  local labelH, valueH = math.ceil(T.small * Fit.lineHeight), math.ceil(T.heading * Fit.lineHeight)
+  local cellH = labelH + 2 + valueH
+  return { x = x + w / 2, y = top.y + (top.h - cellH) / 2 + labelH + 2 + valueH / 2, w = w }
+end
+
 local function rect(r)
   return { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h }
 end
@@ -65,13 +85,42 @@ local skin
 
 -- `plain` keeps the hairline node even with a skin (the map panel, which must stay see-through over the world).
 local function panel(r, extra, plain)
-  local node = { style = { rect(r), extra }, children = {} }
+  local node = { style = { rect(r), { overflow = "hidden" }, extra }, children = {} }
   if skin and not plain then
     node.image = { texture = skin.texture, slice = skin.slice, color = skin.color }
+    node.background = { color = UiTheme.color("panel", Theme.alpha.chromeFill), radius = L.radius }
   else
     node.background = { color = UiTheme.panel(), radius = L.radius, borderColor = UiTheme.line(), borderWidth = 1 }
   end
   return node
+end
+
+-- A button node. `colorName` is its colour (dim idle, cyan or another neon highlighted); `selected` takes the lighter texture.
+-- Its resting colour is always spelled out: the engine paints a button with `normal`, which is white by default.
+local function buttonNode(style, action: string, colorName: string, children, selected: boolean?)
+	local node = { style = style, children = children }
+	if skin and skin.button then
+		node.image = { texture = selected and skin.button.active or skin.button.normal, slice = skin.button.slice, color = UiTheme.color(colorName) }
+		node.button = UiTheme.skinButton(action, colorName)
+	else
+		local base = selected and UiTheme.mix("panel", colorName, Theme.mix.hover) or UiTheme.color("panel")
+		node.background = { color = base, radius = L.radius, borderColor = UiTheme.color(colorName, 0.6), borderWidth = 1 }
+		node.button = UiTheme.button(action, colorName, { normal = base, base = "panel" })
+	end
+	return node
+end
+
+-- A gauge: a track with a fill of `percent` (0..100) in `colorName`. `style` carries width and height (8 px or more).
+local function gauge(style, percent: number, colorName: string)
+	local pct = ("%d%%"):format(math.floor(math.max(0, math.min(100, percent))))
+	local g = skin and skin.gauge
+	if g then
+		local fill = percent > 0 and { { style = { height = "100%", width = pct, minWidth = 6 },
+			image = { texture = g.fill, slice = g.slice, color = UiTheme.color(colorName) } } } or {}
+		return { style = style, image = { texture = g.track, slice = g.slice, color = g.trackColor }, children = fill }
+	end
+	return { style = style, background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
+		children = { { style = { height = "100%", width = pct }, background = { color = UiTheme.color(colorName), radius = 2 } } } }
 end
 
 local function text(font, str: string, size: number, colorName: string, extra)
@@ -88,55 +137,48 @@ local function topBar(font, r, bar)
   local repLine = rep.next and ("%s  %s / %s"):format(bar.reputationText, Model.thousands(rep.revenue), Model.thousands(rep.next))
     or ("%s  max"):format(bar.reputationText)
   local gaugeColor = bar.computeLevel == "ok" and "cyan" or Theme.semantic.warning
-  local function cell(label, value, valueColor, extra)
+  local function cell(label, value, valueColor, extra, iconKey)
+    local head = { style = { direction = "row", gap = 4, alignItems = "center" },
+      children = { Icon.node(iconKey, ICON.small, "dim"), text(font, label, T.small, "dim") } }
     return { style = { direction = "column", gap = 2, justify = "center", extra },
-      children = { text(font, label, T.small, "dim"), text(font, value, T.heading, valueColor or "text") } }
+      children = { head, text(font, value, T.heading, valueColor or "text") } }
   end
   local note = bar.computeLevel == "empty" and "  EMPTY" or (bar.computeLevel == "low" and "  low" or "")
+  local computeTint = bar.computeLevel == "ok" and "dim" or Theme.semantic.warning
   local gauge = { style = { direction = "column", gap = 4, justify = "center", width = 230 },
     children = {
-      text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, bar.computeLevel == "ok" and "dim" or Theme.semantic.warning),
-      { style = { height = 8, width = "100%" }, background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-        children = { { style = { height = "100%", width = ("%d%%"):format(math.floor(bar.computeFraction * 100)) },
-          background = { color = UiTheme.color(bar.budgetReached and Theme.semantic.warning or gaugeColor), radius = 2 } } } },
+      { style = { direction = "row", gap = 4, alignItems = "center" }, children = { Icon.node("resource.compute", ICON.small, computeTint),
+        text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, computeTint) } },
+      gauge({ height = 8, width = "100%" }, bar.computeFraction * 100, bar.budgetReached and Theme.semantic.warning or gaugeColor),
     } }
   -- Always offered: the button is greyed, never hidden, when the credits do not cover the pack (it then does nothing).
   local buyColor = bar.buy.affordable and "cyan" or "dim"
-  local buy = { style = { width = 176, height = 28, justify = "center", alignItems = "center" },
-    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(buyColor, 0.6), borderWidth = 1 },
-    button = { action = bar.buy.action, hovered = UiTheme.hover(buyColor), pressed = UiTheme.pressed(buyColor) },
-    children = { text(font, bar.buy.text, T.small, buyColor) } }
+  local buy = buttonNode({ width = 176, height = 28, justify = "center", alignItems = "center" }, bar.buy.action, buyColor,
+    { text(font, bar.buy.text, T.small, buyColor) }, bar.buy.affordable)
   local speed = { style = { direction = "row", gap = 4, alignItems = "center" }, children = {} }
   for _, c in ipairs(bar.speed) do
     local color = c.active and "cyan" or "dim"
-    speed.children[#speed.children + 1] = { style = { width = 38, height = 28, justify = "center", alignItems = "center" },
-      background = { color = c.active and UiTheme.hover("cyan") or UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(color, 0.6), borderWidth = 1 },
-      button = { action = c.action, hovered = UiTheme.hover(color), pressed = UiTheme.pressed(color) },
-      children = { text(font, c.label, T.small, color) } }
+    speed.children[#speed.children + 1] = buttonNode({ width = 38, height = 28, justify = "center", alignItems = "center" },
+      c.action, color, { text(font, c.label, T.small, color) }, c.active)
   end
   local children = {
-    text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
-    cell("Credits", bar.creditsText, "text"),
+    text(font, "GRIDMIND", T.heading, "cyan", { marginRight = TOP_BAR.titleMargin }),
+    cell("Credits", bar.creditsText, "text", nil, "resource.credits"),
     gauge,
     buy,
-    cell("Reputation", repLine, "text"),
+    cell("Reputation", repLine, "text", nil, "resource.reputation"),
     cell("Tier", bar.tierText, "green"),
     speed,
   }
   if bar.budgetReached then children[#children + 1] = text(font, bar.budgetMessage, T.small, Theme.semantic.warning) end
-  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = 24, paddingX = L.pad }), children)
+  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = TOP_BAR.gap, paddingX = L.pad }), children)
 end
 
 local function nav(font, r, entries, screenId)
   local items = {}
   for _, e in ipairs(entries) do
-    items[#items + 1] = {
-      style = { paddingX = L.pad, paddingY = 8, direction = "row", alignItems = "center" },
-      background = { color = e.active and UiTheme.hover("cyan") or UiTheme.color("panel", 0), radius = L.radius,
-        borderColor = e.active and UiTheme.color("cyan", Theme.alpha.line) or nil, borderWidth = e.active and 1 or nil },
-      button = { action = "nav." .. e.id, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
-      children = { text(font, e.label, T.body, e.active and "cyan" or "text") },
-    }
+    items[#items + 1] = buttonNode({ paddingX = L.pad, paddingY = 8, direction = "row", alignItems = "center" },
+      "nav." .. e.id, e.active and "cyan" or "dim", { text(font, e.label, T.body, e.active and "cyan" or "text") }, e.active)
   end
   return withChildren(panel(r, { direction = "column", gap = 4, padding = L.gap }), items)
 end
@@ -149,14 +191,22 @@ local function empty(font, r, id)
   })
 end
 
-local function feedStrip(font, r, lines)
-  local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
+local function feedStrip(font, r, lines, qaLabel)
+  local rows = { text(font, "AGENT FEED" .. (qaLabel and ("   [QA " .. qaLabel .. "]") or ""), T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
+  -- One line per entry, cut to the strip: a wrapped entry would push the newest ones out of the fixed-height panel.
+  local gap = 4
+  local room = r.w - 2 * L.pad - 2 * (ICON.feed + gap)
   for _, l in ipairs(lines) do
     local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or (l.source == "monitor" and "cyan" or "text"))
-    rows[#rows + 1] = text(font, (l.agent and (l.agent .. "  ") or "") .. l.text, T.small, color)
+    local line = Fit.truncate((l.agent and (l.agent .. "  ") or "") .. l.text, T.small, room)
+    -- agent icon, then tool icon (empty boxes keep the text aligned), both tinted like the line: a failed call reads red.
+    local tint = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or "cyan")
+    rows[#rows + 1] = { style = { direction = "row", alignItems = "center", gap = gap, height = math.ceil(T.small * Fit.lineHeight) },
+      children = { Icon.node(Icon.agentKey(l.agentType), ICON.feed, tint), Icon.node(Icon.toolKey(l.tool), ICON.feed, tint),
+        text(font, line, T.small, color) } }
   end
-  return withChildren(panel(r, { direction = "column", padding = L.gap, overflow = "hidden" }), rows)
+  return withChildren(panel(r, { direction = "column", paddingX = L.pad, paddingY = L.gap, overflow = "hidden" }), rows)
 end
 
 -- Dash positions along a route A -> B, skipping the planet discs at both ends. Pure; spacing in view pixels. `phase` slides
@@ -184,7 +234,7 @@ end
 local function focusArea(center, size: number, id: string, colorName: string)
   return { style = { position = "absolute", left = center.x - size / 2, top = center.y - size / 2, width = size, height = size },
     background = { color = UiTheme.color(colorName, 0), radius = size / 2 },
-    button = { action = "map.focus." .. id, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) } }
+    button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
 end
 
 -- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
@@ -217,26 +267,31 @@ local function mapOverlay(font, r, map, opts)
       nodes[#nodes + 1] = dot(d, cfg.routeThickness * scale, name, math.min(1, style.color[4] * 0.55 + (focused and 0.3 or 0)))
     end
   end
-  for _, c in ipairs(map.convoys) do
-    local a, b = points[c.from], points[c.to]
-    local at = { x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }
-    for _, n in ipairs(Glow.halo(at, cfg.convoyDot / 2, "active", t, true, "text")) do nodes[#nodes + 1] = n end
-    nodes[#nodes + 1] = dot(at, cfg.convoyDot, "text")
-  end
-  for _, c in ipairs(map.rivals) do
-    local a, b = points[c.from], points[c.to]
-    if a and b then
-      nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.rivalDot, c.orange and Theme.semantic.warning or "dim")
-    end
-  end
+  -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
-  local function label(center, name, sub, colorName, subColor, below)
-    return { style = { position = "absolute", left = center.x - 90, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
-      children = { text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil } }
+  -- `alpha` (a reveal fading a label in or out) tints the text; `backing` puts a panel behind it so it stays readable over the world.
+  local function label(center, name, sub, colorName, subColor, below, alpha: number?, backing: number?)
+    local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
+    title.text.align = "center"
+    if line then line.text.align = "center" end
+    if alpha then
+      title.text.color = UiTheme.color(colorName, alpha)
+      if line then line.text.color = UiTheme.color(subColor or "dim", alpha) end
+    end
+    local left = math.max(r.x + L.gap, math.min(center.x - 90, r.x + r.w - 180 - L.gap))
+    if backing and backing > 0 then
+      local h = math.ceil(T.body * Fit.lineHeight) + 2 * math.ceil(T.small * Fit.lineHeight) + 8
+      nodes[#nodes + 1] = { style = { position = "absolute", left = left - 4, top = center.y + below - 3, width = 188, height = h, ignorePointer = true },
+        background = { color = UiTheme.color("panel", backing), radius = 3 } }
+    end
+    return { style = { position = "absolute", left = left, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
+      children = { title, line } }
   end
+  local reveal = opts.reveal
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
     local sub = p.lit and table.concat(p.ores, ", ") or ("Locked: " .. p.condition)
+    local revealing = p.lit and reveal ~= nil and reveal.id == p.id
     if p.lit then
       local look = Planets.planets[p.id]
       local neon = look.rim and look.rim[1] or "cyan"
@@ -246,27 +301,59 @@ local function mapOverlay(font, r, map, opts)
       end
       nodes[#nodes + 1] = focusArea(c, cfg.planetRadius * 2, p.id, neon)
     end
-    nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    if revealing then
+      local rv = Vfx.reveal
+      if reveal.dim > 0 then nodes[#nodes + 1] = dot(c, cfg.planetRadius * 2, rv.dim.color, reveal.dim) end
+      local ring = reveal.ring
+      if reveal.outline then ring = { grow = 0, alpha = 1, stroke = rv.ring.stroke } end
+      if ring then
+        local rr = cfg.planetRadius + ring.grow
+        nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - rr, top = c.y - rr, width = rr * 2, height = rr * 2, ignorePointer = true },
+          background = { color = UiTheme.color(rv.ring.color, 0), radius = rr, borderColor = UiTheme.color(rv.ring.color, ring.alpha), borderWidth = ring.stroke } }
+      end
+      -- Locked reason fades out over the first half of the label span, the real name and available state fade in over the second (never both at once: two overlapping lines are unreadable), over one panel backing.
+      if reveal.labelMix < 1 then
+        local locked = "Locked: " .. Model.unlockCondition(p.id)
+        nodes[#nodes + 1] = label(c, p.name, locked, "dim", Theme.semantic.warning, cfg.planetRadius + 8, math.max(0, 1 - 2 * reveal.labelMix), reveal.backing)
+      end
+      if reveal.labelMix > 0 then
+        nodes[#nodes + 1] = label(c, p.name, sub, "text", "dim", cfg.planetRadius + 8, math.max(0, 2 * reveal.labelMix - 1), reveal.labelMix < 1 and 0 or reveal.backing)
+      end
+    else
+      nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    end
   end
   for _, m in ipairs(map.markets) do
     local c = points[m.id]
     for _, n in ipairs(Glow.halo(c, glow.node, focus == m.id and "selected" or "idle", t, false)) do nodes[#nodes + 1] = n end
     nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - 9, top = c.y - 9, width = 18, height = 18 },
       background = { color = UiTheme.color("panel"), radius = 3, borderColor = UiTheme.color("cyan"), borderWidth = 1 },
-      button = { action = "map.focus." .. m.id, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") } }
+      button = UiTheme.button("map.focus." .. m.id, "cyan") }
     nodes[#nodes + 1] = label(c, m.name, ("T%d market"):format(m.tier), "text", "dim", 14)
+  end
+  -- The depot and the outposts: a dotted dock line from the planet to the station, and its name above it (GR5-52).
+  for _, st in ipairs(opts.mapStations or {}) do
+    for _, d in ipairs(Shell.dashes(st.from, st.to, st.skipFrom, st.skipTo, st.spacing)) do
+      nodes[#nodes + 1] = dot(d, 3, "cyan", 0.75)
+    end
+    local title = text(font, st.label, T.small, "cyan")
+    title.text.align = "center"
+    nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
+      children = { title } }
   end
   return nodes
 end
 
 
--- Agent editor (GR5-5). Fields are absolute view-pixel rectangles shared by the shell (holes) and the inputs tree.
+-- Agents screen (GR5-5, GR5-67). Fields are absolute view-pixel rectangles shared by the shell (holes) and the inputs tree.
 function Shell.editorFields()
   local m, e = Shell.layout().main, Screens.editor
-  local x, w = m.x + L.pad, e.leftWidth - 2 * L.pad
+  local x0 = m.x + e.listWidth + e.gap
+  local ow = m.w - e.listWidth - 2 * e.gap - e.directiveWidth
+  local y = m.y + e.boxY + e.fieldY
   return {
-    directive = { x = x, y = m.y + e.directiveY, w = w, h = e.fieldHeight },
-    order = { x = x, y = m.y + e.orderY, w = w, h = e.fieldHeight },
+    directive = { x = x0 + L.pad, y = y, w = e.directiveWidth - 2 * L.pad, h = e.fieldHeight },
+    order = { x = x0 + e.directiveWidth + e.gap + L.pad, y = y, w = ow - 2 * L.pad, h = e.fieldHeight },
   }
 end
 
@@ -278,138 +365,341 @@ local function at(x: number, y: number, node, w: number?, h: number?)
 end
 
 local function button(font, label: string, action: string, colorName: string, w: number)
-  return { style = { width = w, height = 28, justify = "center", alignItems = "center" },
-    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(colorName, 0.6), borderWidth = 1 },
-    button = { action = action, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) },
-    children = { text(font, label, T.small, colorName) } }
+  return buttonNode({ width = w, height = 28, justify = "center", alignItems = "center" }, action, colorName,
+    { text(font, label, T.small, colorName) }, colorName ~= "dim")
 end
 
-local function tabButtons(font, active: string)
+-- Words wider than `width` are cut into lines (the engine wraps between words only), so a long JSON value or a name with
+-- no spaces is still shown whole inside its scroll area.
+local function wrapExact(str: string, size: number, width: number): string
+  local limit = math.max(1, math.floor(width / (size * Fit.advance)))
+  local out = string.gsub(str, "%S+", function(word)
+    local n = utf8.len(word) or #word
+    if n <= limit then return word end
+    local chunks, i = {}, 1
+    while i <= n do
+      local a, b = utf8.offset(word, i), utf8.offset(word, i + limit)
+      chunks[#chunks + 1] = string.sub(word, a, (b or (#word + 1)) - 1)
+      i += limit
+    end
+    return table.concat(chunks, "\n")
+  end)
+  return out
+end
+
+-- A wheel-scrolled region: fixed box, a column inside that grows past it (so nothing is clipped, it scrolls). 16 px stay
+-- free on the right for the scrollbar.
+local function scrollBox(x: number, y: number, w: number, h: number, kids, gap: number?)
+  return { style = { position = "absolute", left = x, top = y, width = w, height = h, overflow = "scroll" }, scroll = {},
+    children = { { style = { direction = "column", gap = gap or 2, width = w - 16 }, children = kids } } }
+end
+
+local function scrollText(font, str: string, size: number, colorName: string, w: number)
+  return text(font, wrapExact(str, size, w - 16), size, colorName)
+end
+
+local function row(kids, gap: number?)
+  return { style = { direction = "row", alignItems = "center", gap = gap or 6 }, children = kids }
+end
+
+-- A titled sub-panel at (x, y) relative to its parent.
+local function box(font, x: number, y: number, w: number, h: number, title: string, reserve: number?)
+  local p = panel({ x = x, y = y, w = w, h = h }, nil)
+  p.children = { at(L.pad, 8, text(font, title, T.small, "dim"), w - 2 * L.pad - (reserve or 0), 16) }
+  return p
+end
+
+local function tabs(font, active: string, x: number, y: number)
   local out = {}
-  for _, tab in ipairs(Screens.tabs) do
-    out[#out + 1] = at(tab.x, Screens.tabs.y, button(font, tab.label, "editor.tab." .. tab.id, tab.id == active and "cyan" or "dim", tab.w))
+  for i, tab in ipairs({ { "editor", "Editor", 100 }, { "context", "Context", 110 } }) do
+    out[#out + 1] = at(x + (i - 1) * 108, y, button(font, tab[2], "editor.tab." .. tab[1], tab[1] == active and "cyan" or "dim", tab[3]))
   end
   return out
 end
 
--- Cost of one decision: what the Context panel and the editor both say, from the same prompt the ledger bills.
-local function costRows(font, m, formats)
-  local rows = {
-    text(font, "COST OF ONE DECISION", T.small, "dim"),
-    text(font, m.cost.text, T.heading, "cyan"),
-    text(font, ("%d input + %d output = %d tokens"):format(m.inputTokens, m.outputTokens, m.totalTokens), T.small, "dim"),
-    text(font, "", T.small, "dim"),
-  }
-  for _, name in ipairs({ "rules", "directive", "order", "context", "tools" }) do
-    rows[#rows + 1] = text(font, ("%-10s %5d tokens"):format(name, m.sections[name]), T.body, "text")
-  end
-  rows[#rows + 1] = text(font, "", T.small, "dim")
-  for _, f in ipairs(formats) do
-    rows[#rows + 1] = text(font, ("Context %-7s %5d tokens%s"):format(f.format, f.context, f.active and "  (in use)" or ""), T.small, f.active and "cyan" or "dim")
-  end
-  return rows
+local function limitBar(c, w: number)
+  local percent = c.max > 0 and c.tokens / c.max * 100 or 0
+  return gauge({ width = w, height = 8 }, percent, c.amber and Theme.semantic.warning or "cyan")
 end
 
--- Per-agent Compute/h, the hourly AI budget and the buy packs, under the editor fields.
-local function computeBlock(font, cv, nodeAt)
-  local c = Screens.compute
-  local y = c.y
-  nodeAt(L.pad, y, text(font, "COMPUTE PER HOUR  (who thinks the most)", T.small, "dim"))
-  y += c.rowHeight + 2
-  for _, row in ipairs(cv.rows) do
-    local blocked = row.state == "no_compute"
-    local state = blocked and ("no compute: " .. tostring(row.blockReason or "")) or row.state
-    local line = ("%-10s %6.1f /h  (%d cr/h)  %s"):format(row.id, row.computePerHour, math.floor(row.creditsPerHour + 0.5), state)
-    nodeAt(L.pad, y, text(font, line, T.small, blocked and Theme.semantic.warning or (row.thinksMost and #cv.rows > 1 and "cyan" or "text")))
-    y += c.rowHeight
+local function agentList(font, r, e, rows)
+  local p = panel({ x = r.x, y = r.y, w = e.listWidth, h = r.h }, nil)
+  local kids = { at(L.pad, L.pad, text(font, ("AGENTS  %d"):format(#rows), T.small, "dim"), e.listWidth - 2 * L.pad, 16) }
+  local w = e.listWidth - 2 * L.pad
+  if #rows == 0 then
+    kids[#kids + 1] = at(L.pad, e.listHeaderHeight + L.pad, text(font, e.emptyList, T.body, "dim"), w, 20)
   end
-  nodeAt(L.pad, y, text(font, ("%-10s %6.1f /h  (%d cr/h)"):format("team", cv.top.teamPerHour, math.floor(cv.top.teamPerHour * cv.cfg.compute.priceCredits + 0.5)), T.small, "dim"))
-  y += c.rowHeight
+  local nodes = {}
+  local textW = w - 16 - 12 - ICON.row - 6
+  for _, a in ipairs(rows) do
+    local tint = a.state == "paused_error" and Theme.semantic.error or (a.selected and "cyan" or "dim")
+    nodes[#nodes + 1] = buttonNode({ width = w - 16, height = e.listRowHeight, direction = "row", alignItems = "center", gap = 6, paddingX = 6 },
+      a.action, a.selected and "cyan" or "dim", {
+        Icon.node(Icon.agentKey(a.type), ICON.row, tint),
+        { style = { width = textW }, children = {
+          text(font, (a.selected and "> " or "") .. a.id, T.body, a.selected and "cyan" or "text"),
+          text(font, (a.locked and "lock " or "") .. a.state, T.small, a.state == "paused_error" and Theme.semantic.error or "dim") } },
+      }, a.selected)
+  end
+  kids[#kids + 1] = scrollBox(L.pad, e.listHeaderHeight + L.pad, w, r.h - e.listHeaderHeight - 2 * L.pad, nodes, 4)
+  return withChildren(p, kids)
+end
+
+-- Mode / Compute box: cost of one decision, its parts, the per-agent Compute/h, the hourly budget and the buy packs.
+local function modeBox(font, x, y, w, h, m, cv, agentRows)
+  local e, c = Screens.editor, Screens.compute
+  local p = box(font, x, y, w, h, "MODE / COMPUTE  " .. m.mode)
+  local inner = w - 2 * L.pad
+  local rows = {
+    text(font, m.cost.text, T.body, "cyan"),
+    text(font, ("%d input + %d output = %d tokens"):format(m.inputTokens, m.outputTokens, m.totalTokens), T.small, "dim"),
+  }
+  for _, name in ipairs({ "rules", "directive", "order", "context", "tools" }) do
+    rows[#rows + 1] = text(font, ("%-10s %5d tokens"):format(name, m.sections[name]), T.small, "text")
+  end
+  rows[#rows + 1] = text(font, "COMPUTE PER HOUR  (who thinks the most)", T.small, "dim")
+  for _, a in ipairs(cv.rows) do
+    local blocked = a.state == "no_compute"
+    local state = blocked and ("no compute: " .. tostring(a.blockReason or "")) or a.state
+    local line = ("%-10s %6.1f /h  (%d cr/h)  %s"):format(a.id, a.computePerHour, math.floor(a.creditsPerHour + 0.5), state)
+    rows[#rows + 1] = row({ Icon.node(Icon.agentKeyOfId(a.id), ICON.row, blocked and Theme.semantic.warning or "dim"),
+      text(font, line, T.small, blocked and Theme.semantic.warning or (a.thinksMost and #cv.rows > 1 and "cyan" or "text")) })
+  end
+  rows[#rows + 1] = text(font, ("%-10s %6.1f /h  (%d cr/h)"):format("team", cv.top.teamPerHour, math.floor(cv.top.teamPerHour * cv.cfg.compute.priceCredits + 0.5)), T.small, "dim")
   local b = cv.top.budget
-  local budgetText = b.reached and b.message or ("AI budget this hour: %s / %s tokens (%d%%)"):format(Model.thousands(b.used), Model.thousands(b.cap), math.floor(b.fraction * 100))
-  nodeAt(L.pad, y, text(font, budgetText, T.small, b.reached and Theme.semantic.warning or "dim"))
-  y += c.rowHeight + 6
-  local x = L.pad
-  for _, o in ipairs(cv.buy) do
-    nodeAt(x, y, button(font, o.text, o.action, o.affordable and "cyan" or "dim", c.buyWidth))
-    x += c.buyWidth + c.buyGap
+  rows[#rows + 1] = text(font, b.reached and b.message or ("AI budget this hour: %s / %s tokens (%d%%)"):format(Model.thousands(b.used), Model.thousands(b.cap), math.floor(b.fraction * 100)),
+    T.small, b.reached and Theme.semantic.warning or "dim")
+  local buys = {}
+  for _, o in ipairs(cv.buy) do buys[#buys + 1] = button(font, o.text, o.action, o.affordable and "cyan" or "dim", c.buyWidth) end
+  rows[#rows + 1] = { style = { direction = "row", wrap = "wrap", gap = c.buyGap, width = inner - 16 }, children = buys }
+  p.children[#p.children + 1] = scrollBox(L.pad, 30, inner, h - 30 - L.pad, rows, 3)
+  return p
+end
+
+-- Examples dropdown (GR5-106): the examples of this agent's role on the left, the picked one on the right with what it needs.
+-- Picking a row only previews it; "Use this directive" fills the draft. Prerequisites are shown, never granted.
+local function examplesPanel(font, x: number, y: number, w: number, h: number, ex)
+  local lw = math.floor(w * 0.42)
+  local rw = w - lw - 3 * L.pad
+  local p = panel({ x = x, y = y, w = w, h = h }, nil)
+  local k = { at(L.pad, 8, text(font, ("EXAMPLES  %s  (%d)"):format(ex.roleLabel or "", #ex.list), T.small, "dim"), lw - 2 * L.pad, 16) }
+  local selected
+  for _, item in ipairs(ex.list) do if item.id == ex.selected then selected = item end end
+  if #ex.list == 0 then
+    k[#k + 1] = at(L.pad, 36, text(font, ex.empty, T.body, "dim"), w - 2 * L.pad, 20)
+    return withChildren(p, k)
   end
+  local rows = {}
+  for _, item in ipairs(ex.list) do
+    local on = item == selected
+    local tint = on and "cyan" or "dim"
+    local tag = item.gradeLabel .. (item.ready and "" or "  needs setup")
+    rows[#rows + 1] = buttonNode({ width = lw - 2 * L.pad - 16, direction = "column", gap = 2, paddingX = 8, paddingY = 5 },
+      "editor.example.pick." .. item.id, tint, {
+        text(font, (on and "> " or "") .. tag, T.small, item.ready and (on and "cyan" or "text") or Theme.semantic.warning),
+        text(font, item.hint, T.small, "dim") }, on)
+  end
+  k[#k + 1] = scrollBox(L.pad, 30, lw - 2 * L.pad, h - 30 - L.pad, rows, 4)
+
+  local dx = lw + 2 * L.pad
+  if not selected then
+    k[#k + 1] = at(dx, 36, text(font, ex.noSelection, T.body, "dim"), rw, 20)
+    return withChildren(p, k)
+  end
+  local detail = {
+    text(font, "DIRECTIVE  " .. selected.gradeLabel, T.small, "dim"),
+    scrollText(font, selected.directive, T.body, "cyan", rw),
+    text(font, "PREREQUISITES  (never changed for you)", T.small, "dim"),
+  }
+  if #selected.prerequisites == 0 then detail[#detail + 1] = text(font, "none", T.small, "text") end
+  for _, need in ipairs(selected.prerequisites) do
+    detail[#detail + 1] = scrollText(font, (need.met and "ok       " or need.info and "check    " or "MISSING  ") .. need.text, T.small, need.met and "green" or Theme.semantic.warning, rw)
+  end
+  if selected.directive2 then
+    detail[#detail + 1] = text(font, ex.secondAgent, T.small, "dim")
+    detail[#detail + 1] = scrollText(font, selected.directive2, T.body, "cyan", rw)
+  end
+  if selected.stubNote then detail[#detail + 1] = scrollText(font, selected.stubNote, T.small, Theme.semantic.warning, rw) end
+  if not selected.fits then detail[#detail + 1] = scrollText(font, ex.tooLong, T.small, Theme.semantic.error, rw) end
+  detail[#detail + 1] = text(font, "COACHING", T.small, "dim")
+  detail[#detail + 1] = scrollText(font, selected.hint, T.small, "text", rw)
+  detail[#detail + 1] = text(font, ex.watchLabel:upper(), T.small, "dim")
+  detail[#detail + 1] = scrollText(font, selected.watch, T.small, "text", rw)
+  detail[#detail + 1] = scrollText(font, ex.noMeasure, T.small, "dim", rw)
+  k[#k + 1] = scrollBox(dx, 30, rw, h - 30 - 28 - 2 * L.pad, detail, 3)
+  local confirm = ex.confirm == selected.id
+  k[#k + 1] = at(dx, h - 28 - L.pad, button(font, confirm and ex.confirmLabel or ex.useLabel, "editor.example.use." .. selected.id,
+    selected.fits and (confirm and "amber" or "cyan") or "dim", rw - 16))
+  return withChildren(p, k)
 end
 
 local function editorScreen(font, r, m, opts)
   local e = Screens.editor
   local counterColor = function(c) return c.amber and Theme.semantic.warning or "dim" end
-  local left = {}
-  local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "AGENT EDITOR  " .. m.agentId, T.small, "dim"))
-  for _, n in ipairs(Glow.light({ x = L.pad + 7 * (16 + #m.agentId) + 12, y = L.pad + 8 }, opts.state, opts.time or 0)) do left[#left + 1] = n end
-  for _, n in ipairs(tabButtons(font, "editor")) do left[#left + 1] = n end
-  nodeAt(L.pad, e.directiveY - 22, text(font, "Directive (permanent)", T.body, "text"))
-  nodeAt(e.leftWidth - L.pad - 150, e.directiveY - 22, text(font, m.directive.text .. " tokens", T.body, counterColor(m.directive)))
-  nodeAt(L.pad, e.orderY - 22, text(font, "Order (one-off, until cleared)", T.body, "text"))
-  nodeAt(e.leftWidth - L.pad - 150, e.orderY - 22, text(font, m.order.text .. " tokens", T.body, counterColor(m.order)))
+  local x0 = r.x + e.listWidth + e.gap
+  local dw = r.w - e.listWidth - e.gap
+  local ow = dw - e.directiveWidth - e.gap
+  local draft = opts.draft
+  local out = { agentList(font, r, e, opts.list) }
+
+  -- identity: name, role, status, mode, the state light and the Monitor-sourced order tag
+  local ident = panel({ x = x0, y = r.y, w = dw, h = e.identityHeight }, nil)
+  local k = {}
+  k[#k + 1] = Icon.at(Icon.agentKeyOfId(m.agentId), L.pad, 4, 32, opts.state == "paused_error" and Theme.semantic.error or "cyan")
+  k[#k + 1] = at(L.pad + 44, 4, text(font, m.agentId, T.heading, "text"), 200, 20)
+  k[#k + 1] = at(L.pad + 44, 24, text(font, ("%s  -  %s  -  %s"):format(m.type, m.state, m.mode), T.small, "dim"), 300, 16)
+  for _, n in ipairs(Glow.light({ x = L.pad + 36, y = 28 }, opts.state, opts.time or 0)) do k[#k + 1] = n end
+  for _, n in ipairs(tabs(font, "editor", 300, 6)) do k[#k + 1] = n end
+  local note, noteColor
+  if opts.toast then note, noteColor = opts.toast, "green"
+  elseif not m.canSave then note, noteColor = "ERROR: " .. (m.limitNote or Words.editor.directiveOver), Theme.semantic.warning
+  elseif m.dirty then note, noteColor = "Unsaved changes.", Theme.semantic.warning end
+  if note then k[#k + 1] = at(dw - 300 - L.pad, 4, text(font, note, T.small, noteColor), 300, 16) end
+  if m.orderSource then k[#k + 1] = at(dw - 300 - L.pad, 22, text(font, "order set by the " .. m.orderSource, T.small, "cyan"), 300, 16) end
+  out[#out + 1] = withChildren(ident, k)
+
+  -- directive and order: label, live count, limit bar; the single-line input sits in the hole, the full text scrolls below
+  local function field(x, w, title, c, value, empty)
+    local b = box(font, x, r.y + e.boxY, w, e.boxHeight, title, 170)
+    local inner = w - 2 * L.pad
+    b.children[#b.children + 1] = at(w - L.pad - 160, 8, text(font, (c.state == "over" and "ERROR " or "") .. c.text .. " tokens", T.small, counterColor(c)), 160, 16)
+    b.children[#b.children + 1] = at(L.pad, e.barY, limitBar(c, inner))
+    b.children[#b.children + 1] = scrollBox(L.pad, e.previewY, inner, e.previewHeight,
+      { value ~= "" and scrollText(font, value, T.small, "text", inner) or text(font, empty, T.small, "dim") })
+    return b
+  end
+  out[#out + 1] = field(x0, e.directiveWidth, "DIRECTIVE (permanent)", m.directive, draft.directive, "(empty directive)")
+  out[#out + 1] = field(x0 + e.directiveWidth + e.gap, ow, "ORDER (one-off, until cleared)", m.order, draft.order, "(no order)")
+
+  -- actions
+  local acts = panel({ x = x0, y = r.y + e.actionsY, w = dw, h = e.actionsHeight }, nil)
+  local ak = {}
   local x = L.pad
   for _, preset in ipairs(opts.presets) do
-    nodeAt(x, e.buttonsY, button(font, preset.label, "editor.preset." .. preset.key, "dim", 80))
+    ak[#ak + 1] = at(x, 4, button(font, preset.label, "editor.preset." .. preset.key, "dim", 80))
     x += 88
   end
-  nodeAt(x + 16, e.buttonsY, button(font, "Clear order", "editor.clear_order", "dim", 110))
-  nodeAt(x + 134, e.buttonsY, button(font, "Save", "editor.save", m.canSave and "cyan" or "dim", 80))
+  ak[#ak + 1] = at(x + 8, 4, button(font, "Clear order", "editor.clear_order", "dim", 110))
+  ak[#ak + 1] = at(x + 126, 4, button(font, "Save", "editor.save", m.canSave and "cyan" or "dim", 80))
+  local nextX = x + 214
   if m.lock then
-    nodeAt(x + 230, e.buttonsY, button(font, m.lock.locked and "Monitor lock: ON" or "Monitor lock: off", m.lock.action, m.lock.locked and "amber" or "dim", 150))
+    ak[#ak + 1] = at(nextX, 4, button(font, m.lock.locked and "Monitor lock: ON" or "Monitor lock: off", m.lock.action, m.lock.locked and "amber" or "dim", 150))
+    nextX += 158
   end
-  if m.orderSource then nodeAt(L.pad + 200, e.orderY - 22, text(font, "set by the " .. m.orderSource, T.small, "cyan")) end
-  local note = opts.toast or (not m.canSave and "Over the limit: cannot be saved." or (m.dirty and "Unsaved changes." or nil))
-  if note then
-    nodeAt(L.pad, e.toastY, text(font, note, T.small, opts.toast and "green" or (not m.canSave and Theme.semantic.warning or "dim")))
-  end
-  computeBlock(font, opts.compute, nodeAt)
-  local leftPanel = panel({ x = r.x, y = r.y, w = e.leftWidth, h = r.h }, nil)
-  withChildren(leftPanel, left)
+  local ex = opts.examples or { open = false, list = {} }
+  ak[#ak + 1] = at(nextX, 4, button(font, ex.open and "Examples: close" or ("Examples (%d)"):format(#ex.list), "editor.examples.toggle", ex.open and "cyan" or "dim", 150))
+  out[#out + 1] = withChildren(acts, ak)
 
-  local rows = costRows(font, m, m.formats)
-  rows[#rows + 1] = text(font, "", T.small, "dim")
-  rows[#rows + 1] = text(font, "TOOLS (each one is paid in every prompt)", T.small, "dim")
-  for _, t in ipairs(m.tools) do rows[#rows + 1] = text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") end
-  rows[#rows + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
-  local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
-  return leftPanel, withChildren(rightPanel, rows)
+  if ex.open then
+    out[#out + 1] = examplesPanel(font, x0, r.y + e.toolsY, dw, e.feedY + e.feedHeight - e.toolsY, ex)
+    return out
+  end
+
+  -- tools: equipped slots with their prompt weight, locked ones with the requirement, the Context shortcut
+  local tb = box(font, x0, r.y + e.toolsY, e.directiveWidth, e.toolsHeight, ("TOOLS  slots %d / %d"):format(m.toolSlots.used, m.toolSlots.max), 110)
+  local tw = e.directiveWidth - 2 * L.pad
+  tb.children[#tb.children + 1] = at(e.directiveWidth - L.pad - 100, 4, button(font, "Context", "editor.tab.context", "cyan", 100))
+  local tools = {}
+  for _, t in ipairs(m.tools) do
+    tools[#tools + 1] = row({ Icon.node(Icon.toolKey(t.name), ICON.row, "dim"), text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") })
+  end
+  for _, t in ipairs(m.lockedTools) do
+    tools[#tools + 1] = row({ Icon.node(Icon.toolKey(t.name), ICON.row, Theme.semantic.warning), text(font, ("%s  locked: %s"):format(t.name, t.reason), T.small, Theme.semantic.warning) })
+  end
+  tools[#tools + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
+  tb.children[#tb.children + 1] = scrollBox(L.pad, 34, tw, e.toolsHeight - 34 - L.pad, tools)
+  out[#out + 1] = tb
+  out[#out + 1] = modeBox(font, x0 + e.directiveWidth + e.gap, r.y + e.toolsY, ow, e.toolsHeight, m, opts.compute)
+
+  -- feed: this agent's newest calls, a run of 2 or more successful ones can be saved as a skill
+  local fb = box(font, x0, r.y + e.feedY, dw, e.feedHeight, "FEED  " .. m.agentId, 160)
+  fb.children[#fb.children + 1] = at(dw - L.pad - 150, 4, button(font, e.saveButton, opts.feed.saveAction, opts.feed.canSave and "cyan" or "dim", 150))
+  local lines = {}
+  if #opts.feed.entries == 0 then lines[1] = text(font, e.feedEmpty, T.small, "dim") end
+  for _, l in ipairs(opts.feed.entries) do
+    local failed = l.status == "failed"
+    lines[#lines + 1] = row({ Icon.node(Icon.agentKeyOfId(m.agentId), ICON.feed, failed and Theme.semantic.error or "cyan"),
+      Icon.node(Icon.toolKey(l.tool), ICON.feed, failed and Theme.semantic.error or "cyan"),
+      text(font, (failed and "ERROR " or "") .. (l.source == "monitor" and "[monitor] " or "") .. l.text, T.small,
+        failed and Theme.semantic.error or (l.source == "monitor" and "cyan" or "text")) }, 4)
+  end
+  fb.children[#fb.children + 1] = scrollBox(L.pad, 34, dw - 2 * L.pad, e.feedHeight - 34 - L.pad, lines)
+  out[#out + 1] = fb
+  return out
 end
 
--- Context panel (GR5-6, spec §9.3): every setting with the tokens each option adds to every decision. The total on the
--- right is the cost the ledger bills for the next decision.
-local function contextScreen(font, r, panelModel)
-  local e, c = Screens.editor, Screens.context
-  local left = {}
-  local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "CONTEXT  " .. panelModel.agentId, T.small, "dim"))
-  for _, n in ipairs(tabButtons(font, "context")) do left[#left + 1] = n end
-  nodeAt(L.pad, c.rowY - 22, text(font, "(+N) = tokens the option adds to every decision of this agent", T.small, "dim"))
-  for i, row in ipairs(panelModel.rows) do
-    local y = c.rowY + (i - 1) * c.rowHeight
-    nodeAt(L.pad, y + 6, text(font, row.label, T.body, row.available and "text" or "dim"))
-    if not row.available then
-      nodeAt(L.pad + c.optionX, y + 6, text(font, ("Locked: unlocks at T%d"):format(row.unlockTier), T.small, Theme.semantic.warning))
-    elseif row.kind == "stepper" then
-      nodeAt(L.pad + c.optionX, y, button(font, "-", row.stepActions.down, "cyan", c.stepWidth))
-      nodeAt(L.pad + c.optionX + c.stepWidth + 10, y + 6, text(font, ("%d  (+%d)"):format(row.value, row.weight), T.body, "cyan"))
-      nodeAt(L.pad + c.optionX + 160, y, button(font, "+", row.stepActions.up, "cyan", c.stepWidth))
-    else
-      for k, o in ipairs(row.options) do
-        local label = o.weight > 0 and ("%s (+%d)"):format(o.text, o.weight) or o.text
-        nodeAt(L.pad + c.optionX + (k - 1) * (c.optionWidth + c.optionGap), y, button(font, label, o.action, o.selected and "cyan" or "dim", c.optionWidth))
+-- Context screen (GR5-6, GR5-67; spec §9.3): the agent and format on top, every setting with the tokens each option adds,
+-- and on the right the exact rendered context with the cost of the next decision.
+local function contextScreen(font, r, pm, opts)
+  local c = Screens.contextView
+  local out = {}
+  local left = panel({ x = r.x, y = r.y, w = c.listWidth, h = r.h }, nil)
+  local k = {}
+  local w = c.listWidth - 2 * L.pad
+  -- agent selector
+  local x = L.pad
+  for _, a in ipairs(opts.agents) do
+    local bw = math.min(112, math.floor((w - 8 * (#opts.agents - 1)) / math.max(1, #opts.agents)))
+    k[#k + 1] = at(x, L.pad, button(font, a.id, a.action, a.selected and "cyan" or "dim", bw))
+    x += bw + 8
+  end
+  -- format, both weights shown
+  local formatRow
+  for _, row0 in ipairs(pm.rows) do if row0.key == "format" then formatRow = row0 end end
+  if formatRow then
+    local bw = math.floor((w - 8) / math.max(1, #formatRow.options))
+    for i, o in ipairs(formatRow.options) do
+      k[#k + 1] = at(L.pad + (i - 1) * (bw + 8), L.pad + 36, button(font, ("%s (+%d)"):format(o.text, o.weight), o.action, o.selected and "cyan" or "dim", bw))
+    end
+  end
+  k[#k + 1] = at(L.pad, c.headerHeight - 4 + 4, text(font, (formatRow and formatRow.label or "Format") .. "  (+N) = tokens added per decision", T.small, "dim"), w, 16)
+  local rows = {}
+  for _, row0 in ipairs(pm.rows) do
+    if row0.key ~= "format" then
+      rows[#rows + 1] = text(font, row0.label, T.body, row0.available and "text" or "dim")
+      if not row0.available then
+        rows[#rows + 1] = text(font, ("Locked: unlocks at T%d"):format(row0.unlockTier), T.small, Theme.semantic.warning)
+      elseif row0.kind == "stepper" then
+        rows[#rows + 1] = row({ button(font, "-", row0.stepActions.down, "cyan", 32), text(font, ("%d  (+%d)"):format(row0.value, row0.weight), T.body, "cyan"),
+          button(font, "+", row0.stepActions.up, "cyan", 32) }, 10)
+      else
+        local btns = {}
+        for _, o in ipairs(row0.options) do
+          local label = o.weight > 0 and ("%s (+%d)"):format(o.text, o.weight) or o.text
+          btns[#btns + 1] = button(font, label, o.action, o.selected and "cyan" or "dim", 112)
+        end
+        rows[#rows + 1] = { style = { direction = "row", wrap = "wrap", gap = 6, width = w - 16 }, children = btns }
       end
     end
   end
-  local leftPanel = withChildren(panel({ x = r.x, y = r.y, w = e.leftWidth, h = r.h }, nil), left)
+  local top = c.headerHeight + 20
+  k[#k + 1] = scrollBox(L.pad, top, w, r.h - top - L.pad, rows, 6)
+  out[#out + 1] = withChildren(left, k)
 
-  local rows = costRows(font, panelModel, panelModel.formatList)
-  rows[#rows + 1] = text(font, "", T.small, "dim")
-  local b = panelModel.budget
-  rows[#rows + 1] = text(font, b.reached and b.message or ("AI budget this hour: %d%% used"):format(math.floor(b.fraction * 100)), T.small, b.reached and Theme.semantic.warning or "dim")
-  local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
-  return leftPanel, withChildren(rightPanel, rows)
+  -- preview and cost
+  local rx = r.x + c.listWidth + c.gap
+  local rw = r.w - c.listWidth - c.gap
+  local right = panel({ x = rx, y = r.y, w = rw, h = r.h }, nil)
+  local rk = {}
+  rk[#rk + 1] = at(L.pad, L.pad, text(font, ("%s  %s  (%s)"):format(c.title, pm.agentId, pm.format), T.small, "dim"), rw - 2 * L.pad - 230, 16)
+  for _, n in ipairs(tabs(font, "context", rw - 2 * L.pad - 218 + L.pad, 4)) do rk[#rk + 1] = n end
+  local footer = c.footerHeight
+  local previewH = r.h - 36 - footer - L.pad
+  local body = pm.contextText ~= "" and pm.contextText or c.none
+  rk[#rk + 1] = scrollBox(L.pad, 34, rw - 2 * L.pad, previewH, { scrollText(font, body, T.small, pm.contextText ~= "" and "text" or "dim", rw - 2 * L.pad) })
+  local fy = r.h - footer
+  local fk = {
+    at(L.pad, fy, text(font, pm.cost.text, T.heading, "cyan"), rw - 2 * L.pad, 20),
+    at(L.pad, fy + 22, text(font, ("%d input + %d output = %d tokens"):format(pm.inputTokens, pm.outputTokens, pm.totalTokens), T.small, "dim"), rw - 2 * L.pad, 16),
+    at(L.pad, fy + 40, text(font, ("rules %d  directive %d  order %d  context %d  tools %d"):format(pm.sections.rules, pm.sections.directive, pm.sections.order, pm.sections.context, pm.sections.tools), T.small, "text"), rw - 2 * L.pad, 16),
+  }
+  local b = pm.budget
+  fk[#fk + 1] = at(L.pad, fy + 58, text(font, b.reached and b.message or ("AI budget this hour: %d%% used"):format(math.floor(b.fraction * 100)), T.small, b.reached and Theme.semantic.warning or "dim"), rw - 2 * L.pad, 16)
+  for _, n in ipairs(fk) do rk[#rk + 1] = n end
+  out[#out + 1] = withChildren(right, rk)
+  return out
 end
+
 
 -- Logs screen (GR5-8, spec §12.2): per-agent stats on top, the filtered list (errors amber with their reason), and the
 -- clicked record on the right.
@@ -425,7 +715,8 @@ local function logsScreen(font, r, m)
   for _, h in ipairs(m.header) do
     local line = ("%-12s credits/h %6s   Compute/h %5.1f   net/h %6s"):format(h.id, Model.thousands(h.creditsPerHour), h.computePerHour,
       (h.netPerHour < 0 and "-" or "") .. Model.thousands(math.abs(h.netPerHour)))
-    nodeAt(L.pad, y, text(font, line, T.small, h.netPerHour < 0 and Theme.semantic.warning or "text"))
+    nodeAt(L.pad, y, Icon.node(Icon.agentKeyOfId(h.id), ICON.row, h.netPerHour < 0 and Theme.semantic.warning or "dim"))
+    nodeAt(L.pad + ICON.row + 6, y, text(font, line, T.small, h.netPerHour < 0 and Theme.semantic.warning or "text"))
     y += c.statRowHeight
   end
   y += 6
@@ -448,7 +739,7 @@ local function logsScreen(font, r, m)
     local color = row.isError and Theme.semantic.error or (row.pending and "dim" or "text")
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = row.selected and UiTheme.hover("cyan") or UiTheme.color("panel", 0), radius = 2 },
-      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
+      button = UiTheme.button(row.action, "cyan", row.selected and { normal = UiTheme.hover("cyan") } or { base = "panel", alpha = 0 }),
       children = { text(font, row.text, T.small, color) } }, rowW, c.rowHeight)
     y += c.rowHeight
   end
@@ -592,7 +883,9 @@ local function shopScreen(font, r, m)
       nodeAt(c.noteX, y + 8, text(font, row.note, T.small, owned and "green" or Theme.semantic.warning))
     end
     if not owned then
-      nodeAt(c.costX, y + 8, text(font, row.costText, T.small, row.state == "available" and "cyan" or "dim"))
+      local costColor = row.state == "available" and "cyan" or "dim"
+      nodeAt(c.costX - ICON.row - 4, y + 8, Icon.node("resource.credits", ICON.row, costColor))
+      nodeAt(c.costX, y + 8, text(font, row.costText, T.small, costColor))
       if row.state == "available" then nodeAt(c.buyX, y, button(font, "Buy", row.action, "cyan", c.buyWidth)) end
     end
   end
@@ -617,9 +910,7 @@ local function fleetScreen(font, r, m, time)
   local rep = m.reputation
   nodeAt(L.pad, L.pad, text(font, ("REPUTATION %d  %s  command %d / %d"):format(rep.level,
     rep.next and ("%s / %s"):format(Model.thousands(rep.revenue), Model.thousands(rep.next)) or "max", rep.used, rep.capacity), T.small, "dim"))
-  nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
-    background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-    children = { { style = { height = "100%", width = ("%d%%"):format(rep.percent) }, background = { color = UiTheme.color("cyan"), radius = 2 } } } })
+  nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, rep.percent, "cyan"))
   local hub = m.hub
   if hub then
     if hub.state == "owned" then
@@ -673,73 +964,132 @@ local function fleetScreen(font, r, m, time)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Station (GR5-73, spec §6.6 T3, §7): stock per resource with used / capacity, docked ships, freighters and Logisticians of
+-- the main station and of each outpost (one tab per station).
+local function stationScreen(font, r, m, time)
+  local c = Screens.station
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  if m.showTabs then
+    for i, tab in ipairs(m.tabs) do
+      nodeAt(L.pad + (i - 1) * (c.tabWidth + c.tabGap), c.tabY, button(font, tab.label, tab.action, tab.active and "cyan" or "dim", c.tabWidth))
+    end
+  else
+    nodeAt(L.pad, c.titleY, text(font, c.title, T.heading, "cyan"))
+  end
+  nodeAt(L.pad, c.headerY, text(font, ("%s  %s   stock %s"):format(m.label:upper(), m.planet, m.usedText), T.small, "dim"))
+  nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, m.percent, m.percent >= 90 and Theme.semantic.warning or "cyan"))
+  for i, row in ipairs(m.stock) do
+    local y = c.rowY + (i - 1) * c.rowHeight
+    nodeAt(L.pad, y, text(font, row.name, T.body, row.qty > 0 and "text" or "dim"))
+    nodeAt(c.rowBarX, y + c.rowBarY - 4, gauge({ height = c.barHeight, width = c.rowBarWidth }, row.percent, "green"))
+    nodeAt(c.rowQtyX, y, text(font, tostring(row.qty), T.body, row.qty > 0 and "text" or "dim"))
+  end
+  local y = c.rowY
+  local function line(label, colorName, state, x)
+    if state then for _, n in ipairs(Glow.light({ x = c.listX - 8, y = y + 8 }, state, time)) do kids[#kids + 1] = n end end
+    nodeAt(x or c.listX, y, text(font, label, T.small, colorName))
+    y += c.lineHeight
+  end
+  line(("DOCKED SHIPS  %d"):format(#m.ships), "dim")
+  if #m.ships == 0 then line("none", "dim", nil, c.listX + 12) end
+  for _, s in ipairs(m.ships) do line(s.text, s.owner and "text" or Theme.semantic.warning, s.owner and "idle" or "pending", c.listX + 12) end
+  y += c.sectionGap
+  if not m.hub then
+    line("FREIGHTERS AND LOGISTICIANS", "dim")
+    line("Build the logistics hub (tier 4) to ship stock to other markets.", "dim", nil, c.listX + 12)
+  else
+    line(("FREIGHTERS  %d / %d"):format(#m.freighters, m.freighterCap), "dim")
+    if #m.freighters == 0 then line("none", "dim", nil, c.listX + 12) end
+    for _, f in ipairs(m.freighters) do line(f.text, "text", f.state == "docked" and "idle" or "acting", c.listX + 12) end
+    y += c.sectionGap
+    line(("LOGISTICIANS  %d"):format(#m.logisticians), "dim")
+    if #m.logisticians == 0 then line("none", "dim", nil, c.listX + 12) end
+    for _, a in ipairs(m.logisticians) do line(a.text, "text", a.state, c.listX + 12) end
+    if m.idleText then line(m.idleText, Theme.semantic.warning, "pending", c.listX + 12) end
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Missions (GR5-9, spec §15): the current mission (goal, hint, progress bar, reward, Claim), then every mission in order.
 local function missionsScreen(font, r, m)
   local c = Screens.missions
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  local width = r.w - 2 * L.pad
-  local function wrapped(str, colorName)
-    return { style = { maxWidth = width }, text = { text = str, font = font, size = T.body, color = UiTheme.color(colorName), wrap = true } }
-  end
   local cur = m.current
   if cur then
     nodeAt(L.pad, L.pad, text(font, ("MISSION %d / %d"):format(cur.index, m.total), T.small, "dim"))
     nodeAt(L.pad, c.nameY, text(font, cur.name, T.heading, "cyan"))
-    nodeAt(L.pad, c.goalY, wrapped(cur.goal, "text"))
-    nodeAt(L.pad, c.hintY, wrapped("Hint: " .. cur.hint, "dim"))
+    for i, briefLine in ipairs(cur.brief) do nodeAt(L.pad, c.goalY + (i - 1) * c.briefLine, text(font, briefLine, T.body, "text")) end
+    nodeAt(L.pad, c.hintY, text(font, "Hint", T.small, "dim"))
+    nodeAt(L.pad, c.hintY + c.hintLine, text(font, cur.hint, T.body, "dim"))
     if cur.locked then
       nodeAt(L.pad, c.barY, text(font, cur.progressText, T.body, Theme.semantic.warning))
     else
       local barColor = cur.status == "complete" and "green" or "cyan"
-      nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
-        background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-        children = { { style = { height = "100%", width = ("%d%%"):format(cur.percent) },
-          background = { color = UiTheme.color(barColor), radius = 2 } } } })
+      nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, cur.percent, barColor))
       nodeAt(L.pad, c.barY + c.barHeight + 6, text(font, cur.progressText, T.small, cur.retry and Theme.semantic.warning or "text"))
       for i, line in ipairs(cur.lines) do
         nodeAt(L.pad, c.barY + c.barHeight + 28 + (i - 1) * 18, text(font, (line.done and "[x] " or "[ ] ") .. line.text, T.small, line.done and "green" or "dim"))
       end
     end
-    nodeAt(L.pad, c.rewardY, text(font, cur.rewardText, T.body, "text"))
+    for i, key in ipairs(cur.rewardIcons) do nodeAt(L.pad + (i - 1) * (ICON.row + 4), c.rewardY, Icon.node(key, ICON.row, "cyan")) end
+    nodeAt(L.pad + #cur.rewardIcons * (ICON.row + 4), c.rewardY, text(font, cur.rewardText, T.body, "text"))
     if cur.claim then nodeAt(L.pad, c.buttonY, button(font, "Claim", cur.claim, "green", c.buttonWidth)) end
     if cur.retry then nodeAt(L.pad, c.buttonY, button(font, "Retry", cur.retry, Theme.semantic.warning, c.buttonWidth)) end
   else
     nodeAt(L.pad, L.pad, text(font, "ALL MISSIONS CLAIMED", T.heading, "green"))
   end
+  -- The mission list sits in a column to the right of the current mission, so it never runs past the panel's bottom edge.
   for i, row in ipairs(m.rows) do
     local y = c.listY + (i - 1) * c.rowHeight
     local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
-    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
-    nodeAt(c.rewardX, y, text(font, row.reward, T.small, color))
+    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    for i, key in ipairs(row.icons) do nodeAt(c.listX + c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
+    nodeAt(c.listX + c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
+  -- Optional branch missions: the name, progress and Claim / Retry button on the first line, the brief lines, the hint, then the reward.
   for j, row in ipairs(m.optional) do
-    local y = c.listY + (#m.rows + j - 1) * c.rowHeight
+    local y = c.listY + #m.rows * c.rowHeight + c.optionalGap + (j - 1) * c.optionalRowHeight
     local color = row.state == "claimed" and "green" or (row.failed and Theme.semantic.warning or (row.state == "current" and "cyan" or "dim"))
-    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
-    nodeAt(c.rewardX + c.optionalRewardOffset, y, text(font, row.reward, T.small, color))
-    if row.claim then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Claim", row.claim, "green", 80)) end
-    if row.retry then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
+    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    nodeAt(c.listX + c.optionalProgressX, y, text(font, row.progressText, T.small, color))
+    local x = c.listX + c.optionalIndent
+    local line = 1
+    for _, briefLine in ipairs(row.brief) do
+      nodeAt(x, y + line * c.optionalLine, text(font, briefLine, T.small, "text"))
+      line += 1
+    end
+    if row.hint then
+      nodeAt(x, y + line * c.optionalLine, text(font, row.hint, T.small, "dim"))
+      line += 1
+    end
+    local ry = y + line * c.optionalLine
+    for i, key in ipairs(row.icons) do nodeAt(x + (i - 1) * (ICON.row + 2), ry, Icon.node(key, ICON.row, color)) end
+    nodeAt(x + #row.icons * (ICON.row + 2), ry, text(font, row.reward, T.small, color))
+    if row.claim then nodeAt(c.listX + c.optionalButtonX, y - 7, button(font, "Claim", row.claim, "green", 80)) end
+    if row.retry then nodeAt(c.listX + c.optionalButtonX, y - 7, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
   end
   return withChildren(panel(r, nil), kids)
 end
 
--- Alerts (GR5-29, spec §8.7): the Monitor's hire button and settings, then the alert log newest first.
+-- Monitor (GR5-29, spec §8.7; copy GR5-92): its state, hire button and settings, the alert log newest first, then what it did.
 local function alertsScreen(font, r, m)
   local c = Screens.alerts
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "ALERTS  Monitor: " .. (m.hired and "hired" or "not hired"), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  %s"):format(Words.monitor.title, m.state), T.small, "dim"))
   local x = L.pad
   if m.hire then
     nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
   elseif m.hireNote then
     nodeAt(x, c.controlsY + 6, text(font, m.hireNote, T.small, Theme.semantic.warning))
   end
+  local y = c.typesY
   if m.hired then
-    nodeAt(x, c.controlsY, button(font, "Scope: " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+    nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
     x += c.buttonWidth + c.gap
-    nodeAt(x, c.controlsY + 6, text(font, "Heartbeat " .. m.heartbeatText, T.small, "text"))
+    nodeAt(x, c.controlsY + 6, text(font, Words.monitor.heartbeat .. " " .. m.heartbeatText, T.small, "text"))
     x += 140
     nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))
     nodeAt(x + c.smallWidth + c.gap, c.controlsY, button(font, "+", m.heartbeatActions.up, "cyan", c.smallWidth))
@@ -747,17 +1097,25 @@ local function alertsScreen(font, r, m)
     for i, t in ipairs(m.types) do
       local col, row = (i - 1) % c.typesPerRow, math.floor((i - 1) / c.typesPerRow)
       nodeAt(L.pad + col * (c.typeWidth + c.gap), c.typesY + row * c.typeRowHeight,
-        button(font, (t.on and "[x] " or "[ ] ") .. t.type, t.action, t.on and "cyan" or "dim", c.typeWidth))
+        button(font, (t.on and "[x] " or "[ ] ") .. t.label, t.action, t.on and "cyan" or "dim", c.typeWidth))
     end
+    y += math.ceil(#m.types / c.typesPerRow) * c.typeRowHeight
   end
-  if #m.rows == 0 then
-    nodeAt(L.pad, c.listY, text(font, Screens.empty.alerts.title .. ": " .. Screens.empty.alerts.hint, T.small, "dim"))
-  end
+  nodeAt(L.pad, y, text(font, Words.monitor.alerts, T.small, "dim"))
+  y += c.headingGap
+  if m.emptyAlerts then nodeAt(L.pad, y, text(font, m.emptyAlerts, T.small, "dim")) end
   for i, row in ipairs(m.rows) do
     if i > c.maxRows then break end
-    local line = ("%5ds ago  %-14s %-12s %-10s %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason)
+    local line = ("%5ds ago  %-22s %-12s %-10s %s"):format(row.ageS, row.label, row.agent or "-", row.status, row.reason)
     local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
-    nodeAt(L.pad, c.listY + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+  end
+  y += math.max(1, math.min(#m.rows, c.maxRows)) * c.rowHeight + c.sectionGap
+  nodeAt(L.pad, y, text(font, Words.monitor.history, T.small, "dim"))
+  y += c.headingGap
+  if m.emptyHistory then nodeAt(L.pad, y, text(font, m.emptyHistory, T.small, "dim")) end
+  for i, h in ipairs(m.history) do
+    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, h.ok and h.text or (h.text .. "  " .. h.error), T.small, h.ok and "green" or Theme.semantic.warning))
   end
   return withChildren(panel(r, nil), kids)
 end
@@ -767,7 +1125,9 @@ local function branchesScreen(font, r, m, time)
   local c = Screens.branches
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, ("BRANCHES  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  command %d / %d"):format(Words.branches.title, m.used, m.capacity), T.small, "dim"))
+  nodeAt(c.agentsX, c.headerY, text(font, Words.branches.agents, T.small, "dim"))
+  nodeAt(c.moneyX, c.headerY, text(font, Words.branches.creditsPerHour .. " / " .. Words.branches.computePerHour, T.small, "dim"))
   for i, row in ipairs(m.rows) do
     local y = c.rowY + (i - 1) * c.rowHeight
     local color = row.state == "open" and "green" or (row.state == "available" and "cyan" or "dim")
@@ -777,46 +1137,19 @@ local function branchesScreen(font, r, m, time)
       for _, n in ipairs(Glow.light({ x = L.pad + c.stateX + 72, y = y + 8 }, "acting", time)) do kids[#kids + 1] = n end
     end
     nodeAt(L.pad, y, text(font, row.name, T.body, color))
-    nodeAt(L.pad + c.stateX, y, text(font, row.state, T.small, color))
-    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or "no agents", T.small, "text"))
-    if row.state == "open" then
+    nodeAt(L.pad + c.stateX, y, text(font, row.label, T.small, color))
+    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or Words.branches.noAgents, T.small, "text"))
+    if row.state == "open" and #row.agents == 0 then
+      nodeAt(c.moneyX, y, text(font, Words.branches.noData, T.small, "dim"))
+    elseif row.state == "open" then
       nodeAt(c.moneyX, y, text(font, ("%d cr/h   %.1f Compute/h"):format(row.creditsPerHour, row.computePerHour), T.small, "text"))
     elseif row.action then
       nodeAt(c.moneyX, y, button(font, ("Open %d cr"):format(row.cost), row.action, "green", c.buttonWidth))
     end
     if row.note then nodeAt(L.pad, y + c.noteGap, text(font, row.note, T.small, Theme.semantic.warning)) end
   end
+  if m.hint then nodeAt(L.pad, r.h - 28, text(font, m.hint, T.small, "dim")) end
   return withChildren(panel(r, nil), kids)
-end
-
--- Archive tab strip and the studio's last message, shared by every Archive mode (GR5-26).
-local function studioHeader(font, r, kids, sm)
-  local c = Screens.studio
-  for i, t in ipairs(sm.tabs) do
-    kids[#kids + 1] = at(c.tabX + (i - 1) * (c.tabWidth + c.tabGap), L.pad, button(font, t.label, t.action, t.active and "cyan" or "dim", c.tabWidth))
-  end
-  if sm.message then
-    kids[#kids + 1] = at(L.pad, r.h - 28, text(font, sm.message.text, T.small, sm.message.bad and Theme.semantic.warning or "green"))
-  end
-end
-
--- Rows of text and buttons (record, form, assign): laid out top to bottom from the studio's rowY.
-local function studioRows(font, kids, rows)
-  local c = Screens.studio
-  local y = c.rowY
-  for _, row in ipairs(rows) do
-    local x = L.pad
-    for _, cell in ipairs(row) do
-      if cell.action then
-        kids[#kids + 1] = at(x, y, button(font, cell.label, cell.action, cell.color, cell.w))
-        x += cell.w + c.rowGap
-      else
-        kids[#kids + 1] = at(x, y + 6, text(font, cell.text, T.small, cell.color))
-        x += (cell.w or (#cell.text * 7 + 8)) + c.rowGap
-      end
-    end
-    y += c.rowHeight
-  end
 end
 
 -- Team (GR5-28, spec §8.6): one monospace row per agent, a click opens its editor.
@@ -826,7 +1159,7 @@ local function teamScreen(font, r, m, time)
   local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
   nodeAt(L.pad, L.pad, text(font, ("TEAM  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
   local fmt = "%-14s %-12s %-10s %-16s %9s %9s %6s  %s"
-  nodeAt(L.pad, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors", "last alert"), T.small, "dim"))
+  nodeAt(L.pad + ICON.row + 6, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors", "last alert"), T.small, "dim"))
   local y, rowW = c.rowY + 8, r.w - 2 * L.pad
   for _, row in ipairs(m.rows) do
     local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors, row.lastAlert)
@@ -834,8 +1167,10 @@ local function teamScreen(font, r, m, time)
     for _, n in ipairs(Glow.light({ x = L.pad - 6, y = y + c.rowHeight / 2 }, row.state, time)) do kids[#kids + 1] = n end
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = UiTheme.color("panel", 0), radius = 2 },
-      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
-      children = { text(font, line, T.small, color) } }, rowW, c.rowHeight)
+      button = UiTheme.button(row.action, "cyan", { base = "panel", alpha = 0 }),
+      children = { { style = { direction = "row", alignItems = "center", gap = 6 }, children = {
+        Icon.node(Icon.agentKey(row.type), ICON.row, row.state == "paused_error" and Theme.semantic.error or (row.state == "acting" and "cyan" or "dim")),
+        text(font, line, T.small, color) } } } }, rowW, c.rowHeight)
     y += c.rowHeight
   end
   for _, ship in ipairs(m.idleShips) do
@@ -845,55 +1180,131 @@ local function teamScreen(font, r, m, time)
   return withChildren(panel(r, nil), kids)
 end
 
--- Archive (GR5-10, spec §13/§14; GR5-26 studio): company-wide skills with who runs them and with what values, the slot
--- count, the demo "Simulate 1 h away" button, the "While you were away" box, and the Record / New skill / Run-on tabs.
-local function archiveScreen(font, r, m, sm)
-  local c = Screens.archive
-  local kids = {}
-  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad + 6, text(font, "ARCHIVE  " .. m.slots.text, T.small, "dim"))
-  studioHeader(font, r, kids, sm)
-  if m.simulateAway then nodeAt(r.w - L.pad - c.buttonWidth, L.pad, button(font, "Simulate 1 h away", m.simulateAway, "cyan", c.buttonWidth)) end
-  if sm.rows then
-    studioRows(font, kids, sm.rows)
-    return withChildren(panel(r, nil), kids)
-  end
+-- Rows of text and buttons (record, form, assign): laid out top to bottom from the studio's rowY.
+local function studioRows(font, kids, rows, avail: number)
+  local c = Screens.studio
   local y = c.rowY
-  if #m.skills == 0 then
-    nodeAt(L.pad, y, text(font, Screens.empty.archive.title .. ": " .. Screens.empty.archive.hint, T.small, "dim"))
-    nodeAt(L.pad, y + c.rowHeight, text(font, "Use Record (from the feed) or New skill (the form) above.", T.small, "dim"))
-  end
-  for _, s in ipairs(m.skills) do
-    local head = ("%s  (%s%s)  %s"):format(s.name, s.agentType, s.loop and ", loops" or "", table.concat(s.params, " "))
-    nodeAt(L.pad, y, text(font, head, T.body, "cyan"))
-    nodeAt(r.w - L.pad - 70, y, button(font, "Delete", s.delete, "dim", 70))
-    y += c.rowHeight + 4
-    for i, st in ipairs(s.steps) do
-      nodeAt(L.pad + 12, y, text(font, ("%d. %s"):format(i, st), T.small, "text"))
-      y += c.rowHeight
+  for _, row0 in ipairs(rows) do
+    local x = L.pad
+    for _, cell in ipairs(row0) do
+      local w = cell.action and cell.w or (cell.w or (#cell.text * 7 + 8))
+      if x > L.pad and x + w > avail then x, y = L.pad, y + c.rowHeight end -- a row wider than the panel continues below
+      if cell.action then
+        kids[#kids + 1] = at(x, y, button(font, cell.label, cell.action, cell.color, cell.w))
+      else
+        kids[#kids + 1] = at(x, y + 6, text(font, cell.text, T.small, cell.color), math.min(w, avail - x))
+      end
+      x += w + c.rowGap
     end
-    for _, u in ipairs(s.runners) do
-      nodeAt(L.pad + 12, y, text(font, ("run by %s %s%s"):format(u.agent, u.params, u.aborted and ("  ABORTED: " .. u.aborted) or ""), T.small, u.aborted and Theme.semantic.error or "green"))
-      nodeAt(r.w - L.pad - 70, y - 4, button(font, "Stop", u.stop, "dim", 70))
-      if u.restart then nodeAt(r.w - L.pad - 70 - 8 - 90, y - 4, button(font, "Restart", u.restart, Theme.semantic.warning, 90)) end
-      y += c.rowHeight
-    end
-    local x = L.pad + 12
-    for _, a in ipairs(s.assigns) do
-      nodeAt(x, y, button(font, a.label, a.action, "cyan", 150))
-      x += 158
-    end
-    y += (#s.assigns > 0 and 34 or 0) + c.skillGap
+    y += c.rowHeight
   end
-  if m.offline then
-    local x = r.w - L.pad - c.offlineWidth
-    local oy = c.offlineY + 40
-    nodeAt(x, oy, text(font, m.offline.title:upper(), T.heading, "green"))
-    for i, line in ipairs(m.offline.lines) do nodeAt(x, oy + 28 + (i - 1) * c.rowHeight, text(font, line, T.small, "text")) end
-    nodeAt(x, oy + 36 + (#m.offline.lines) * c.rowHeight, button(font, "Dismiss", m.offline.dismiss, "cyan", c.dismissWidth))
-  end
-  return withChildren(panel(r, nil), kids)
 end
+
+-- Archive (GR5-10, spec §13/§14; GR5-26 studio; GR5-67 layout): slots and the skill list on the left; on the right the
+-- selected skill's identity, its parameters and assignments, its ordered steps and a footer with the actions. The Record
+-- and New skill flows keep their rows (ui/skill_studio.luau) in the same detail panel.
+local function archiveScreen(font, r, m, sm)
+  local c, a = Screens.archive, Screens.archiveView
+  local out = {}
+  local lw = a.listWidth
+  local left = panel({ x = r.x, y = r.y, w = lw, h = r.h }, nil)
+  local inner = lw - 2 * L.pad
+  local lk = { at(L.pad, L.pad, text(font, "ARCHIVE  " .. m.slots.text, T.small, "dim"), inner, 16),
+    at(L.pad, L.pad + 22, gauge({ width = inner, height = 8 }, m.slots.max > 0 and m.slots.used / m.slots.max * 100 or 0, m.slots.full and Theme.semantic.warning or "cyan")) }
+  if m.slots.full then lk[#lk + 1] = at(L.pad, L.pad + 36, text(font, "Slots full: delete a skill or expand the Archive.", T.small, Theme.semantic.warning), inner, 16) end
+  local selected = sm.selected
+  local current
+  for _, s in ipairs(m.skills) do if s.name == selected then current = s end end
+  current = current or m.skills[1]
+  local items = {}
+  if #m.skills == 0 then items[1] = text(font, a.noSkills, T.body, "dim") end
+  for _, s in ipairs(m.skills) do
+    local on = current and s.name == current.name
+    items[#items + 1] = buttonNode({ width = inner - 16, height = a.rowHeight, direction = "row", alignItems = "center", gap = 6, paddingX = 6 },
+      s.select, on and "cyan" or "dim", { Icon.node(Icon.agentKey(s.agentType), ICON.row, on and "cyan" or "dim"),
+        text(font, (on and "> " or "") .. s.name .. (s.loop and " (loop)" or ""), T.small, on and "cyan" or "text") }, on)
+  end
+  lk[#lk + 1] = scrollBox(L.pad, a.headerHeight + L.pad, inner, r.h - a.headerHeight - 2 * L.pad, items, 4)
+  out[#out + 1] = withChildren(left, lk)
+
+  local dx, dw = r.x + lw + a.gap, r.w - lw - a.gap
+  local detail = panel({ x = dx, y = r.y, w = dw, h = r.h }, nil)
+  local kids = {}
+  for i, t in ipairs(sm.tabs) do
+    kids[#kids + 1] = at(L.pad + (i - 1) * (Screens.studio.tabWidth + Screens.studio.tabGap), L.pad, button(font, t.label, t.action, t.active and "cyan" or "dim", Screens.studio.tabWidth))
+  end
+  local function say(parent, x, y, w)
+    if sm.message then parent[#parent + 1] = at(x, y, text(font, sm.message.text, T.small, sm.message.bad and Theme.semantic.warning or "green"), w, 16) end
+  end
+  if sm.rows then
+    say(kids, L.pad, r.h - 28, dw - 2 * L.pad)
+    studioRows(font, kids, sm.rows, dw - L.pad)
+    out[#out + 1] = withChildren(detail, kids)
+    return out
+  end
+  if not current then
+    say(kids, L.pad, r.h - 28, dw - 2 * L.pad)
+    kids[#kids + 1] = at(L.pad, Screens.studio.rowY, text(font, Screens.empty.archive.title .. ": " .. Screens.empty.archive.hint, T.small, "dim"), dw - 2 * L.pad, 16)
+    kids[#kids + 1] = at(L.pad, Screens.studio.rowY + 22, text(font, "Use Record (from the feed) or New skill (the form) above.", T.small, "dim"), dw - 2 * L.pad, 16)
+    out[#out + 1] = withChildren(detail, kids)
+    return out
+  end
+
+  -- identity
+  local identY = Screens.studio.rowY
+  kids[#kids + 1] = at(L.pad, identY, Icon.node(Icon.agentKey(current.agentType), 24, "cyan"))
+  kids[#kids + 1] = at(L.pad + 32, identY, text(font, current.name, T.heading, "cyan"), dw - 2 * L.pad - 200, 20)
+  kids[#kids + 1] = at(L.pad + 32, identY + 20, text(font, ("%s%s  -  %s  -  zero Compute while it runs"):format(current.agentType, current.loop and ", loops" or "", current.createdFrom), T.small, "dim"), dw - 2 * L.pad - 200, 16)
+  kids[#kids + 1] = at(dw - L.pad - 120, identY, text(font, "Saved", T.body, "green"), 120, 18)
+
+  local bodyY = identY + a.identityHeight - 8
+  local footerY = r.h - a.footerHeight + 12
+  local bodyH = footerY - bodyY - 8
+  local pw = a.paramsWidth
+  local sw = dw - 2 * L.pad - pw - 12
+  -- parameters and assignments
+  local pb = box(font, L.pad, bodyY, pw, bodyH, "PARAMETERS / ASSIGNMENTS")
+  local pk = {}
+  if #current.paramDecls == 0 then pk[#pk + 1] = text(font, "No parameters", T.small, "dim") end
+  for _, d in ipairs(current.paramDecls) do
+    pk[#pk + 1] = text(font, ("%s  %s%s"):format(d.name, d.kind, d.filter and (" (" .. d.filter .. ")") or ""), T.small, "text")
+  end
+  pk[#pk + 1] = text(font, "RUNNING", T.small, "dim")
+  if #current.runners == 0 then pk[#pk + 1] = text(font, "No agent runs it", T.small, "dim") end
+  for _, u in ipairs(current.runners) do
+    pk[#pk + 1] = text(font, ("run by %s %s%s"):format(u.agent, u.params, u.aborted and ("  ABORTED: " .. u.aborted) or ""), T.small, u.aborted and Theme.semantic.error or "green")
+    local bs = { button(font, "Stop", u.stop, "dim", 70) }
+    if u.restart then bs[#bs + 1] = button(font, "Restart", u.restart, Theme.semantic.warning, 90) end
+    pk[#pk + 1] = row(bs, 8)
+  end
+  for _, asg in ipairs(current.assigns) do pk[#pk + 1] = button(font, asg.label, asg.action, "cyan", pw - 2 * L.pad - 16) end
+  pb.children[#pb.children + 1] = scrollBox(L.pad, 30, pw - 2 * L.pad, bodyH - 30 - L.pad, pk, 4)
+  kids[#kids + 1] = pb
+  -- ordered steps
+  local sb = box(font, L.pad + pw + 12, bodyY, sw, bodyH, "ORDERED STEPS")
+  local sk = {}
+  if m.offline then
+    sk[#sk + 1] = text(font, m.offline.title:upper(), T.body, "green")
+    for _, line in ipairs(m.offline.lines) do sk[#sk + 1] = text(font, line, T.small, "text") end
+    sk[#sk + 1] = button(font, "Dismiss", m.offline.dismiss, "cyan", c.dismissWidth)
+  end
+  for i, st in ipairs(current.steps) do
+    sk[#sk + 1] = row({ Icon.node(Icon.toolKey(string.match(st, "^([%w_]+)")), ICON.row - 2, "dim"), text(font, ("%d. %s"):format(i, st), T.small, "text") })
+  end
+  if current.loop then sk[#sk + 1] = text(font, "Loops: runs again after the last step.", T.small, "dim") end
+  sb.children[#sb.children + 1] = scrollBox(L.pad, 30, sw - 2 * L.pad, bodyH - 30 - L.pad, sk, 4)
+  kids[#kids + 1] = sb
+  -- footer
+  local fb = panel({ x = L.pad, y = footerY, w = dw - 2 * L.pad, h = a.footerHeight - 20 }, nil)
+  local fk = { at(L.pad, 8, button(font, "Delete", current.delete, "dim", 90)) }
+  if m.simulateAway then fk[#fk + 1] = at(L.pad + 102, 8, button(font, "Simulate 1 h away", m.simulateAway, "cyan", c.buttonWidth)) end
+  say(fk, L.pad + 102 + c.buttonWidth + 12, 14, dw - 2 * L.pad - (L.pad + 102 + c.buttonWidth + 12) - L.pad)
+  fb.children = fk
+  kids[#kids + 1] = fb
+  out[#out + 1] = withChildren(detail, kids)
+  return out
+end
+
 
 -- Market (GR5-10, spec §6.3): price now, usual price, trend and best buyer per resource, then the latest notices.
 local function marketScreen(font, r, m)
@@ -904,7 +1315,8 @@ local function marketScreen(font, r, m)
   local y = c.rowY
   for _, row in ipairs(m.rows) do
     local color = row.best and "green" or (row.event and Theme.semantic.warning or "text")
-    nodeAt(L.pad, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
+    nodeAt(L.pad, y, Icon.node(Icon.resourceKey(row.resource), ICON.row - 2, row.best and "green" or "dim"))
+    nodeAt(L.pad + ICON.row + 4, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
     nodeAt(c.sparkX - 40, y, text(font, row.trend == "up" and "^" or (row.trend == "down" and "v" or "-"), T.small, "dim"))
     y += c.rowHeight
   end
@@ -912,6 +1324,35 @@ local function marketScreen(font, r, m)
   for _, n in ipairs(m.notices) do
     nodeAt(L.pad, y, text(font, n, T.small, "dim"))
     y += c.rowHeight
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
+-- Debug (spec §16.4, GR5-72): one row of buttons per action group, the status and result lines, then the last prompt.
+local function debugScreen(font, r, m)
+  local c = Screens.debug
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, m.title .. "  not shipped in release builds", T.small, "dim"))
+  local y = c.rowY
+  for _, g in ipairs(m.groups) do
+    nodeAt(L.pad, y + 6, text(font, g.label, T.small, "dim"))
+    local x = L.pad + c.labelWidth
+    for _, b in ipairs(g.buttons) do
+      nodeAt(x, y, button(font, b.label, b.action, b.selected and "cyan" or "dim", c.buttonWidth))
+      x += c.buttonWidth + c.buttonGap
+    end
+    y += c.rowHeight
+  end
+  y += c.statusGap
+  nodeAt(L.pad, y, text(font, m.status, T.small, "text"))
+  if m.toast then nodeAt(L.pad, y + c.toastGap, text(font, m.toast, T.small, "green")) end
+  if m.promptTitle then
+    y += c.promptGap + c.toastGap
+    nodeAt(L.pad, y, text(font, m.promptTitle, T.small, "dim"))
+    for i, line in ipairs(m.promptLines) do
+      nodeAt(L.pad, y + c.toastGap + (i - 1) * c.promptLineHeight, text(font, line == "" and " " or line, T.small, "text"))
+    end
   end
   return withChildren(panel(r, nil), kids)
 end
@@ -934,6 +1375,38 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
+-- Modal over the whole view (save error at boot, "While you were away" after a load): a dim backdrop and a centred box.
+local function modalOverlay(font, m)
+  local c = SaveConfig.modal
+  local inner = c.width - 2 * c.padding
+  local rows = { text(font, m.title:upper(), T.heading, m.kind == "error" and Theme.semantic.error or "green") }
+  local height = 2 * c.padding + math.ceil(T.heading * Fit.lineHeight)
+  for _, line in ipairs(m.lines) do
+    rows[#rows + 1] = text(font, line, T.small, "text")
+    height += c.gap + Fit.lineCount(line, T.small, inner) * math.ceil(T.small * Fit.lineHeight)
+  end
+  local buttons = {}
+  for _, b in ipairs(m.buttons) do buttons[#buttons + 1] = button(font, b.label, b.action, b.color, c.buttonWidth) end
+  rows[#rows + 1] = { style = { direction = "row", gap = c.gap, marginTop = c.gap }, children = buttons }
+  height += 2 * c.gap + 28
+  -- The rows sit in a column with no fixed height so the texts wrap instead of being cut to a single line.
+  local box = panel({ x = (L.view.w - c.width) / 2, y = (L.view.h - height) / 2, w = c.width, h = height })
+  box.children = { { style = { direction = "column", gap = c.gap, padding = c.padding }, children = rows } }
+  return { style = rect({ x = 0, y = 0, w = L.view.w, h = L.view.h }),
+    background = { color = UiTheme.color("bg", 0.7) }, children = { box } }
+end
+
+-- The HMC emergency-advance banner (spec §8.5): text and a Claim button, over the top right of the main panel.
+local function noticeBanner(font, r, n)
+  local c = Screens.notice
+  local btn = buttonNode({ width = c.buttonWidth, height = 28, justify = "center", alignItems = "center" }, n.action, "cyan",
+    { text(font, n.button, T.small, "cyan") }, true)
+  local textW = c.width - c.buttonWidth - 3 * L.pad
+  return withChildren(panel({ x = r.x + r.w - c.width - c.margin, y = r.y + c.margin, w = c.width, h = c.height },
+    { direction = "row", alignItems = "center", gap = 12, paddingX = L.pad }, true),
+    { text(font, Fit.truncate(n.text, T.small, textW), T.small, Theme.semantic.warning, { width = textW }), btn })
+end
+
 -- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", logs = LogsView.new() state, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
@@ -945,7 +1418,7 @@ function Shell.spec(sim, screenId: string, opts)
   local children = {
     topBar(font, rects.top, bar),
     nav(font, rects.nav, Model.nav(sim.tier, screenId), screenId),
-    feedStrip(font, rects.feed, Model.feed(sim)),
+    feedStrip(font, rects.feed, Model.feed(sim), opts.qaLabel),
   }
   if screenId == Screens.defaultScreen then
     -- The map panel is transparent over the world: planets are drawn behind it, labels and routes in front.
@@ -955,16 +1428,20 @@ function Shell.spec(sim, screenId: string, opts)
     for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim), opts)) do children[#children + 1] = n end
   elseif screenId == "agents" and sim.agents[Screens.editor.agent] then
     local id = Screens.editor.agent
-    local a, b
+    local nodes
     if opts.tab == "context" then
-      a, b = contextScreen(font, rects.main, ComputeView.contextPanel(sim, id))
+      local agents = {}
+      for _, row0 in ipairs(Editor.list(sim, id)) do agents[#agents + 1] = { id = row0.id, selected = row0.selected, action = "pick.agent." .. row0.id } end
+      nodes = contextScreen(font, rects.main, ComputeView.contextPanel(sim, id), { agents = agents })
     else
       local compute = { rows = ComputeView.agentRows(sim), top = ComputeView.topBar(sim), cfg = sim.compute.cfg,
         buy = ComputeView.buyOptions(sim, Screens.compute.packs) }
-      a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute, state = sim.agents[id].state, time = opts.time })
+      local draft = opts.draft or Editor.newDraft(sim, id)
+      nodes = editorScreen(font, rects.main, Editor.model(sim, id, draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute,
+        state = sim.agents[id].state, time = opts.time, draft = draft, list = Editor.list(sim, id), feed = Editor.feed(sim, id),
+        examples = Editor.examplesView(sim, id, opts.examples) })
     end
-    children[#children + 1] = a
-    children[#children + 1] = b
+    for _, n in ipairs(nodes) do children[#children + 1] = n end
   elseif screenId == "logs" and LogsView.total(sim) > 0 then
     local m = LogsView.model(sim, opts.logs or LogsView.new())
     if m.compare then
@@ -987,18 +1464,28 @@ function Shell.spec(sim, screenId: string, opts)
   elseif screenId == "alerts" and sim.tier >= 5 then
     children[#children + 1] = alertsScreen(font, rects.main, AlertsView.model(sim))
   elseif screenId == "archive" then
-    children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))
+    for _, n in ipairs(archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))) do children[#children + 1] = n end
+  elseif screenId == "station" and sim:hasWarehouse() then
+    children[#children + 1] = stationScreen(font, rects.main, StationView.model(sim, opts.station), opts.time or 0)
+  elseif screenId == "debug" and Model.screenVisible(sim.tier, "debug") then
+    children[#children + 1] = debugScreen(font, rects.main, DebugPanel.model(sim, opts.debug or DebugPanel.new()))
   elseif screenId == "market" and sim:hasWarehouse() then
     children[#children + 1] = marketScreen(font, rects.main, MarketView.model(sim))
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end
+  local notice = Model.notification(sim)
+  if notice then children[#children + 1] = noticeBanner(font, rects.main, notice) end
   for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
+  if opts.save then
+    local modal = SaveView.model(opts.save, sim)
+    if modal then children[#children + 1] = modalOverlay(font, modal) end
+  end
   local shift = opts.glitch and opts.glitch.slices[1] and opts.glitch.slices[1].shift or 0
-  return {
+  return Fit.apply({
     style = { position = "absolute", left = shift, top = 0, width = L.view.w, height = L.view.h },
     children = children,
-  }, screenId
+  }, L.view.w), screenId
 end
 
 -- Glitch hook: the shell glitches only when an agent enters paused_error (art direction). Anything else is refused by
@@ -1027,6 +1514,7 @@ function Shell.spawn(commands, sim, screenId: string, opts)
   opts = opts or {}
   opts.font = opts.font or UiTheme.font()
   opts.skin = opts.skin or UiTheme.panelSkin()
+  Icon.useLoader(engine.assets.texture)
   local spec, shown = Shell.spec(sim, screenId, opts)
   return engine.ui.spawn(commands, spec), shown
 end

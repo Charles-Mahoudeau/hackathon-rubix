@@ -118,6 +118,7 @@ assert(convoy and convoy.to == "orbis" and convoy.t > 0.3 and convoy.t < 0.7, "c
 local top = Model.topBar(sim)
 assert(top.creditsText == "500 cr" and top.tierText == "T4" and top.reputationText == "Rep 0" and top.computeFraction >= 0)
 assert(Model.thousands(1234567) == "1,234,567" and Model.thousands(12) == "12" and Model.thousands(1000) == "1,000")
+assert(Model.thousands(-504) == "-504" and Model.thousands(-1440) == "-1,440" and Model.thousands(0) == "0", "negative numbers keep the sign in front")
 sim.lifetimeRevenue = 80000
 local rep = Model.reputation(sim)
 assert(rep.level == 2 and rep.next == 200000 and rep.fraction > 0 and rep.fraction < 0.1, "reputation level")
@@ -159,7 +160,7 @@ local function walk(spec, where)
     if spec.background.borderColor then checkColor(spec.background.borderColor, where) end
   end
   if spec.text then assert(type(spec.text.text) == "string" and spec.text.size, where .. ": text") checkColor(spec.text.color, where) end
-  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.")), where .. ": button action") end
+  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.") or spec.button.action:match("^debug%.")), where .. ": button action") end
   for _, child in ipairs(spec.children or {}) do walk(child, where) end
 end
 for tier = 1, 5 do
@@ -178,9 +179,9 @@ assert(nodes > 100, "the shell builds")
 local skin = { texture = "fake-texture", slice = Theme.panelSkin.slice, color = UiTheme.color(Theme.panelSkin.tint, Theme.alpha.panelFill) }
 local skinned = Shell.spec(Sim.new(), "map", { skin = skin })
 local function countWhere(spec, pred) local n = pred(spec) and 1 or 0 for _, c in ipairs(spec.children or {}) do n += countWhere(c, pred) end return n end
-assert(countWhere(skinned, function(n) return n.image ~= nil end) == 3, "top bar, nav and feed use the skin")
-assert(countWhere(skinned, function(n) return n.image and n.background end) == 0, "an image panel has no background")
-assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image ~= nil end) == 0, "no skin, no image")
+assert(countWhere(skinned, function(n) return n.image and n.image.slice ~= nil end) == 3, "top bar, nav and feed use the skin")
+assert(countWhere(skinned, function(n) return n.image and n.image.slice ~= nil and n.background and n.background.color[4] == Theme.alpha.chromeFill and not n.background.borderColor end) == 3, "a skinned panel has an opaque borderless backing")
+assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image and n.image.slice ~= nil end) == 0, "no skin, no nine-patch")
 assert(#Theme.panelSkin.slice == 4 and Theme.palette[Theme.panelSkin.tint], "panel skin config")
 
 -- route dashes skip the planet discs and stay on the line
@@ -204,5 +205,39 @@ local _, _ = Shell.spec(sim, "map", { glitch = frame })
 local guard = 0
 while Shell.update(shell, 0.1) and guard < 100 do guard += 1 end
 assert(guard < 100 and Shell.update(shell, 0.1) == nil, "glitch ends")
+
+-- Emergency advance notification (GR5-74, spec §8.5): shown only while the sim offers it, Claim adds 3 Compute and
+-- starts the cooldown, then the banner is gone.
+do
+  local Debug = require("@scripts/sim/debug")
+  local Balance = require("@scripts/config/balance")
+  local function claimButtons(spec, out)
+    if spec.button and spec.button.action == "notice.claim" then out[#out + 1] = spec end
+    for _, c in ipairs(spec.children or {}) do claimButtons(c, out) end
+    return out
+  end
+  local s = Sim.new()
+  s:step()
+  assert(Model.notification(s) == nil and #claimButtons(Shell.spec(s, "map"), {}) == 0, "hidden when not offered")
+  local sigBefore = Model.signature(s, "map")
+  assert(Debug.run(s, "setStuck"), "debug panel sets the stuck state")
+  s:step()
+  local n = Model.notification(s)
+  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.button:find("%+3"), "offer in the shell model")
+  assert(Model.signature(s, "map") ~= sigBefore, "the shell redraws when the offer appears")
+  for _, screen in ipairs({ "map", "missions" }) do
+    assert(#claimButtons(Shell.spec(s, screen), {}) == 1, "Claim button on " .. screen)
+  end
+  local before = s.resources.compute
+  local handled, ok = Model.act(s, "notice.claim")
+  assert(handled and ok and s.resources.compute == before + 3, "claiming adds 3 Compute")
+  assert(s.lastAdvanceTick == s.tick and Model.notification(s) == nil and #claimButtons(Shell.spec(s, "map"), {}) == 0, "cooldown started, banner hidden")
+  s.resources.compute = 0
+  s:run(5)
+  assert(Model.notification(s) == nil, "no new offer during the cooldown")
+  local h2, ok2 = Model.act(s, "notice.claim")
+  assert(h2 and not ok2 and s.resources.compute == 0, "a late click grants nothing")
+  assert(not Model.act(s, "nav.map"), "foreign actions are not handled")
+end
 
 print("shell OK")

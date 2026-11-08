@@ -123,6 +123,11 @@ def sfx_confirm():
     return note(660, 0.07, "soft", decay=30)
 
 
+def sfx_click():
+    # A UI button press (GR5-53): a very short, high tick, quieter and shorter than confirm so it never masks a tool cue.
+    return mix(note(1250, 0.04, "soft", 0.001, 60), [0.5 * v for v in note(620, 0.05, "soft", 0.001, 50)])
+
+
 def sfx_error():
     # 0.35 s, the length of the glitch flicker (config/vfx.luau glitch.duration): detuned buzz, bit-crushed, gated.
     rng = random.Random(7)
@@ -187,7 +192,7 @@ def sfx_raid():
 
 
 EFFECTS = {
-    "mine": sfx_mine, "sell": sfx_sell, "scan": sfx_scan, "confirm": sfx_confirm, "error": sfx_error,
+    "mine": sfx_mine, "sell": sfx_sell, "scan": sfx_scan, "confirm": sfx_confirm, "click": sfx_click, "error": sfx_error,
     "purchase": sfx_purchase, "mission": sfx_mission, "tier_up": sfx_tier_up, "alert": sfx_alert, "raid": sfx_raid,
 }
 

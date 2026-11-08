@@ -3,6 +3,7 @@
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
 local Missions = require("@scripts/sim/missions")
+local MissionsConfig = require("@scripts/config/missions")
 local Skills = require("@scripts/sim/skills")
 local Market = require("@scripts/sim/market")
 local Offline = require("@scripts/sim/offline")
@@ -48,8 +49,22 @@ do
   assert(select(2, Missions.claim(s, 99)) == "unknown_mission")
   local m = MissionsView.model(s)
   assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 8 and #m.rows == 8)
-  assert(m.current.hint:find("Say which ore, which vein", 1, true), "hint text from the spec")
+  assert(m.current.hint == "Name the ore, vein and return point." and #m.current.brief == 2, "hint and brief lines from the microcopy")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
+end
+
+-- 1b. every displayed mission string (title, each brief line, hint) fits the 40-character label limit, branch missions included
+do
+  local Branches = require("@scripts/config/branches")
+  local defs = {}
+  for _, d in ipairs(MissionsConfig.missions) do defs[#defs + 1] = d end
+  for _, id in ipairs({ "raiding", "salvage", "refining" }) do defs[#defs + 1] = Branches[id].mission end
+  for _, d in ipairs(defs) do
+    assert(#d.name + #" (optional)" <= 40 or type(d.id) == "number" and #d.name <= 40, "title too long: " .. d.name)
+    assert(#d.brief >= 2 and #d.brief <= 3, "brief lines for mission " .. tostring(d.id))
+    for _, line in ipairs(d.brief) do assert(#line <= 40, "brief line too long: " .. line) end
+    assert(#d.hint <= 40, "hint too long: " .. d.hint)
+  end
 end
 
 -- 2. mission 1 with a precise directive completes in under 15 game minutes, from the same vein
@@ -245,6 +260,25 @@ do
   local done = Shell.spec(s, "missions", {})
   assert(buttons(done)["missions.claim.1"], "Claim button once complete")
   assert(Model.signature(s, "missions", MissionsView.signature(s)) ~= Model.signature(Sim.new(), "missions", MissionsView.signature(Sim.new())))
+end
+
+-- 6c. a debug veins-reveal is not a scan call: mission 2 keeps waiting for the agent's real `scan`
+do
+  local s = Sim.new()
+  s.resources.credits = 5000
+  s.tier = 2
+  for _, a in pairs(s.agents) do a.tier = 2 end
+  assert(s:buyUpgrade("scanner"))
+  s.missions[1].status = "claimed"
+  s:run(2)
+  local Debug = require("@scripts/sim/debug")
+  assert(Debug.run(s, "revealVeins"))
+  s:run(2)
+  local p = Missions.progress(s, s.missions[2])
+  assert(p.lines[1].done and not p.lines[2].done, "revealing veins by debug is not a scan")
+  assert(s.veins.K4.scanned)
+  call(s, "mine", { vein = "K4", stop_at_hold_pct = 100 })
+  assert(status(s, 2) == "active", "K4 cargo sold without a scan call does not finish mission 2")
 end
 
 local function skillLoop(name, vein)

@@ -1,6 +1,6 @@
 -- Run from repo root: luau tests/test_ai.luau   (the `@scripts` alias comes from .luaurc)
 -- GR5-15: Axis provider. A fake Axis/Relais server stands in for the network; nothing here touches the internet.
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Validator = require("@scripts/ai/validator")
 local Compute = require("@scripts/sim/compute")
 local Tools = require("@scripts/config/tools").schemas
@@ -175,7 +175,20 @@ local function failureCase(name, handler, expectLog, delay, cfgOverride, seconds
   return sim, provider, net
 end
 
-failureCase("http 500", function() return 500, "boom", 0 end, "model_http_500")
+-- GR5-92: the feed tells a provider failure, a timeout and an invalid reply apart.
+local Words = require("@scripts/config/copy")
+local function feedHas(sim, prefix)
+  for _, e in ipairs(sim.feed) do if e.kind == "error" and e.text:sub(1, #prefix) == prefix then return true end end
+  return false
+end
+do
+  local s = failureCase("http 500", function() return 500, "boom", 0 end, "model_http_500")
+  assert(feedHas(s, Words.provider.failed) and not feedHas(s, Words.provider.timeout) and not feedHas(s, Words.provider.invalid), "provider failure copy")
+  s = failureCase("unknown tool copy", modelSays('{"tool":"dig","args":{}}'), "unknown or unequipped")
+  assert(feedHas(s, Words.provider.invalid) and not feedHas(s, Words.provider.failed), "invalid reply copy")
+  s = failureCase("timeout copy", function() return "never" end, "timeout", 0, { timeoutSeconds = 5 }, 8)
+  assert(feedHas(s, Words.provider.timeout) and not feedHas(s, Words.provider.failed), "timeout copy")
+end
 failureCase("network error", function() return 0, "could not resolve host", 0 end, "could not resolve host")
 failureCase("bad json body", function() return 200, "<html>", 0 end, "model_bad_response")
 failureCase("empty reply", modelSays(""), "empty reply")

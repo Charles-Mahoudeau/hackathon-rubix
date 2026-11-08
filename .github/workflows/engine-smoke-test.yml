@@ -11,9 +11,10 @@ on:
 
 jobs:
   launch-game:
+    if: github.repository == 'Charles-Mahoudeau/hackathon-rubix'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download latest engine nightly
         env:
@@ -23,6 +24,9 @@ jobs:
           gh release download nightly --repo Charles-Mahoudeau/rtype --pattern "*linux-x86_64.zip" -O engine.zip
           unzip -q engine.zip -d engine
           chmod +x engine/*/runtime/aylo-runtime
+
+      - name: Run the sim self-test inside the engine
+        run: tools/run_engine_test.sh "$(echo engine/*/runtime/aylo-runtime)"
 
       - name: Boot the game headless and watch for a crash
         run: |
@@ -35,6 +39,11 @@ jobs:
           # 124 = timeout killed a still-running, non-crashed server: that's a pass.
           if [ "$code" -ne 124 ] && [ "$code" -ne 0 ]; then
             echo "::error::Engine exited with code $code while booting the game — see log above."
+            exit 1
+          fi
+          # The engine can print "Error: ..." (e.g. unordered systems) and keep a server alive, so the log is checked too.
+          if grep -nE '^Error:|\[ScriptSystem\].*failed' engine-run.log; then
+            echo "::error::The engine logged an error while booting the game — see above."
             exit 1
           fi
           echo "Game booted cleanly on engine nightly for 15s with no crash."

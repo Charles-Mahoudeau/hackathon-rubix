@@ -1,6 +1,8 @@
 -- Tool schemas: shown in the [TOOLS] section of every prompt (spec §11, D14) and checked on every AI reply (spec §10.3).
 -- Each equipped tool adds its schema to every prompt, so the schema text is the tool's token weight. Static text only.
 -- Arg spec: { type = "string"|"integer"|"number"|"any", required, enum, min, max, maxLength, desc }.
+local Balance = require("@scripts/config/balance")
+
 local function str(desc, extra)
   local s = { type = "string", desc = desc }
   for k, v in pairs(extra or {}) do s[k] = v end
@@ -8,11 +10,31 @@ local function str(desc, extra)
 end
 
 return {
+  -- `recent` rows in the agent context (spec §9.2.2/§11): argument aliases and the order args and result fields appear in.
+  argAlias = { stop_at_hold_pct = "pct" },
+  argOrder = {
+    mine = { "vein", "stop_at_hold_pct" }, ["return"] = { "to" }, sell = { "buyer", "planet", "resource", "qty" },
+    store = { "resource", "qty" }, ship = { "resource", "qty", "destination" }, set_order = { "agent", "text" },
+    assign_skill = { "agent", "skill", "params" }, run_skill = { "name", "params" }, report = { "to", "message" },
+  },
+  resultOrder = {
+    mine = { "mined", "hold_pct", "vein_reserve_pct", "duration_s", "stopped_because", "crowded_by" },
+    ["return"] = { "docked_at", "hold", "sold", "unit_price", "total" },
+    sell = { "sold", "unit_price", "total" },
+    store = { "stored", "partial", "warehouse_free" },
+    scan = { "veins" },
+    report = { "delivered" },
+    run_skill = { "skill_ended_because" },
+    ship = { "freighter_id", "eta_s" },
+    set_order = { "order_set" },
+    assign_skill = { "assigned" },
+    resume_agent = { "previous_error" },
+  },
   order = { "mine", "return", "sell", "store", "scan", "report", "wait", "run_skill", "ship", "set_order", "assign_skill", "pause_agent", "resume_agent" },
   schemas = {
     mine = { description = "Fly to a vein, mine it, stop at the target hold %.",
       args = { vein = str("known vein id", { required = true }),
-        stop_at_hold_pct = { type = "integer", min = 10, max = 100, desc = "default 100" } } },
+        stop_at_hold_pct = { type = "integer", min = Balance.holdPct.min, max = Balance.holdPct.max, desc = "default 100" } } },
     ["return"] = { description = "Fly back to a dock.",
       args = { to = str("default home", { enum = { "home", "local_depot" } }) } },
     sell = { description = "Sell the hold (Miner, docked) or a warehouse stock (Logistician) at a buyer.",

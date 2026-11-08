@@ -14,6 +14,8 @@
 --   paramKinds = { name = { check(sim, paramName, value, decl) -> error text | nil } }
 --   onOpen?(sim)                          creates the first agent and asset
 -- A tool with a `schema` is new (its schema and tier come from the branch); without one it is a tool of config/tools.luau.
+local Feed = require("@scripts/sim/feed")
+local Words = require("@scripts/config/copy")
 local ToolsConfig = require("@scripts/config/tools")
 local BranchesConfig = require("@scripts/config/branches")
 
@@ -155,6 +157,8 @@ function Registry.open(sim, id, atStart)
   if def.onOpen then def.onOpen(sim) end
   if not atStart then
     sim:log("INFO", ("branch %s opened"):format(id))
+    local unlocked = Words.unlocks.branch[id]
+    if unlocked then Feed.info(sim, nil, unlocked) end
     sim:emit("branch_opened", { branch = id })
   end
   return true

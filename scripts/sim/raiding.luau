@@ -193,12 +193,13 @@ end
 
 local function etaSeconds(sim, c) return math.floor((c.total - c.elapsed) * sim.b.tickSeconds + 0.5) end
 
--- Convoys on the map, as dots: { id, from, to, t, corp, orange }. Nothing about the cargo.
+-- Convoys on the map: { id, from, to, t, corp, orange, escort, fought }. Nothing about the cargo.
 function Raiding.mapConvoys(sim)
   local out = {}
   if not sim.raid or not open(sim) then return out end
   for _, c in ipairs(sim.raid.convoys) do
-    out[#out + 1] = { id = c.id, from = c.from, to = c.dest, t = clamp(c.elapsed / c.total, 0, 1), corp = c.corp, orange = isOrange(c.dest) }
+    out[#out + 1] = { id = c.id, from = c.from, to = c.dest, t = clamp(c.elapsed / c.total, 0, 1), corp = c.corp, orange = isOrange(c.dest),
+      escort = c.escort, fought = c.state == "fought" }
   end
   return out
 end
@@ -259,10 +260,10 @@ end
 
 -- Mission V3 -------------------------------------------------------------------------------------------------------
 
--- -> { id, name, goal, hint, reward, status = locked|active|complete|claimed, wins, target, failed }
+-- -> { id, name, brief, hint, reward, status = locked|active|complete|claimed, wins, target, failed }
 function Raiding.mission(sim)
   local e, d = sim.raid.mission, Cfg.mission
-  return { id = d.id, name = d.name, goal = d.goal, hint = d.hint, reward = d.reward, status = e.status, wins = e.wins,
+  return { id = d.id, name = d.name, brief = d.brief, hint = d.hint, reward = d.reward, status = e.status, wins = e.wins,
     target = d.wins, failed = e.failed == true }
 end
 

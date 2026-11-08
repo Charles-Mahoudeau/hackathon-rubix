@@ -15,7 +15,9 @@ return {
     { id = "station", label = "Station", unlockTier = 3 },
     { id = "market", label = "Market", unlockTier = 3 },
     { id = "fleet", label = "Fleet", unlockTier = 4 },
-    { id = "alerts", label = "Alerts", unlockTier = 5 },
+    { id = "alerts", label = "Monitor", unlockTier = 5 },
+    -- Debug panel (spec §16.4): listed only while config/debug.luau `enabled` (debug builds and demo mode), never in release.
+    { id = "debug", label = "Debug", unlockTier = 1, debugOnly = true },
   },
   defaultScreen = "map",
 
@@ -31,7 +33,8 @@ return {
     station = { title = "No station", hint = "Build the warehouse (tier 3) to store ore and wait for better prices." },
     market = { title = "No market data", hint = "The warehouse lights the markets and shows who buys what." },
     fleet = { title = "No fleet", hint = "The logistics hub (tier 4) brings freighters and their routes." },
-    alerts = { title = "No alerts", hint = "The command center (tier 5) watches your team and raises alerts." },
+    debug = { title = "Debug", hint = "Debug tools are not available in this build." },
+    alerts = { title = "No alerts yet.", hint = "Buy the command center first." },
   },
 
   -- System map: positions as fractions of the main panel (0..1). Planets are drawn in the world, labels in the UI.
@@ -60,17 +63,24 @@ return {
     riskValue = { low = 0.2, medium = 0.6 }, -- the cosmetic risk fed to render/vfx/route for a route's colour
     animSeconds = 0.15, -- the map redraws this often (planet pulse, moving dashes); other screens use refreshSeconds
     routeSpacing = 14, -- view pixels between two dashes of a route line
-    convoyDot = 6,
-    rivalDot = 5, -- rival convoys (raiding branch): amber on the raidable orange routes, dim on the others
   },
 
-  -- Agent editor (GR5-5): view pixels inside the main panel. The two text inputs are their own UI tree, so typing never
-  -- loses focus when the shell redraws; the shell leaves a hole at each field.
+  -- Agents screen (GR5-5, GR5-67): view pixels inside the main panel, scaled from the 1248x616 wireframe to the real main panel
+  -- (list on the left, detail on the right, scroll regions for anything long). The two text inputs are their own UI tree,
+  -- so typing never loses focus when the shell redraws; the shell leaves a hole at each field.
   editor = {
-    leftWidth = 600, fieldHeight = 36, directiveY = 60, orderY = 136, buttonsY = 200, toastY = 244, costX = 624,
-    agent = "miner", -- the agent the screen edits until there are several (GR5-28)
+    agent = "miner", -- the agent the screen edits (GR5-28: set by the list and by the Team rows)
+    listWidth = 232, listRowHeight = 36, listHeaderHeight = 28, gap = 12,
+    identityY = 0, identityHeight = 40, boxY = 48, boxHeight = 140, directiveWidth = 408,
+    fieldY = 44, fieldHeight = 36, previewY = 86, previewHeight = 46, barY = 28, barHeight = 8,
+    actionsY = 192, actionsHeight = 36, toolsY = 234, toolsHeight = 122, feedY = 364, feedHeight = 144,
     placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)" },
+    emptyList = "No agents", noSelection = "Select an agent", feedLines = 8, saveButton = 'Save as skill', feedEmpty = "No tool calls yet.",
   },
+
+  -- Context screen (GR5-6, GR5-67): settings list on the left, the exact rendered context and its cost on the right.
+  contextView = { listWidth = 400, gap = 12, headerHeight = 72, footerHeight = 80, rowHeight = 40, title = "CONTEXT PREVIEW", none = "No context",
+    totalLabel = "Total per decision" },
 
   -- Agents screen tabs (GR5-6): the editor and the Context panel share the left panel; the tab buttons sit in its header.
   tabs = { { id = "editor", label = "Editor", x = 300, w = 100 }, { id = "context", label = "Context", x = 408, w = 110 }, y = 8 },
@@ -108,28 +118,43 @@ return {
   fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
 
+  -- Station screen (GR5-73): a tab per station, the stock bars on the left, docked ships / freighters / Logisticians on the right.
+  station = { title = "STATION", titleY = 14, tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
+    rowBarY = 14, rowBarWidth = 200, rowBarX = 150, rowQtyX = 360, listX = 520, lineHeight = 20, sectionGap = 14 },
+
   -- Team screen (GR5-28): one row per agent.
   team = { rowY = 48, rowHeight = 26, nameX = 0, assetX = 130, modeX = 270, stateX = 380, computeX = 500, netX = 590, errorsX = 690, alertX = 760,
     headerY = 28 },
 
   -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
+  archiveView = { listWidth = 336, gap = 12, headerHeight = 64, rowHeight = 32, identityHeight = 64, footerHeight = 72, paramsWidth = 264,
+    noSkills = "No skills", noSelection = "Select a skill", selected = "skill" },
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },
   -- Skill studio (GR5-26, spec §13.3): record from the feed, the manual form, and assigning a skill with its parameter values.
-  -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls the Record tab lists.
+  -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls one page of the Record tab lists (Older / Newer turn the pages).
   studio = { tabX = 380, tabWidth = 96, tabGap = 6, rowY = 48, rowHeight = 34, rowGap = 6, textWidth = 520, argWidth = 150, smallWidth = 30,
-    toolWidth = 70, bigButtonWidth = 190, callWidth = 700, calls = 12, autoNameFallback = "skill" },
+    toolWidth = 70, bigButtonWidth = 190, callWidth = 700, calls = 8, autoNameFallback = "skill" },
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
-  missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360, optionalRewardOffset = 120, optionalButtonOffset = 200 },
+  -- The current mission is the left column (one line per brief string); the mission list is the right column from listX.
+  missions = { nameY = 30, goalY = 66, briefLine = 18, hintY = 126, hintLine = 16, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
+    buttonWidth = 140, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 96, optionalLine = 16, optionalProgressX = 270, optionalIndent = 24, rewardX = 260, optionalButtonX = 330 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
-  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
-    listY = 160, rowHeight = 20, maxRows = 14, noteX = 190 },
+  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 200, typesPerRow = 5, typeRowHeight = 34,
+    rowHeight = 20, maxRows = 8, headingGap = 22, sectionGap = 12, historyRows = 4 },
 
   -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
-  branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
+  branches = { headerY = 24, rowY = 44, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
+
+  -- Debug screen (spec §16.4, GR5-72): one row per action group, then the status line, the result line and the last prompt.
+  -- Layout polish is GR5-69.
+  debug = { rowY = 40, rowHeight = 40, labelWidth = 110, buttonWidth = 128, buttonGap = 8, statusGap = 12, toastGap = 22, promptGap = 34,
+    promptLines = 14, promptChars = 120, promptLineHeight = 15 },
+
+  -- Emergency-advance notification (GR5-74, spec §8.5): a banner pinned to the top right of the main panel.
+  notice = { width = 420, height = 44, margin = 8, buttonWidth = 110 },
 
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,

@@ -1,8 +1,8 @@
 -- Debug actions (spec §16.4). Server side, no UI: the panel (ui/debug.luau) and the `debug_*` messages call Debug.run.
 -- run(sim, action, args, ctx) -> ok, result | error string. Disabled builds reject everything.
 local DebugConfig = require("@scripts/config/debug")
-local Json = require("./json")
 local Ai = require("./ai")
+local Host = require("./host")
 local Persistence = require("./persistence")
 local Offline = require("./offline")
 
@@ -27,6 +27,16 @@ function actions.addCompute(sim, args)
   sim.resources.compute += amount
   sim:log("WARN", ("debug: +%d Compute"):format(amount))
   return true, sim.resources.compute
+end
+
+-- Puts the sim into the §8.5 anti-softlock state (Compute and credits low, holds empty) so the HMC offer can be tried.
+function actions.setStuck(sim)
+  local c = sim.b.bailout
+  sim.resources.compute = math.min(sim.resources.compute, c.computeBelow - 1)
+  sim.resources.credits = math.min(sim.resources.credits, c.creditsBelow - 1)
+  for _, ship in pairs(sim.ships) do ship.cargo, ship.cargoF = 0, 0 end
+  sim:log("WARN", "debug: stuck state (low Compute and credits, empty holds)")
+  return true, sim:bailoutConditions()
 end
 
 function actions.setTier(sim, args)
@@ -73,7 +83,7 @@ end
 function actions.lastPrompt(sim)
   local d = sim.lastDecision
   if not d then return false, "no decision yet" end
-  return true, { agent = d.agent, tick = d.tick, text = d.prompt or Json.encode(d.ctx), call = d.call }
+  return true, { agent = d.agent, tick = d.tick, text = d.prompt or Host.json.encode(d.ctx), call = d.call }
 end
 
 -- ctx = { storage, path, savedAt }. Returns the fresh sim; the caller must swap it in and re-attach the decider.
