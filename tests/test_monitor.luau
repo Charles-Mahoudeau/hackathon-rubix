@@ -48,16 +48,49 @@ do
   s.resources.credits = 250000
   assert(s:buyUpgrade("command_center") and s.tier == 5 and s.agents.miner.tier == 5, "T5")
   local ok, id = s:hireMonitor()
-  assert(ok and id == "monitor" and s.agents.monitor.type == "monitor")
+  assert(ok and id == "monitor_1" and s.agents.monitor_1.type == "monitor")
   assert(select(2, s:hireMonitor()) == "already_hired")
-  local tools = s:equippedTools("monitor")
+  local tools = s:equippedTools("monitor_1")
   assert(table.concat(tools, ",") == "report,wait,set_order,assign_skill,pause_agent,resume_agent", table.concat(tools, ","))
+end
+
+-- Separate Monitors supervise only their own scopes and receive independent alerts.
+do
+  local s = ready()
+  assert(s:buyUpgrade("command_center"))
+  local logistician = s:addAgent("logistics_test", "logistician", { tier = 5 })
+  logistician.station = s.home
+  local ok, mining = s:hireMonitor("mining")
+  assert(ok and mining == "monitor_1")
+  local ok2, logistics = s:hireMonitor("logistics")
+  assert(ok2 and logistics == "monitor_2" and #s.agentOrder == 4)
+  assert(select(2, s:hireMonitor("mining")) == "already_hired")
+  assert(s:context(mining).agents[1].id == "miner" and #s:context(mining).agents == 1)
+  assert(s:context(logistics).agents[1].id == logistician.id and #s:context(logistics).agents == 1)
+  assert(select(2, s:apply(mining, { name = "set_order", args = { agent = logistician.id, text = "work" } })) == "out_of_scope")
+  assert(select(2, s:apply(logistics, { name = "set_order", args = { agent = "miner", text = "work" } })) == "out_of_scope")
+  Alerts.raise(s, "agent_idle", "miner", "idle")
+  Alerts.raise(s, "agent_idle", logistician.id, "idle")
+  assert(#Alerts.queue(s, s.agents[mining]) == 1 and #Alerts.queue(s, s.agents[logistics]) == 1)
+  Alerts.consume(s, s.agents[mining])
+  assert(#Alerts.queue(s, s.agents[mining]) == 0 and #Alerts.queue(s, s.agents[logistics]) == 1)
+  assert(s:setMonitorSettings({ heartbeat = false }, mining))
+  assert(s.agents[logistics].monitorSettings.heartbeat ~= false)
+  local Persistence = require("@scripts/sim/persistence")
+  local restored = Persistence.restore(Persistence.serialize(s, 0))
+  assert(restored.agents[mining].monitorSettings.heartbeat == false)
+  assert(#Alerts.queue(restored, restored.agents[logistics]) == 1)
+  assert(restored:context(mining).scope == "mining" and restored:context(logistics).scope == "logistics")
+  while #s.agentOrder < s:commandCapacity() do
+    s:addAgent("capacity_" .. #s.agentOrder, "miner", { tier = 5 })
+  end
+  assert(select(2, s:hireMonitor("company")) == "command_capacity")
 end
 
 -- 2. a precise Monitor directive rotates a depleted $vein and the agent resumes within 120 s
 do
   local s = withMonitor()
-  s.agents.monitor.directive = "When a skill aborts, assign it the next vein."
+  s.agents.monitor_1.directive = "When a skill aborts, assign it the next vein."
   assert(s:setMonitorSettings({ heartbeat = false }))
   assert(s:apply("miner", { name = "run_skill", args = { name = "Titanium loop", params = { vein = "K1" } } }))
   s:run(200)
@@ -87,33 +120,33 @@ do
   local s = withMonitor()
   assert(s:setMonitorSettings({ heartbeat = false }))
   s:run(s.b.monitor.heartbeat.max * 10 * 3)
-  assert(#(s.records.monitor or {}) == 0, "no decision")
-  assert((s.compute.lifetime.monitor or 0) == 0, "no Compute")
+  assert(#(s.records.monitor_1 or {}) == 0, "no decision")
+  assert((s.compute.lifetime.monitor_1 or 0) == 0, "no Compute")
   -- with the heartbeat on, it wakes on its own
   assert(s:setMonitorSettings({ heartbeat = 60 }))
   s:run(1500)
-  assert(#(s.records.monitor or {}) >= 1, "heartbeat decision")
+  assert(#(s.records.monitor_1 or {}) >= 1, "heartbeat decision")
 end
 
 -- 4. locked agents are never touched
 do
   local s = withMonitor()
-  s.agents.monitor.directive = "Resume it."
+  s.agents.monitor_1.directive = "Resume it."
   assert(s:setMonitorLock("miner", true))
   assert(s.agents.miner.monitorLock)
-  local ok, err = s:apply("monitor", { name = "set_order", args = { agent = "miner", text = "do it" } })
+  local ok, err = s:apply("monitor_1", { name = "set_order", args = { agent = "miner", text = "do it" } })
   assert(not ok and err == "agent_locked")
-  ok, err = s:apply("monitor", { name = "pause_agent", args = { agent = "miner" } })
+  ok, err = s:apply("monitor_1", { name = "pause_agent", args = { agent = "miner" } })
   assert(not ok and err == "agent_locked")
-  ok, err = s:apply("monitor", { name = "assign_skill", args = { agent = "miner", skill = "Titanium loop", params = { vein = "K1" } } })
+  ok, err = s:apply("monitor_1", { name = "assign_skill", args = { agent = "miner", skill = "Titanium loop", params = { vein = "K1" } } })
   assert(not ok and err == "agent_locked")
   assert(s.agents.miner.order == "" and s.agents.miner.state ~= "paused_error" and s.agents.miner.mode == "ai")
   s:pauseAgent("miner", "test")
   s:run(3000)
   assert(s.agents.miner.state == "paused_error", "stays paused: the Monitor may not resume it")
-  assert(select(2, s:apply("monitor", { name = "resume_agent", args = { agent = "miner" } })) == "agent_locked")
+  assert(select(2, s:apply("monitor_1", { name = "resume_agent", args = { agent = "miner" } })) == "agent_locked")
   assert(s:setMonitorLock("miner", false))
-  assert(s:apply("monitor", { name = "resume_agent", args = { agent = "miner" } }))
+  assert(s:apply("monitor_1", { name = "resume_agent", args = { agent = "miner" } }))
   assert(s.agents.miner.state == "idle")
 end
 
@@ -123,7 +156,7 @@ do
   local s = withMonitor()
   for i = 1, 7 do s.missions[i].status = "claimed" end
   assert(s:setMonitorSettings({ heartbeat = false }))
-  s.agents.monitor.directive = "When an agent is paused, resume it."
+  s.agents.monitor_1.directive = "When an agent is paused, resume it."
   s:run(100) -- the alert tracker sees the agent before it is paused
   local e = s.missions[8]
   assert(e and e.status == "active", "mission 8 opens once the command center is built: " .. tostring(e and e.status))
@@ -146,7 +179,7 @@ do
   local f = withMonitor()
   for i = 1, 7 do f.missions[i].status = "claimed" end
   f:step()
-  f.compute.lifetime.monitor = 11
+  f.compute.lifetime.monitor_1 = 11
   f:step()
   assert(f.missions[8].failed, "over the Compute budget")
 end
@@ -158,7 +191,7 @@ do
   local m = s.market -- JSON cannot hold the infinite "never" of Market.quiet
   m.nextTrend, m.nextRival = 1e9, 1e9
   for _, mk in pairs(m.markets) do mk.nextEvent = 1e9 end
-  s.agents.monitor.directive = "x"
+  s.agents.monitor_1.directive = "x"
   assert(s:setMonitorSettings({ scope = "mining", heartbeat = 120, alertTypes = { agent_idle = false } }))
   assert(s:setMonitorLock("miner", true))
   s:run(100)
@@ -169,15 +202,23 @@ do
   assert(Persistence.save(s, st, "a", 0))
   local r = assert(Persistence.load(st, "a"))
   assert(#r.alerts.list == 1 and r.alerts.seq == s.alerts.seq and r.alerts.list[1].type == "agent_paused")
-  local ms = r.monitorSettings
+  local ms = r.agents.monitor_1.monitorSettings
   assert(ms.scope == "mining" and ms.heartbeat == 120 and ms.alertTypes.agent_idle == false and ms.alertTypes.crowding == true)
-  assert(r.agents.monitor and r.agents.miner.monitorLock == true and r.upgrades.commandCenter == true)
+  assert(r.agents.monitor_1 and r.agents.miner.monitorLock == true and r.upgrades.commandCenter == true)
   assert(Alerts.rows(r)[1].status == Alerts.rows(s)[1].status)
   -- an old save without alerts keeps the defaults
   local old = Persistence.serialize(s, 0)
   old.state.alerts, old.state.monitorSettings = nil, nil
   local o = assert(Persistence.restore(old))
   assert(#o.alerts.list == 0 and o.monitorSettings.scope == "company" and o.monitorSettings.heartbeat == 300)
+  local legacy = Persistence.serialize(s, 0)
+  legacy.state.agents.monitor = legacy.state.agents.monitor_1
+  legacy.state.agents.monitor_1 = nil
+  legacy.state.agents.monitor.monitorSettings = nil
+  for i, id in ipairs(legacy.state.agentOrder) do if id == "monitor_1" then legacy.state.agentOrder[i] = "monitor" end end
+  legacy.state.monitorSettings = Sim.deepCopy(ms)
+  local migrated = Persistence.restore(legacy)
+  assert(migrated.agents.monitor_1.id == "monitor_1" and migrated.agents.monitor_1.monitorSettings.scope == "mining")
 end
 
 -- 7. the Alerts screen, the team row and the editor lock
@@ -196,12 +237,14 @@ do
   assert(not AlertsView.model(s).hire and AlertsView.model(s).hireNote:find("command center", 1, true))
   assert(s:buyUpgrade("command_center"))
   assert(AlertsView.model(s).hire == "alerts.hire")
-  assert(AlertsView.act(s, "alerts.hire") and s.agents.monitor)
+  assert(AlertsView.act(s, "alerts.hire") and s.agents.monitor_1)
   assert(AlertsView.act(s, "alerts.scope") and s.monitorSettings.scope == "mining")
-  assert(AlertsView.act(s, "alerts.heartbeat.off") and s.monitorSettings.heartbeat == false)
-  assert(AlertsView.act(s, "alerts.heartbeat.off") and s.monitorSettings.heartbeat == 300)
-  assert(AlertsView.act(s, "alerts.heartbeat.down") and s.monitorSettings.heartbeat == 240)
-  assert(AlertsView.act(s, "alerts.type.crowding") and s.monitorSettings.alertTypes.crowding == false)
+  assert(AlertsView.act(s, "alerts.hire") and s.agents.monitor_2)
+  local settings = s.agents.monitor_2.monitorSettings
+  assert(AlertsView.act(s, "alerts.heartbeat.off") and settings.heartbeat == false)
+  assert(AlertsView.act(s, "alerts.heartbeat.off") and settings.heartbeat == 300)
+  assert(AlertsView.act(s, "alerts.heartbeat.down") and settings.heartbeat == 240)
+  assert(AlertsView.act(s, "alerts.type.crowding") and settings.alertTypes.crowding == false)
   assert(not AlertsView.act(s, "alerts.type.nonsense") and not AlertsView.act(s, "shop.buy"))
   s:run(100)
   s:pauseAgent("miner", "test")
@@ -212,14 +255,14 @@ do
   local all = table.concat(texts(spec), "\n")
   assert(all:find("Agent paused", 1, true) and all:find("Heartbeat 240 s", 1, true) and all:find("[ ] Vein crowded", 1, true), all)
   local team = TeamView.model(s)
-  assert(team.rows[1].lastAlert:find("agent_paused", 1, true) and team.rows[2].lastAlert == "-" and team.rows[2].asset == "command center")
+  assert(team.rows[1].lastAlert:find("agent_paused", 1, true) and team.rows[2].lastAlert == "-" and team.rows[2].asset == "command center (company)")
   assert(Shell.spec(s, "team", {}))
   -- the editor: a lock toggle for supervised agents only, and where the order came from
-  assert(Editor.model(s, "miner").lock.locked == false and Editor.model(s, "monitor").lock == nil)
+  assert(Editor.model(s, "miner").lock.locked == false and Editor.model(s, "monitor_1").lock == nil)
   s:setOrder("miner", "go")
   s.agents.miner.orderSource = "monitor"
   assert(Editor.model(s, "miner").orderSource == "monitor")
-  require("@scripts/config/screens").editor.agent = "monitor"
+  require("@scripts/config/screens").editor.agent = "monitor_1"
   assert(Shell.spec(s, "agents", {}), "the Monitor has an editor")
   require("@scripts/config/screens").editor.agent = "miner"
 end
@@ -243,8 +286,8 @@ do
       veins = { { id = "V1", ore = "cobalt", pct = 0 }, { id = "V2", ore = "cobalt", pct = 71 } },
     }
   end
-  local settings = Sim.deepCopy(s.agents.monitor.contextSettings)
-  local data = Builder.build(s, "monitor", settings)
+  local settings = Sim.deepCopy(s.agents.monitor_1.contextSettings)
+  local data = Builder.build(s, "monitor_1", settings)
   local golden = [[
 time: 01:52:30
 alerts[1] type agent reason skill params age_s

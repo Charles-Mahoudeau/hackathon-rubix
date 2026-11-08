@@ -70,7 +70,7 @@ Tour.steps = {
 	{ name = "studio-assign", actions = { "studio.mode.list", "studio.assign.Titanium loop.miner" } },
 	{ name = "studio-running", actions = { "studio.assign.start" }, hold = 4 },
 	{ name = "monitor-order", run = function(sim)
-		sim:apply("monitor", { name = "set_order", args = { agent = "miner2", text = "Sell your cobalt at HMC when the hold is full." } })
+		sim:apply("monitor_1", { name = "set_order", args = { agent = "miner2", text = "Sell your cobalt at HMC when the hold is full." } })
 	end, actions = { "nav.map" }, hold = 4 },
 	{ name = "alerts", actions = { "nav.alerts" } },
 	{ name = "alerts-toggles", actions = { "alerts.type.agent_idle", "alerts.heartbeat.down", "alerts.heartbeat.down" } },

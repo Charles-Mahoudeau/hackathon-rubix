@@ -321,7 +321,7 @@ local function counters(checks, out)
     assert(s:buyUpgrade("command_center") and s:hireMonitor())
     for i = 1, 7 do s.missions[i].status = "claimed" end
     assert(s:setMonitorSettings({ heartbeat = false }))
-    s.agents.monitor.directive = "When an agent is paused, resume it."
+    s.agents.monitor_1.directive = "When an agent is paused, resume it."
     s:run(100)
     local e = s.missions[8]
     local seq = s.recordSeq
@@ -333,8 +333,8 @@ local function counters(checks, out)
     end
     local text = Missions.progress(s, e).text
     local shown = tonumber(text:match("Monitor Compute ([%d%.]+) /"))
-    local ledger = round1((s.compute.lifetime.monitor or 0) - e.baseMonitor)
-    local records = round1(recordsAfter(s, seq, "monitor"))
+    local ledger = round1((s.compute.lifetime.monitor_1 or 0) - e.baseMonitor)
+    local records = round1(recordsAfter(s, seq, "monitor_1"))
     out[#out + 1] = ("Mission 8 after two pauses: counter shows `%s`; Monitor ledger window %.1f, Monitor decision records %.1f."):format(text, ledger, records)
     add("mission 8: shown counter == Monitor ledger window", shown == ledger, ("%s vs %.1f"):format(tostring(shown), ledger))
     add("mission 8: shown counter == sum of Monitor decision records since it opened", shown == records, ("%s vs %.1f"):format(tostring(shown), records))

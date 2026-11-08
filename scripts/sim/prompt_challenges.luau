@@ -122,7 +122,7 @@ local function monitorRecoveries(c, directive)
     steps = { { tool = "mine", args = { vein = "$vein" } }, { tool = "return" }, { tool = "sell" } } }))
   assert(s:buyUpgrade("command_center") and s:hireMonitor())
   assert(s:setMonitorSettings({ heartbeat = false }))
-  s.agents.monitor.directive = directive
+  s.agents.monitor_1.directive = directive
   s:run(100)
   local recovered, times = 0, {}
   for _ = 1, c.recoveries do
@@ -139,7 +139,7 @@ local function monitorRecoveries(c, directive)
       times[#times + 1] = back
     end
   end
-  local spent = s.compute.lifetime.monitor or 0
+  local spent = s.compute.lifetime.monitor_1 or 0
   return { value = recovered, compute = spent, within_budget = spent <= c.computeMax, seconds_each = times }
 end
 
