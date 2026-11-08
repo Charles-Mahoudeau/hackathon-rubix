@@ -167,7 +167,8 @@ function Model.feed(sim)
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
     local who = e.agent and sim.agents and sim.agents[e.agent]
-    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
+    -- the UI font is ASCII only: saves written before the feed switched to "->" still hold the arrow glyph
+    out[#out + 1] = { text = (e.text:gsub("\226\134\146", "->")), status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
       tool = e.tool, agentType = who and who.type or nil }
   end
   return out

@@ -8,6 +8,7 @@ local Market = require("@scripts/sim/market")
 local Remap = require("@scripts/client/remap")
 local Ship = require("@scripts/client/ship")
 local FleetMap = require("@scripts/client/fleet_map")
+local StationsConfig = require("@scripts/config/stations")
 
 local materials = {}
 local stub = {
@@ -57,7 +58,9 @@ local function checkSprite(sp)
   assert(sp.x == sp.x and sp.y == sp.y and sp.rot == sp.rot, "no NaN pose " .. sp.key)
 end
 
-local function depotOf(points) return { x = points.kessa.x + FX.depot.dx, y = points.kessa.y + FX.depot.dy } end
+local function depotOf(points) local d = StationsConfig.map.home
+  return { x = points.kessa.x + d.dx, y = points.kessa.y + d.dy }
+end
 
 -- 1. T1: a docked miner is drawn next to Kessa with an animated engine.
 do
@@ -97,19 +100,24 @@ do
   assert(#trail == FX.trail.count and trail[1].sheet == FX.trail.sheet and trail[1].steps, "a pixel trail behind the demo miner")
   local fx, fy = math.sin(miner.rot), -math.cos(miner.rot)
   for _, sp in ipairs(trail) do assert((sp.x - miner.x) * fx + (sp.y - miner.y) * fy < 0, "trail particles sit behind the ship") end
-  -- The hauler really crosses between the vein and the depot over the loop.
+  -- The hauler really crosses between Kessa and the depot over the loop.
   local minX, maxX = math.huge, -math.huge
   for i = 0, 200 do
     local h = find(FleetMap.update(fleet, s, t + i * 0.1), "demo:hauler:hull")
     minX, maxX = math.min(minX, h.x), math.max(maxX, h.x)
   end
   local p = FleetMap.points()
-  assert(maxX - minX > math.abs(p.ashfall.x - depotOf(p).x) * 0.6, "the hauler travels")
-  -- The first real activity ends it for good.
+  assert(maxX - minX > math.abs(p.kessa.x - depotOf(p).x) * 0.5, "the hauler travels between Kessa and the depot")
+  -- The first real activity ends the demo miner for good, but at least two ships stay on the map while the fleet has one ship.
   s.ships.s1.state = "mining"
-  assert(not find(FleetMap.update(fleet, s, t + 30), "demo:miner:hull"), "demo gone when a real miner works")
+  local sp = FleetMap.update(fleet, s, t + 30)
+  assert(not find(sp, "demo:miner:hull"), "demo miner gone when a real miner works")
+  assert(find(sp, "ship:s1:hull") and find(sp, "demo:hauler:hull"), "two ships visible with one real miner")
   s.ships.s1.state = "idle"
-  assert(not find(FleetMap.update(fleet, s, t + 31), "demo:hauler:hull"), "and it does not come back")
+  assert(not find(FleetMap.update(fleet, s, t + 31), "demo:miner:hull"), "and the demo miner does not come back")
+  -- Two real ships replace the demo hauler.
+  s.shipOrder[2], s.ships.s2 = "s2", { id = "s2", state = "idle", at = s.home }
+  assert(not find(FleetMap.update(fleet, s, t + 32), "demo:hauler:hull"), "no demo hauler once the player owns two ships")
 end
 
 -- 2. A travelling miner flies from Kessa towards the vein, nose first, and the flame speeds up.
