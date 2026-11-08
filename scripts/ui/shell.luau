@@ -30,11 +30,13 @@ local Vfx = require("@scripts/config/vfx")
 local Planets = require("@scripts/config/planets")
 local Glow = require("@scripts/ui/glow")
 local Fit = require("@scripts/ui/fit")
+local Icon = require("@scripts/ui/icon")
 
 local Shell = {}
 
 local L = Theme.layout
 local T = Theme.type
+local ICON = Theme.layout.icon -- icon sizes in px
 
 -- Rectangles in view pixels. Absolute layout keeps the world-drawn planets and the UI labels on the same coordinates.
 function Shell.layout()
@@ -122,14 +124,18 @@ local function topBar(font, r, bar)
   local repLine = rep.next and ("%s  %s / %s"):format(bar.reputationText, Model.thousands(rep.revenue), Model.thousands(rep.next))
     or ("%s  max"):format(bar.reputationText)
   local gaugeColor = bar.computeLevel == "ok" and "cyan" or Theme.semantic.warning
-  local function cell(label, value, valueColor, extra)
+  local function cell(label, value, valueColor, extra, iconKey)
+    local head = { style = { direction = "row", gap = 4, alignItems = "center" },
+      children = { Icon.node(iconKey, ICON.small, "dim"), text(font, label, T.small, "dim") } }
     return { style = { direction = "column", gap = 2, justify = "center", extra },
-      children = { text(font, label, T.small, "dim"), text(font, value, T.heading, valueColor or "text") } }
+      children = { head, text(font, value, T.heading, valueColor or "text") } }
   end
   local note = bar.computeLevel == "empty" and "  EMPTY" or (bar.computeLevel == "low" and "  low" or "")
+  local computeTint = bar.computeLevel == "ok" and "dim" or Theme.semantic.warning
   local gauge = { style = { direction = "column", gap = 4, justify = "center", width = 230 },
     children = {
-      text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, bar.computeLevel == "ok" and "dim" or Theme.semantic.warning),
+      { style = { direction = "row", gap = 4, alignItems = "center" }, children = { Icon.node("resource.compute", ICON.small, computeTint),
+        text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, computeTint) } },
       gauge({ height = 8, width = "100%" }, bar.computeFraction * 100, bar.budgetReached and Theme.semantic.warning or gaugeColor),
     } }
   -- Always offered: the button is greyed, never hidden, when the credits do not cover the pack (it then does nothing).
@@ -144,10 +150,10 @@ local function topBar(font, r, bar)
   end
   local children = {
     text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
-    cell("Credits", bar.creditsText, "text"),
+    cell("Credits", bar.creditsText, "text", nil, "resource.credits"),
     gauge,
     buy,
-    cell("Reputation", repLine, "text"),
+    cell("Reputation", repLine, "text", nil, "resource.reputation"),
     cell("Tier", bar.tierText, "green"),
     speed,
   }
@@ -176,11 +182,16 @@ local function feedStrip(font, r, lines)
   local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
   -- One line per entry, cut to the strip: a wrapped entry would push the newest ones out of the fixed-height panel.
-  local room = r.w - 2 * L.pad
+  local gap = 4
+  local room = r.w - 2 * L.pad - 2 * (ICON.feed + gap)
   for _, l in ipairs(lines) do
     local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or (l.source == "monitor" and "cyan" or "text"))
     local line = Fit.truncate((l.agent and (l.agent .. "  ") or "") .. l.text, T.small, room)
-    rows[#rows + 1] = text(font, line, T.small, color, { height = math.ceil(T.small * Fit.lineHeight) })
+    -- agent icon, then tool icon (empty boxes keep the text aligned), both tinted like the line: a failed call reads red.
+    local tint = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or "cyan")
+    rows[#rows + 1] = { style = { direction = "row", alignItems = "center", gap = gap, height = math.ceil(T.small * Fit.lineHeight) },
+      children = { Icon.node(Icon.agentKey(l.agentType), ICON.feed, tint), Icon.node(Icon.toolKey(l.tool), ICON.feed, tint),
+        text(font, line, T.small, color) } }
   end
   return withChildren(panel(r, { direction = "column", paddingX = L.pad, paddingY = L.gap, overflow = "hidden" }), rows)
 end
@@ -337,7 +348,8 @@ local function computeBlock(font, cv, nodeAt)
     local blocked = row.state == "no_compute"
     local state = blocked and ("no compute: " .. tostring(row.blockReason or "")) or row.state
     local line = ("%-10s %6.1f /h  (%d cr/h)  %s"):format(row.id, row.computePerHour, math.floor(row.creditsPerHour + 0.5), state)
-    nodeAt(L.pad, y, text(font, line, T.small, blocked and Theme.semantic.warning or (row.thinksMost and #cv.rows > 1 and "cyan" or "text")))
+    nodeAt(L.pad, y, Icon.node(Icon.agentKeyOfId(row.id), ICON.row, blocked and Theme.semantic.warning or "dim"))
+    nodeAt(L.pad + ICON.row + 6, y, text(font, line, T.small, blocked and Theme.semantic.warning or (row.thinksMost and #cv.rows > 1 and "cyan" or "text")))
     y += c.rowHeight
   end
   nodeAt(L.pad, y, text(font, ("%-10s %6.1f /h  (%d cr/h)"):format("team", cv.top.teamPerHour, math.floor(cv.top.teamPerHour * cv.cfg.compute.priceCredits + 0.5)), T.small, "dim"))
@@ -359,7 +371,9 @@ local function editorScreen(font, r, m, opts)
   local left = {}
   local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
   nodeAt(L.pad, L.pad, text(font, "AGENT EDITOR  " .. m.agentId, T.small, "dim"))
-  for _, n in ipairs(Glow.light({ x = L.pad + 7 * (16 + #m.agentId) + 12, y = L.pad + 8 }, opts.state, opts.time or 0)) do left[#left + 1] = n end
+  local lightX = L.pad + 7 * (16 + #m.agentId) + 12
+  for _, n in ipairs(Glow.light({ x = lightX, y = L.pad + 8 }, opts.state, opts.time or 0)) do left[#left + 1] = n end
+  left[#left + 1] = Icon.at(Icon.agentKeyOfId(m.agentId), lightX + 14, L.pad, ICON.row, opts.state == "paused_error" and Theme.semantic.error or "cyan")
   for _, n in ipairs(tabButtons(font, "editor")) do left[#left + 1] = n end
   nodeAt(L.pad, e.directiveY - 22, text(font, "Directive (permanent)", T.body, "text"))
   nodeAt(e.leftWidth - L.pad - 150, e.directiveY - 22, text(font, m.directive.text .. " tokens", T.body, counterColor(m.directive)))
@@ -387,7 +401,10 @@ local function editorScreen(font, r, m, opts)
   local rows = costRows(font, m, m.formats)
   rows[#rows + 1] = text(font, "", T.small, "dim")
   rows[#rows + 1] = text(font, "TOOLS (each one is paid in every prompt)", T.small, "dim")
-  for _, t in ipairs(m.tools) do rows[#rows + 1] = text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") end
+  for _, t in ipairs(m.tools) do
+    rows[#rows + 1] = { style = { direction = "row", alignItems = "center", gap = 6 },
+      children = { Icon.node(Icon.toolKey(t.name), ICON.row, "dim"), text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") } }
+  end
   rows[#rows + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
   local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
   return leftPanel, withChildren(rightPanel, rows)
@@ -442,7 +459,8 @@ local function logsScreen(font, r, m)
   for _, h in ipairs(m.header) do
     local line = ("%-12s credits/h %6s   Compute/h %5.1f   net/h %6s"):format(h.id, Model.thousands(h.creditsPerHour), h.computePerHour,
       (h.netPerHour < 0 and "-" or "") .. Model.thousands(math.abs(h.netPerHour)))
-    nodeAt(L.pad, y, text(font, line, T.small, h.netPerHour < 0 and Theme.semantic.warning or "text"))
+    nodeAt(L.pad, y, Icon.node(Icon.agentKeyOfId(h.id), ICON.row, h.netPerHour < 0 and Theme.semantic.warning or "dim"))
+    nodeAt(L.pad + ICON.row + 6, y, text(font, line, T.small, h.netPerHour < 0 and Theme.semantic.warning or "text"))
     y += c.statRowHeight
   end
   y += 6
@@ -609,7 +627,9 @@ local function shopScreen(font, r, m)
       nodeAt(c.noteX, y + 8, text(font, row.note, T.small, owned and "green" or Theme.semantic.warning))
     end
     if not owned then
-      nodeAt(c.costX, y + 8, text(font, row.costText, T.small, row.state == "available" and "cyan" or "dim"))
+      local costColor = row.state == "available" and "cyan" or "dim"
+      nodeAt(c.costX - ICON.row - 4, y + 8, Icon.node("resource.credits", ICON.row, costColor))
+      nodeAt(c.costX, y + 8, text(font, row.costText, T.small, costColor))
       if row.state == "available" then nodeAt(c.buyX, y, button(font, "Buy", row.action, "cyan", c.buyWidth)) end
     end
   end
@@ -758,7 +778,8 @@ local function missionsScreen(font, r, m)
         nodeAt(L.pad, c.barY + c.barHeight + 28 + (i - 1) * 18, text(font, (line.done and "[x] " or "[ ] ") .. line.text, T.small, line.done and "green" or "dim"))
       end
     end
-    nodeAt(L.pad, c.rewardY, text(font, cur.rewardText, T.body, "text"))
+    for i, key in ipairs(cur.rewardIcons) do nodeAt(L.pad + (i - 1) * (ICON.row + 4), c.rewardY, Icon.node(key, ICON.row, "cyan")) end
+    nodeAt(L.pad + #cur.rewardIcons * (ICON.row + 4), c.rewardY, text(font, cur.rewardText, T.body, "text"))
     if cur.claim then nodeAt(L.pad, c.buttonY, button(font, "Claim", cur.claim, "green", c.buttonWidth)) end
     if cur.retry then nodeAt(L.pad, c.buttonY, button(font, "Retry", cur.retry, Theme.semantic.warning, c.buttonWidth)) end
   else
@@ -768,13 +789,15 @@ local function missionsScreen(font, r, m)
     local y = c.listY + (i - 1) * c.rowHeight
     local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
     nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
-    nodeAt(c.rewardX, y, text(font, row.reward, T.small, color))
+    for i, key in ipairs(row.icons) do nodeAt(c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
+    nodeAt(c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
   for j, row in ipairs(m.optional) do
     local y = c.listY + (#m.rows + j - 1) * c.rowHeight
     local color = row.state == "claimed" and "green" or (row.failed and Theme.semantic.warning or (row.state == "current" and "cyan" or "dim"))
     nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
-    nodeAt(c.rewardX + c.optionalRewardOffset, y, text(font, row.reward, T.small, color))
+    for i, key in ipairs(row.icons) do nodeAt(c.rewardX + c.optionalRewardOffset + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
+    nodeAt(c.rewardX + c.optionalRewardOffset + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
     if row.claim then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Claim", row.claim, "green", 80)) end
     if row.retry then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
   end
@@ -883,7 +906,7 @@ local function teamScreen(font, r, m, time)
   local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
   nodeAt(L.pad, L.pad, text(font, ("TEAM  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
   local fmt = "%-14s %-12s %-10s %-16s %9s %9s %6s  %s"
-  nodeAt(L.pad, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors", "last alert"), T.small, "dim"))
+  nodeAt(L.pad + ICON.row + 6, c.headerY + 8, text(font, fmt:format("agent", "asset", "mode", "state", "Compute/h", "net cr/h", "errors", "last alert"), T.small, "dim"))
   local y, rowW = c.rowY + 8, r.w - 2 * L.pad
   for _, row in ipairs(m.rows) do
     local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors, row.lastAlert)
@@ -892,7 +915,9 @@ local function teamScreen(font, r, m, time)
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = UiTheme.color("panel", 0), radius = 2 },
       button = UiTheme.button(row.action, "cyan", { base = "panel", alpha = 0 }),
-      children = { text(font, line, T.small, color) } }, rowW, c.rowHeight)
+      children = { { style = { direction = "row", alignItems = "center", gap = 6 }, children = {
+        Icon.node(Icon.agentKey(row.type), ICON.row, row.state == "paused_error" and Theme.semantic.error or (row.state == "acting" and "cyan" or "dim")),
+        text(font, line, T.small, color) } } } }, rowW, c.rowHeight)
     y += c.rowHeight
   end
   for _, ship in ipairs(m.idleShips) do
@@ -922,11 +947,13 @@ local function archiveScreen(font, r, m, sm)
   end
   for _, s in ipairs(m.skills) do
     local head = ("%s  (%s%s)  %s"):format(s.name, s.agentType, s.loop and ", loops" or "", table.concat(s.params, " "))
-    nodeAt(L.pad, y, text(font, head, T.body, "cyan"))
+    nodeAt(L.pad, y, Icon.node(Icon.agentKey(s.agentType), ICON.row, "cyan"))
+    nodeAt(L.pad + ICON.row + 6, y, text(font, head, T.body, "cyan"))
     nodeAt(r.w - L.pad - 70, y, button(font, "Delete", s.delete, "dim", 70))
     y += c.rowHeight + 4
     for i, st in ipairs(s.steps) do
-      nodeAt(L.pad + 12, y, text(font, ("%d. %s"):format(i, st), T.small, "text"))
+      nodeAt(L.pad + 12, y, Icon.node(Icon.toolKey(string.match(st, "^([%w_]+)")), ICON.row - 2, "dim"))
+      nodeAt(L.pad + 12 + ICON.row + 2, y, text(font, ("%d. %s"):format(i, st), T.small, "text"))
       y += c.rowHeight
     end
     for _, u in ipairs(s.runners) do
@@ -961,7 +988,8 @@ local function marketScreen(font, r, m)
   local y = c.rowY
   for _, row in ipairs(m.rows) do
     local color = row.best and "green" or (row.event and Theme.semantic.warning or "text")
-    nodeAt(L.pad, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
+    nodeAt(L.pad, y, Icon.node(Icon.resourceKey(row.resource), ICON.row - 2, row.best and "green" or "dim"))
+    nodeAt(L.pad + ICON.row + 4, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
     nodeAt(c.sparkX - 40, y, text(font, row.trend == "up" and "^" or (row.trend == "down" and "v" or "-"), T.small, "dim"))
     y += c.rowHeight
   end
@@ -1155,6 +1183,7 @@ function Shell.spawn(commands, sim, screenId: string, opts)
   opts = opts or {}
   opts.font = opts.font or UiTheme.font()
   opts.skin = opts.skin or UiTheme.panelSkin()
+  Icon.loader = Icon.loader or engine.assets.texture
   local spec, shown = Shell.spec(sim, screenId, opts)
   return engine.ui.spawn(commands, spec), shown
 end
