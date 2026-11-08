@@ -1,0 +1,2 @@
+- 2026-11-07 — GR5-21: icons kept as vector SVG with `currentColor` (not pixelated), tinted at runtime from the theme table; reason: GR5-3 theme not in repo yet, vector tint keeps one source of truth. Icon picks listed in tools/build_icons.py; attribution generated to CREDITS_ICONS.md.
+- 2026-11-07 — GR5-24: icon modules are globals `IconSet` (scripts/ui/icon_set.luau, generated) and `IconStyle`; icon_set sorts before icon_style so no require is needed. Reason: AYLO has no `require`.
