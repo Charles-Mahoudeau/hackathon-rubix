@@ -8,7 +8,8 @@ local Settings = require("@scripts/sim/context_settings")
 local Skills = require("@scripts/sim/skills")
 local Screens = require("@scripts/config/screens")
 local ExamplesConfig = require("@scripts/config/directive_examples")
-local Registry = require("@scripts/sim/branches/registry")
+local PromptLibrary = require("@scripts/sim/prompt_library")
+local PromptData = require("@scripts/config/prompt_library")
 
 local Editor = {}
 
@@ -122,69 +123,55 @@ function Editor.model(sim, agentId, draft)
   }
 end
 
--- Directive examples (GR5-106, config/directive_examples.luau). The dropdown lists the examples of the agent's role, once
--- the role's branch is open and, for mission examples, once that mission has started. An example only ever fills the
--- directive draft: its prerequisites are reported, never granted.
-local function missionStarted(sim, n)
-  for _, e in ipairs(sim.missions or {}) do
-    if e.id == n then return e.status ~= "locked" end
+-- Directive examples (GR5-106) come from the prompt library (GR5-107, config/prompt_library.luau): the agent's role examples,
+-- plus the active mission's when that mission is this agent's job; a locked branch lists nothing. An example only ever fills
+-- the directive draft: its prerequisites are reported, never granted.
+local function prerequisites(sim, agentId, ex, missionNeeds)
+  local out = {}
+  if ex.blocker then
+    out[#out + 1] = { text = ExamplesConfig.blockers[ex.blocker] or ex.blocker, met = false }
   end
-  return false
-end
-
-local function exampleVisible(sim, ex)
-  if ex.general then return true end
-  for _, n in ipairs(ex.missions or {}) do
-    if missionStarted(sim, n) then return true end
+  local seen = {}
+  for _, tool in ipairs(ex.tools or {}) do
+    if not seen[tool] then
+      seen[tool] = true
+      out[#out + 1] = { text = "tool " .. tool, met = sim:hasTool(agentId, tool) }
+    end
   end
-  return false
-end
-
--- One prerequisite -> { text, met }.
-local function prerequisite(sim, agentId, need)
   local agent = sim.agents[agentId]
-  if need.kind == "tool" then
-    return { text = "tool " .. need.name, met = sim:hasTool(agentId, need.name) }
-  elseif need.kind == "skill" then
-    local sk = sim.skills[need.name]
-    return { text = "skill " .. need.name .. " saved in the Archive", met = sk ~= nil and sk.agent_type == agent.type }
-  elseif need.kind == "setting" then
-    return { text = need.label, met = agent.contextSettings[need.key] == need.value }
-  elseif need.kind == "upgrade" then
-    return { text = need.label, met = sim.upgrades[need.id] == true }
-  elseif need.kind == "monitor_alert" then
-    local st = sim.monitorSettings
-    return { text = "Monitor alert " .. need.name .. " on", met = st ~= nil and st.alertTypes ~= nil and st.alertTypes[need.name] == true }
-  elseif need.kind == "monitor_heartbeat_off" then
-    local st = sim.monitorSettings
-    return { text = "Monitor heartbeat off", met = st ~= nil and st.heartbeat == false }
+  for name in ((ex.text or "") .. " " .. (ex.text2 or "")):gmatch("[Ss]kill ([%w_]+)") do
+    local sk = sim.skills[name]
+    out[#out + 1] = { text = "skill " .. name .. " saved in the Archive", met = sk ~= nil and sk.agent_type == agent.type }
   end
-  return { text = tostring(need.kind), met = false }
+  if missionNeeds then out[#out + 1] = { text = "mission setup: " .. missionNeeds, met = false, info = true } end
+  return out
 end
 
--- The examples the player can pick for this agent, in config order. -> { { id, grade, gradeLabel, directive, hint, watch,
--- stubNote, prerequisites = { { text, met } }, ready, tokens, fits }, ... }
+local function entry(sim, agentId, ex, id, missionNeeds)
+  local cfg = sim.compute.cfg
+  local needs = prerequisites(sim, agentId, ex, missionNeeds)
+  local ready = true
+  for _, n in ipairs(needs) do if not n.met and not n.info then ready = false end end
+  local tokens = Compute.estimateTokens(cfg, ex.text)
+  local fits = tokens <= cfg.editor.directiveMaxTokens
+  if ex.text2 then fits = fits and Compute.estimateTokens(cfg, ex.text2) <= cfg.editor.directiveMaxTokens end
+  local stubNote
+  if sim.provider == nil and ex.support == "partial" then stubNote = ExamplesConfig.stubNote .. table.concat(ex.unread or {}, "; ") end
+  return { id = id, grade = ex.grade, gradeLabel = ExamplesConfig.grades[ex.grade], directive = ex.text, directive2 = ex.text2, hint = ex.hint,
+    watch = ex.outcome, stubNote = stubNote, prerequisites = needs, ready = ready, tokens = tokens, fits = fits }
+end
+
+-- The examples the player can pick for this agent, role first then mission. -> { { id, grade, gradeLabel, directive, directive2,
+-- hint, watch, stubNote, prerequisites = { { text, met } }, ready, tokens, fits }, ... }
 function Editor.examples(sim, agentId)
   local agent = sim.agents[agentId]
   local out = {}
   if not agent then return out end
-  local branch = sim.registry:branchOfAgentType(agent.type)
-  if branch and not Registry.isOpen(sim, branch) then return out end
-  local cfg = sim.compute.cfg
-  for _, ex in ipairs(ExamplesConfig.examples) do
-    if ex.role == agent.type and exampleVisible(sim, ex) then
-      local needs, ready = {}, true
-      for _, need in ipairs(ex.needs) do
-        local r = prerequisite(sim, agentId, need)
-        needs[#needs + 1] = r
-        if not r.met then ready = false end
-      end
-      local tokens = Compute.estimateTokens(cfg, ex.directive)
-      out[#out + 1] = { id = ex.id, grade = ex.grade, gradeLabel = ExamplesConfig.grades[ex.grade], directive = ex.directive, hint = ex.hint,
-        watch = ex.watch, stubNote = (sim.provider == nil and ex.stub ~= "ok") and ExamplesConfig.stubNote or nil,
-        prerequisites = needs, ready = ready, tokens = tokens, fits = tokens <= cfg.editor.directiveMaxTokens }
-    end
-  end
+  local lib = PromptLibrary.forAgent(sim, agentId)
+  for _, ex in ipairs(lib.role) do out[#out + 1] = entry(sim, agentId, ex, agent.type .. "_" .. ex.grade) end
+  local needs
+  for _, m in ipairs(PromptData.missions) do if m.id == lib.missionId then needs = m.needs end end
+  for _, ex in ipairs(lib.mission) do out[#out + 1] = entry(sim, agentId, ex, agent.type .. "_m" .. lib.missionId .. "_" .. ex.grade, needs) end
   return out
 end
 
@@ -215,7 +202,7 @@ function Editor.examplesView(sim, agentId, state)
   if not known then selected = nil end
   return { open = state.open == true, list = list, selected = selected, confirm = state.confirm, roleLabel = ExamplesConfig.roleLabels[agent.type] or agent.type,
     empty = ExamplesConfig.noExamples, noSelection = "Pick an example to preview it", watchLabel = ExamplesConfig.watchLabel,
-    noMeasure = ExamplesConfig.noMeasure, useLabel = "Use this directive", confirmLabel = "Replace unsaved text? Click again",
+    noMeasure = ExamplesConfig.noMeasure, secondAgent = ExamplesConfig.secondAgent, useLabel = "Use this directive", confirmLabel = "Replace unsaved text? Click again",
     tooLong = "Over the directive limit: cannot be used." }
 end
 

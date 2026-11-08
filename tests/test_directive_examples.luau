@@ -10,6 +10,8 @@ local Fit = require("@scripts/ui/fit")
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
 local Cfg = require("@scripts/config/directive_examples")
+local Library = require("@scripts/sim/prompt_library")
+local Data = require("@scripts/config/prompt_library")
 
 local view = Theme.layout.view
 local function walk(spec, fn) fn(spec) for _, c in ipairs(spec.children or {}) do walk(c, fn) end end
@@ -31,39 +33,27 @@ local function refinery()
   return s
 end
 
--- 1. the data: unique ids, valid grades and roles, real tools, directives within the limit, short hints
+-- 1. the editor reads the prompt library (data limits are covered by tests/test_prompt_library.luau)
 do
   local s = sim()
-  local seen = {}
+  assert(#Library.validate(s) == 0, "the library the editor reads is valid")
   local limit = s.compute.cfg.editor.directiveMaxTokens
-  for _, ex in ipairs(Cfg.examples) do
-    assert(not seen[ex.id], "duplicate id " .. ex.id)
-    seen[ex.id] = true
-    assert(Cfg.grades[ex.grade], ex.id .. ": grade")
-    assert(s.registry.agentTypes[ex.role], ex.id .. ": role " .. ex.role)
-    assert(Compute.estimateTokens(s.compute.cfg, ex.directive) <= limit, ex.id .. ": directive over the limit")
-    assert(utf8.len(ex.hint) <= Cfg.hintMax, ex.id .. ": hint over " .. Cfg.hintMax .. " chars")
-    assert(ex.stub == "ok" or ex.stub == "partial", ex.id .. ": stub flag")
-    for _, need in ipairs(ex.needs) do
-      if need.kind == "tool" then assert(s.registry.schemas[need.name], ex.id .. ": unknown tool " .. need.name) end
-    end
-  end
-  for _, role in ipairs({ "miner", "logistician", "monitor", "refiner", "scavenger", "privateer" }) do
-    local grades = {}
-    for _, ex in ipairs(Cfg.examples) do if ex.role == role then grades[ex.grade] = true end end
-    assert(grades.bad and grades.ok and grades.good, role .. " has BAD, OK and GOOD")
+  for _, ex in ipairs(Editor.examples(s, "miner")) do
+    assert(Compute.estimateTokens(s.compute.cfg, ex.directive) <= limit and ex.fits, ex.id .. ": directive within the limit")
+    assert(utf8.len(ex.hint) <= Data.hintMaxChars, ex.id .. ": hint length")
   end
 end
 
--- 2. filtering: role, mission start, locked branches
+-- 2. filtering: role, active mission, locked branches
 do
   local s = sim()
   local m = ids(Editor.examples(s, "miner"))
   assert(m.miner_bad and m.miner_ok and m.miner_good and m.miner_m1_ok, "mission 1 miner examples at game start")
   assert(not m.miner_m2_good and not m.miner_m5_good, "later missions stay hidden")
   for _, ex in pairs(m) do assert(ex.gradeLabel == Cfg.grades[ex.grade]) end
+  s.missions[1].status = "complete"
   s.missions[2].status = "active"
-  assert(ids(Editor.examples(s, "miner")).miner_m2_good, "mission 2 examples appear once it starts")
+  assert(ids(Editor.examples(s, "miner")).miner_m2_good, "mission 2 examples appear once it is active")
   for _, ex in ipairs(Editor.examples(s, "miner")) do assert(ex.id:find("^miner"), "only the miner's examples") end
 
   -- a branch role whose branch is closed gets nothing; once opened it lists its own role only
@@ -104,39 +94,50 @@ end
 -- 4. directive limit is respected
 do
   local s = sim()
-  local saved = Cfg.examples[1].directive
-  Cfg.examples[1].directive = string.rep("a", 1700)
+  s.aiConfig.editor.directiveMaxTokens = 5
+  s.compute.cfg.editor.directiveMaxTokens = 5
   local draft = Editor.newDraft(s, "miner")
-  local ex = ids(Editor.examples(s, "miner"))[Cfg.examples[1].id]
+  local ex = ids(Editor.examples(s, "miner")).miner_good
   assert(not ex.fits)
-  local ok, why = Editor.applyExample(s, "miner", draft, Cfg.examples[1].id)
+  local ok, why = Editor.applyExample(s, "miner", draft, "miner_good")
   assert(not ok and why == "too_long" and draft.directive == s.agents.miner.directive)
-  Cfg.examples[1].directive = saved
 end
 
 -- 5. prerequisites are reported, never granted; the stub note follows the provider
 do
   local s = sim()
-  s.missions[5].status = "active"
-  local good = ids(Editor.examples(s, "miner")).miner_m5_good
-  assert(not good.ready, "Orbis prices / trading post are missing at game start")
-  local missing = 0
-  for _, p in ipairs(good.prerequisites) do if not p.met then missing += 1 end end
-  assert(missing >= 1)
+  s.missions[1].status = "complete"
+  s.missions[3].status = "active"
+  local good = ids(Editor.examples(s, "miner")).miner_m3_good
+  assert(not good.ready, "the saved skill is missing at game start")
+  local sawSkill = false
+  for _, p in ipairs(good.prerequisites) do if p.text:find("skill K1Loop", 1, true) and not p.met then sawSkill = true end end
+  assert(sawSkill, "the missing skill is listed")
   local draft = Editor.newDraft(s, "miner")
-  assert(Editor.applyExample(s, "miner", draft, "miner_m5_good"))
-  assert(not ids(Editor.examples(s, "miner")).miner_m5_good.ready, "applying did not grant a prerequisite")
-  assert(s.upgrades.tradingPost ~= true)
+  assert(Editor.applyExample(s, "miner", draft, "miner_m3_good"))
+  assert(next(s.skills) == nil and not ids(Editor.examples(s, "miner")).miner_m3_good.ready, "applying did not grant the skill")
 
+  s.missions[3].status = "complete"
+  s.missions[2].status = "active"
+  local scan = ids(Editor.examples(s, "miner")).miner_m2_good
+  assert(scan and not scan.ready, "an example needing the scanner is listed with its blocker, not hidden")
+  local unmet = false
+  for _, p in ipairs(scan.prerequisites) do if not p.met and p.text:find("scanner", 1, true) then unmet = true end end
+  assert(unmet, "the scanner upgrade is named as missing")
+  s.missions[2].status = "complete"
+  s.missions[5].status = "active"
+  local setup = ids(Editor.examples(s, "miner")).miner_m5_good
+  local noted = false
+  for _, p in ipairs(setup.prerequisites) do if p.info and p.text:find("trading post", 1, true) then noted = true end end
+  assert(noted, "the mission setup (warehouse, trading post) is listed to check")
+
+  local l = refinery()
+  local ship = ids(Editor.examples(l, "refiner"))
   local partial
-  for _, ex in ipairs(Cfg.examples) do if ex.stub ~= "ok" and ex.role == "miner" then partial = ex end end
-  if partial then
-    for i = 1, 8 do s.missions[i].status = "active" end
-    assert(ids(Editor.examples(s, "miner"))[partial.id].stubNote == Cfg.stubNote, "stub limits are stated")
-    s.provider = {}
-    assert(ids(Editor.examples(s, "miner"))[partial.id].stubNote == nil, "no stub note with a real provider")
-    s.provider = nil
-  end
+  for _, ex in pairs(ship) do if ex.stubNote then partial = ex end end
+  assert(partial and partial.stubNote:find("does not read", 1, true), "stub limits are stated")
+  l.provider = {}
+  for _, ex in pairs(Editor.examples(l, "refiner")) do assert(ex.stubNote == nil, "no stub note with a real provider") end
 end
 
 -- 6. the shell: button, open panel, empty state, tiers, long text, narrow content
@@ -153,7 +154,8 @@ do
   assert(has(opened, "EXAMPLES") and has(opened, "Pick an example"), "preview prompt before selecting")
   for _, ex in ipairs(list) do assert(actions(opened)["editor.example.pick." .. ex.id]) end
 
-  s.missions[5].status = "active"
+  s.missions[1].status = "complete"
+  s.missions[3].status = "active"
   for _, ex in ipairs(Editor.examples(s, "miner")) do
     local sp = Shell.spec(s, "agents", { examples = { open = true, selected = ex.id } })
     assert(#Fit.check(sp, view) == 0, ex.id .. ": " .. table.concat(Fit.check(sp, view), "\n"))
@@ -179,7 +181,8 @@ do
   for tier = 1, 5 do
     local t = sim()
     t.tier = tier
-    for i = 1, 8 do t.missions[i].status = "active" end
+    t.missions[1].status = "complete"
+    t.missions[3].status = "active"
     local sp = Shell.spec(t, "agents", { examples = { open = true, selected = "miner_good" }, draft = { directive = string.rep("word ", 300), order = "" } })
     assert(#Fit.check(sp, view) == 0, "T" .. tier .. ": " .. table.concat(Fit.check(sp, view), "\n"))
   end

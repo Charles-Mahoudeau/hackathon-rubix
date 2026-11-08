@@ -480,7 +480,11 @@ local function examplesPanel(font, x: number, y: number, w: number, h: number, e
   }
   if #selected.prerequisites == 0 then detail[#detail + 1] = text(font, "none", T.small, "text") end
   for _, need in ipairs(selected.prerequisites) do
-    detail[#detail + 1] = scrollText(font, (need.met and "ok       " or "MISSING  ") .. need.text, T.small, need.met and "green" or Theme.semantic.warning, rw)
+    detail[#detail + 1] = scrollText(font, (need.met and "ok       " or need.info and "check    " or "MISSING  ") .. need.text, T.small, need.met and "green" or Theme.semantic.warning, rw)
+  end
+  if selected.directive2 then
+    detail[#detail + 1] = text(font, ex.secondAgent, T.small, "dim")
+    detail[#detail + 1] = scrollText(font, selected.directive2, T.body, "cyan", rw)
   end
   if selected.stubNote then detail[#detail + 1] = scrollText(font, selected.stubNote, T.small, Theme.semantic.warning, rw) end
   if not selected.fits then detail[#detail + 1] = scrollText(font, ex.tooLong, T.small, Theme.semantic.error, rw) end
