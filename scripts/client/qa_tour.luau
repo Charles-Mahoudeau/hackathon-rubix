@@ -48,6 +48,8 @@ end
 Tour.steps = {
 	{ name = "map", actions = { "nav.map" } },
 	{ name = "agents-editor", actions = { "nav.agents", "editor.tab.editor" } },
+	{ name = "agents-examples", actions = { "editor.examples.toggle", "editor.example.pick.miner_good" } },
+	{ name = "agents-examples-used", actions = { "editor.example.use.miner_good" } },
 	{ name = "agents-context", actions = { "editor.tab.context" } },
 	{ name = "agents-context-format-json", actions = { "context.format.2" } },
 	{ name = "team", actions = { "nav.team" } },

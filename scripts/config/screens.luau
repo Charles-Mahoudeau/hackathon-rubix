@@ -65,13 +65,22 @@ return {
     routeSpacing = 14, -- view pixels between two dashes of a route line
   },
 
-  -- Agent editor (GR5-5): view pixels inside the main panel. The two text inputs are their own UI tree, so typing never
-  -- loses focus when the shell redraws; the shell leaves a hole at each field.
+  -- Agents screen (GR5-5, GR5-67): view pixels inside the main panel, scaled from the 1248x616 wireframe to the real main panel
+  -- (list on the left, detail on the right, scroll regions for anything long). The two text inputs are their own UI tree,
+  -- so typing never loses focus when the shell redraws; the shell leaves a hole at each field.
   editor = {
-    leftWidth = 600, fieldHeight = 36, directiveY = 60, orderY = 136, buttonsY = 200, toastY = 244, costX = 624,
-    agent = "miner", -- the agent the screen edits until there are several (GR5-28)
+    agent = "miner", -- the agent the screen edits (GR5-28: set by the list and by the Team rows)
+    listWidth = 232, listRowHeight = 36, listHeaderHeight = 28, gap = 12,
+    identityY = 0, identityHeight = 40, boxY = 48, boxHeight = 140, directiveWidth = 408,
+    fieldY = 44, fieldHeight = 36, previewY = 86, previewHeight = 46, barY = 28, barHeight = 8,
+    actionsY = 192, actionsHeight = 36, toolsY = 234, toolsHeight = 122, feedY = 364, feedHeight = 144,
     placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)" },
+    emptyList = "No agents", noSelection = "Select an agent", feedLines = 8, saveButton = 'Save as skill', feedEmpty = "No tool calls yet.",
   },
+
+  -- Context screen (GR5-6, GR5-67): settings list on the left, the exact rendered context and its cost on the right.
+  contextView = { listWidth = 400, gap = 12, headerHeight = 72, footerHeight = 80, rowHeight = 40, title = "CONTEXT PREVIEW", none = "No context",
+    totalLabel = "Total per decision" },
 
   -- Agents screen tabs (GR5-6): the editor and the Context panel share the left panel; the tab buttons sit in its header.
   tabs = { { id = "editor", label = "Editor", x = 300, w = 100 }, { id = "context", label = "Context", x = 408, w = 110 }, y = 8 },
@@ -118,6 +127,8 @@ return {
     headerY = 28 },
 
   -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
+  archiveView = { listWidth = 336, gap = 12, headerHeight = 64, rowHeight = 32, identityHeight = 64, footerHeight = 72, paramsWidth = 264,
+    noSkills = "No skills", noSelection = "Select a skill", selected = "skill" },
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },
   -- Skill studio (GR5-26, spec §13.3): record from the feed, the manual form, and assigning a skill with its parameter values.
   -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls one page of the Record tab lists (Older / Newer turn the pages).
@@ -126,9 +137,9 @@ return {
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
-  -- The current mission is the left column (text wraps at textWidth); the mission list is the right column from listX.
-  missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, textWidth = 540, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 44, optionalIndent = 24, rewardX = 230, optionalButtonOffset = 150 },
+  -- The current mission is the left column (one line per brief string); the mission list is the right column from listX.
+  missions = { nameY = 30, goalY = 66, briefLine = 18, hintY = 126, hintLine = 16, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
+    buttonWidth = 140, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 96, optionalLine = 16, optionalProgressX = 270, optionalIndent = 24, rewardX = 260, optionalButtonX = 330 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,

@@ -96,7 +96,7 @@ function Market.saturation(m, mid, ore) return m.markets[mid].res[ore].s end
 function Market.sell(m, mid, ore, qty)
   local mk = m.markets[mid]
   local r = mk.res[ore]
-  local unit = baseOf(ore) * r.d * r.s
+  local unit = round1(baseOf(ore) * r.d * r.s)
   r.s = math.max(C.satFloor, r.s - qty / (r.depth or mk.depth))
   return unit, math.floor(qty * unit)
 end
