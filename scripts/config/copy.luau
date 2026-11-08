@@ -89,7 +89,7 @@ return {
       no_free_freighter = "No free freighter.",
       out_of_scope = "Agent outside Monitor scope.",
       agent_locked = "Agent locked against Monitor changes.",
-      too_long = "Order exceeds token limit.",
+      too_long = "Order is over the limit.",
     },
     byPrefix = {
       { prefix = "unknown or disallowed tool:", text = "Invalid tool call." },
@@ -98,8 +98,8 @@ return {
   },
 
   editor = {
-    directiveOver = "Directive exceeds token limit.",
-    orderOver = "Order exceeds token limit.",
+    directiveOver = "Directive is over the limit.",
+    orderOver = "Order is over the limit.",
   },
 
   skill = { aborted = "Skill aborted; see reason." },
