@@ -27,7 +27,8 @@ if engine.isClient then
 	else
 		-- Only the windowed client draws the shell; a headless client has no window and no Ui plugin.
 		engine.settings.scripts.client = "client/main"
-		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.Text", "rtype.Ui", "rtype.audio" }, 1, 7, #plugins + 1, plugins)
+		-- rtype.Sprite only brings the SpriteRenderer component: rtype.SpriteDraw is what draws those entities (planets, background).
+		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.SpriteDraw", "rtype.Text", "rtype.Ui", "rtype.audio" }, 1, 8, #plugins + 1, plugins)
 		engine.settings.platform = "glfw"
 		engine.settings.renderer = "vulkan"
 		engine.settings.window.title = "GRIDMIND"
