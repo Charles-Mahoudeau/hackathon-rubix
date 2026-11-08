@@ -29,7 +29,11 @@ end
 
 -- Compute the Monitor spent since the mission opened, on the same 0.1 billing step.
 local function monitorSpent(sim, e)
-  return math.floor(((sim.compute.lifetime.monitor or 0) - e.baseMonitor) * 10 + 0.5) / 10
+  local total = 0
+  for _, id in ipairs(sim.agentOrder) do
+    if sim.agents[id].type == "monitor" then total += sim.compute.lifetime[id] or 0 end
+  end
+  return math.floor((total - e.baseMonitor) * 10 + 0.5) / 10
 end
 
 -- Worker agents of every branch (spec §15b.0): all but the Logisticians and the Monitor, in agent order.
@@ -103,7 +107,9 @@ local function begin(sim, e, d)
         break
       end
     end
-  elseif d.check == "watch" then e.resolved, e.pending, e.failed, e.baseMonitor = 0, {}, false, sim.compute.lifetime.monitor or 0
+  elseif d.check == "watch" then
+    e.resolved, e.pending, e.failed, e.baseMonitor = 0, {}, false, 0
+    e.baseMonitor = monitorSpent(sim, e)
   elseif d.check == "frugal" then e.baseRevenue, e.baseCompute, e.failed = sim.lifetimeRevenue, sim.compute.lifetimeTotal, false end
 end
 

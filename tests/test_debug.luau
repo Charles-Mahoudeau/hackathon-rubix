@@ -128,7 +128,9 @@ do
   local fresh = Sim.new(); fresh:setDecider(Ai.decide); fresh:run(10)
   assert(DebugPanel.act(fresh, ps, "debug.lastPrompt") and ps.prompt and ps.prompt:find("%[CONTEXT%]"), "the raw prompt, not the context table")
   local m = DebugPanel.model(fresh, ps)
-  assert(m.promptTitle and #m.promptLines > 0 and #m.promptLines <= require("@scripts/config/screens").debug.promptLines)
+  assert(m.promptTitle and #m.promptLines > 0)
+  ps.prompt = string.rep("long prompt\n", 100)
+  assert(#DebugPanel.model(fresh, ps).promptLines >= 100, "long prompts remain available to scroll")
 
   -- reset save: needs a second click; swaps in a fresh game
   local st = Persistence.memoryStorage()

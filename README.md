@@ -134,3 +134,5 @@ tools/run_engine_test.sh "$(tools/engine.sh path)"  # headless self-test
 ## Contributing
 
 See [AGENTS.md](AGENTS.md). Commits must follow Conventional Commits.
+
+For token accounting and its current limitations, see [docs/token-usage.md](docs/token-usage.md).
