@@ -66,6 +66,23 @@ return {
     placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)" },
   },
 
+  -- Agents screen tabs (GR5-6): the editor and the Context panel share the left panel; the tab buttons sit in its header.
+  tabs = { { id = "editor", label = "Editor", x = 300, w = 100 }, { id = "context", label = "Context", x = 408, w = 110 }, y = 8 },
+
+  -- Compute block under the editor (GR5-6): per-agent Compute/h, the hourly AI budget and the buy packs.
+  compute = { y = 280, rowHeight = 18, packs = 3, buyWidth = 176, buyGap = 8, barWidth = 220 },
+
+  -- Context panel (GR5-6): one row per setting, each option a button showing the tokens it adds to every decision.
+  context = {
+    rowY = 64, rowHeight = 38, labelWidth = 176, optionX = 196, optionWidth = 116, optionGap = 6, stepWidth = 32,
+    labels = {
+      prices_hmc = "HMC depot prices", prices_orbis = "Orbis prices", prices_halcyon = "Halcyon prices",
+      prices_meridian = "Meridian prices", price_trends = "Price trends", format = "Context format",
+      recent_results = "Recent results", veins = "Veins shown", inbox = "Inbox", warehouse = "Warehouse stock",
+    },
+    values = { ["true"] = "on", ["false"] = "off" }, -- everything else is shown as its own text
+  },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed
