@@ -15,6 +15,7 @@ local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
+local Studio = require("@scripts/ui/skill_studio")
 local MarketView = require("@scripts/ui/market_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
@@ -430,6 +431,7 @@ local function logsScreen(font, r, m)
     rows[#rows + 1] = text(font, "RESULT", T.small, "dim")
     rows[#rows + 1] = wrapped(d.result, (d.isError and d.validation == "ok") and Theme.semantic.error or "text")
     if d.credits ~= 0 then rows[#rows + 1] = text(font, ("Credits from this action: %+d"):format(d.credits), T.small, "green") end
+    if d.record then rows[#rows + 1] = button(font, d.record.label, d.record.action, "cyan", 220) end
   end
   local rightPanel = panel({ x = r.x + c.listWidth + L.gap, y = r.y, w = r.w - c.listWidth - L.gap, h = r.h },
     { direction = "column", gap = 3, padding = L.pad, overflow = "hidden" })
@@ -657,15 +659,54 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
--- Archive (GR5-10, spec §13/§14): company-wide skills with who runs them, the slot count, the demo "Simulate 1 h away"
--- button and the "While you were away" box.
-local function archiveScreen(font, r, m)
+-- Archive tab strip and the studio's last message, shared by every Archive mode (GR5-26).
+local function studioHeader(font, r, kids, sm)
+  local c = Screens.studio
+  for i, t in ipairs(sm.tabs) do
+    kids[#kids + 1] = at(c.tabX + (i - 1) * (c.tabWidth + c.tabGap), L.pad, button(font, t.label, t.action, t.active and "cyan" or "dim", c.tabWidth))
+  end
+  if sm.message then
+    kids[#kids + 1] = at(L.pad, r.h - 28, text(font, sm.message.text, T.small, sm.message.bad and Theme.semantic.warning or "green"))
+  end
+end
+
+-- Rows of text and buttons (record, form, assign): laid out top to bottom from the studio's rowY.
+local function studioRows(font, kids, rows)
+  local c = Screens.studio
+  local y = c.rowY
+  for _, row in ipairs(rows) do
+    local x = L.pad
+    for _, cell in ipairs(row) do
+      if cell.action then
+        kids[#kids + 1] = at(x, y, button(font, cell.label, cell.action, cell.color, cell.w))
+        x += cell.w + c.rowGap
+      else
+        kids[#kids + 1] = at(x, y + 6, text(font, cell.text, T.small, cell.color))
+        x += (cell.w or (#cell.text * 7 + 8)) + c.rowGap
+      end
+    end
+    y += c.rowHeight
+  end
+end
+
+-- Archive (GR5-10, spec §13/§14; GR5-26 studio): company-wide skills with who runs them and with what values, the slot
+-- count, the demo "Simulate 1 h away" button, the "While you were away" box, and the Record / New skill / Run-on tabs.
+local function archiveScreen(font, r, m, sm)
   local c = Screens.archive
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "ARCHIVE  " .. m.slots.text .. "  skills run with zero Compute", T.small, "dim"))
+  nodeAt(L.pad, L.pad + 6, text(font, "ARCHIVE  " .. m.slots.text, T.small, "dim"))
+  studioHeader(font, r, kids, sm)
   if m.simulateAway then nodeAt(r.w - L.pad - c.buttonWidth, L.pad, button(font, "Simulate 1 h away", m.simulateAway, "cyan", c.buttonWidth)) end
+  if sm.rows then
+    studioRows(font, kids, sm.rows)
+    return withChildren(panel(r, nil), kids)
+  end
   local y = c.rowY
+  if #m.skills == 0 then
+    nodeAt(L.pad, y, text(font, Screens.empty.archive.title .. ": " .. Screens.empty.archive.hint, T.small, "dim"))
+    nodeAt(L.pad, y + c.rowHeight, text(font, "Use Record (from the feed) or New skill (the form) above.", T.small, "dim"))
+  end
   for _, s in ipairs(m.skills) do
     local head = ("%s  (%s%s)  %s"):format(s.name, s.agentType, s.loop and ", loops" or "", table.concat(s.params, " "))
     nodeAt(L.pad, y, text(font, head, T.body, "cyan"))
@@ -677,10 +718,16 @@ local function archiveScreen(font, r, m)
     end
     for _, u in ipairs(s.runners) do
       nodeAt(L.pad + 12, y, text(font, ("run by %s %s%s"):format(u.agent, u.params, u.aborted and ("  ABORTED: " .. u.aborted) or ""), T.small, u.aborted and Theme.semantic.error or "green"))
-      if u.restart then nodeAt(r.w - L.pad - 90, y - 4, button(font, "Restart", u.restart, Theme.semantic.warning, 90)) end
+      nodeAt(r.w - L.pad - 70, y - 4, button(font, "Stop", u.stop, "dim", 70))
+      if u.restart then nodeAt(r.w - L.pad - 70 - 8 - 90, y - 4, button(font, "Restart", u.restart, Theme.semantic.warning, 90)) end
       y += c.rowHeight
     end
-    y += c.skillGap
+    local x = L.pad + 12
+    for _, a in ipairs(s.assigns) do
+      nodeAt(x, y, button(font, a.label, a.action, "cyan", 150))
+      x += 158
+    end
+    y += (#s.assigns > 0 and 34 or 0) + c.skillGap
   end
   if m.offline then
     local x = r.w - L.pad - c.offlineWidth
@@ -777,8 +824,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = fleetScreen(font, rects.main, FleetView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
-  elseif screenId == "archive" and (sim.skills and next(sim.skills) or sim.lastOfflineReport) then
-    children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim))
+  elseif screenId == "archive" then
+    children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))
   elseif screenId == "market" and sim:hasWarehouse() then
     children[#children + 1] = marketScreen(font, rects.main, MarketView.model(sim))
   else

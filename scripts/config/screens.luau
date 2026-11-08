@@ -104,6 +104,10 @@ return {
 
   -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },
+  -- Skill studio (GR5-26, spec §13.3): record from the feed, the manual form, and assigning a skill with its parameter values.
+  -- Rows are laid out top to bottom from rowY; `calls` is how many recordable feed calls the Record tab lists.
+  studio = { tabX = 380, tabWidth = 96, tabGap = 6, rowY = 48, rowHeight = 34, rowGap = 6, textWidth = 520, argWidth = 150, smallWidth = 30,
+    toolWidth = 70, bigButtonWidth = 190, callWidth = 700, calls = 12, autoNameFallback = "skill" },
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.

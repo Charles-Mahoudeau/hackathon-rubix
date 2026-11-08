@@ -81,7 +81,9 @@ return {
   },
   warehouse = { capacity = 2000, unlockTier = 3, extraSkillSlots = 2 },
   -- Skills (spec §13): name length, recording length, steps per skill, the shortest loop and the Compute needed to wake the AI.
-  skills = { nameMax = 24, recordMin = 2, recordMax = 8, stepsMax = 12, minLoopSeconds = 5, wakeMinCompute = 1 },
+  skills = { nameMax = 24, recordMin = 2, recordMax = 8, stepsMax = 12, minLoopSeconds = 5, wakeMinCompute = 1,
+    -- Values the skill form cycles through for number-like args (spec §13.3: dropdowns and number fields, no free text).
+    form = { pctOptions = { 50, 70, 90, 100 }, qtyOptions = { "all", 50, 100, 500 }, waitOptions = { 10, 30, 60, 120 }, guardPrices = { 8, 12, 20, 30, 60 } } },
   -- Offline progress (spec §14): at most maxHours simulated, an absence under minAwaySeconds is ignored.
   offline = { maxHours = 8, minAwaySeconds = 60 },
   reputationLevels = { 25000, 75000, 200000, 500000, 1200000 }, -- spec §6.7: lifetime revenue for Rep 1..5

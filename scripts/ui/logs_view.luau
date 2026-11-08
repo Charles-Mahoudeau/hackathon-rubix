@@ -4,6 +4,7 @@
 local Screens = require("@scripts/config/screens")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Feed = require("@scripts/sim/feed")
+local Skills = require("@scripts/sim/skills")
 local Versions = require("@scripts/sim/versions")
 local Model = require("@scripts/ui/shell_model")
 
@@ -238,10 +239,15 @@ function View.model(sim, view)
       pending = rec.validation == "pending", selected = rec.id == view.selected, action = "logs.select." .. rec.id }
   end
   local selected = DecisionLog.find(sim, view.selected)
+  local detailModel = selected and detail(selected) or nil
+  if detailModel and selected.source == "ai" and not DecisionLog.isError(selected) and Skills.feedIdForRecord(sim, selected.id) then
+    -- "Save as skill" from the Logs (spec §13.3): opens the Archive's recorder with this call as the first one.
+    detailModel.record = { label = "Save as skill from here", action = "studio.rec.from." .. selected.id }
+  end
   return {
     header = header, agents = agents, sources = sources, errorsOnly = view.errorsOnly,
     rows = rows, shown = #list, total = View.total(sim), page = page, pages = pages,
-    detail = selected and detail(selected) or nil, hint = cfg.hint,
+    detail = detailModel, hint = cfg.hint,
     compareButton = { label = "Compare versions", action = "logs.compare", active = view.compare },
     compare = view.compare and compareModel(sim, view) or nil,
   }

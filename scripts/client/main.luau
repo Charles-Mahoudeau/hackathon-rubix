@@ -14,6 +14,7 @@ local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
+local SkillStudio = require("@scripts/ui/skill_studio")
 local OfflineView = require("@scripts/ui/offline_view")
 local MarketView = require("@scripts/ui/market_view")
 local UiTheme = require("@scripts/ui/theme")
@@ -26,6 +27,7 @@ local state = {
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
+	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 }
 
 local function despawnAll(commands, list)
@@ -47,7 +49,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	if state.ui then commands:despawn(state.ui) end
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
 	state.shell.screen = shown
 end
 
@@ -120,6 +122,11 @@ engine.ecs.system("game.Shell", {
 			if FleetView.act(state.sim, click.action) then changed = true end
 			if MissionsView.act(state.sim, click.action) then changed = true end
 			if ArchiveView.act(state.sim, click.action) then changed = true end
+			local handled, openScreen = SkillStudio.act(state.sim, state.studio, click.action)
+			if handled then changed = true end
+			if openScreen and openScreen ~= state.shell.screen then
+				state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
+			end
 			if OfflineView.act(state.sim, click.action) then changed = true end
 			if Clock.act(state.sim, click.action) then changed = true end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
@@ -152,7 +159,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
 		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
-		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) end
+		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		local due = now - state.lastRefresh >= Screens.refreshSeconds
