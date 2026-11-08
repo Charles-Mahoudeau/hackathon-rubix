@@ -174,10 +174,10 @@ end
 
 -- Mission V1 ---------------------------------------------------------------------------------------------------------
 
--- -> { id, name, goal, hint, reward, status = locked|active|complete|claimed, units, target }
+-- -> { id, name, brief, hint, reward, status = locked|active|complete|claimed, units, target }
 function Refining.mission(sim)
   local e, d = sim.refining.mission, Cfg.mission
-  return { id = d.id, name = d.name, goal = d.goal, hint = d.hint, reward = d.reward, status = e.status, units = e.units, target = d.units }
+  return { id = d.id, name = d.name, brief = d.brief, hint = d.hint, reward = d.reward, status = e.status, units = e.units, target = d.units }
 end
 
 -- A refined good was sold at `unit` credits each: it counts when that is at least margin x the base value of its inputs.

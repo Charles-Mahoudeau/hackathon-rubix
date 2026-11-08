@@ -983,16 +983,13 @@ local function missionsScreen(font, r, m)
   local c = Screens.missions
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  local width = c.textWidth
-  local function wrapped(str, colorName)
-    return { style = { maxWidth = width }, text = { text = str, font = font, size = T.body, color = UiTheme.color(colorName), wrap = true } }
-  end
   local cur = m.current
   if cur then
     nodeAt(L.pad, L.pad, text(font, ("MISSION %d / %d"):format(cur.index, m.total), T.small, "dim"))
     nodeAt(L.pad, c.nameY, text(font, cur.name, T.heading, "cyan"))
-    nodeAt(L.pad, c.goalY, wrapped(cur.goal, "text"))
-    nodeAt(L.pad, c.hintY, wrapped("Hint: " .. cur.hint, "dim"))
+    for i, briefLine in ipairs(cur.brief) do nodeAt(L.pad, c.goalY + (i - 1) * c.briefLine, text(font, briefLine, T.body, "text")) end
+    nodeAt(L.pad, c.hintY, text(font, "Hint", T.small, "dim"))
+    nodeAt(L.pad, c.hintY + c.hintLine, text(font, cur.hint, T.body, "dim"))
     if cur.locked then
       nodeAt(L.pad, c.barY, text(font, cur.progressText, T.body, Theme.semantic.warning))
     else
@@ -1018,16 +1015,27 @@ local function missionsScreen(font, r, m)
     for i, key in ipairs(row.icons) do nodeAt(c.listX + c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
     nodeAt(c.listX + c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
-  -- Optional branch missions take two lines: the name and progress, then the reward and the Claim / Retry button.
+  -- Optional branch missions: the name, progress and Claim / Retry button on the first line, the brief lines, the hint, then the reward.
   for j, row in ipairs(m.optional) do
     local y = c.listY + #m.rows * c.rowHeight + c.optionalGap + (j - 1) * c.optionalRowHeight
     local color = row.state == "claimed" and "green" or (row.failed and Theme.semantic.warning or (row.state == "current" and "cyan" or "dim"))
-    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
+    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    nodeAt(c.listX + c.optionalProgressX, y, text(font, row.progressText, T.small, color))
     local x = c.listX + c.optionalIndent
-    for i, key in ipairs(row.icons) do nodeAt(x + (i - 1) * (ICON.row + 2), y + c.rowHeight, Icon.node(key, ICON.row, color)) end
-    nodeAt(x + #row.icons * (ICON.row + 2), y + c.rowHeight, text(font, row.reward, T.small, color))
-    if row.claim then nodeAt(x + c.optionalButtonOffset, y + c.rowHeight - 6, button(font, "Claim", row.claim, "green", 80)) end
-    if row.retry then nodeAt(x + c.optionalButtonOffset, y + c.rowHeight - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
+    local line = 1
+    for _, briefLine in ipairs(row.brief) do
+      nodeAt(x, y + line * c.optionalLine, text(font, briefLine, T.small, "text"))
+      line += 1
+    end
+    if row.hint then
+      nodeAt(x, y + line * c.optionalLine, text(font, row.hint, T.small, "dim"))
+      line += 1
+    end
+    local ry = y + line * c.optionalLine
+    for i, key in ipairs(row.icons) do nodeAt(x + (i - 1) * (ICON.row + 2), ry, Icon.node(key, ICON.row, color)) end
+    nodeAt(x + #row.icons * (ICON.row + 2), ry, text(font, row.reward, T.small, color))
+    if row.claim then nodeAt(c.listX + c.optionalButtonX, y - 7, button(font, "Claim", row.claim, "green", 80)) end
+    if row.retry then nodeAt(c.listX + c.optionalButtonX, y - 7, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
   end
   return withChildren(panel(r, nil), kids)
 end
