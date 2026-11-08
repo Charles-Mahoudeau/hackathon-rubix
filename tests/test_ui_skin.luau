@@ -51,7 +51,9 @@ local function lint(spec, where, skinned)
   end
   if spec.image then
     images += 1
-    assert(spec.image.texture and #spec.image.slice == 4, where .. ": image slice")
+    -- a nine-patch carries its 4 slices; an icon (ui/icon.luau) is a plain tinted image whose tint is a palette colour
+    assert(spec.image.texture and (spec.image.slice == nil or #spec.image.slice == 4), where .. ": image slice")
+    if spec.image.slice == nil then assert(paletteName(spec.image.color), where .. ": icon tint is a palette colour") end
   end
   if spec.text then
     texts += 1

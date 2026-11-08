@@ -141,6 +141,9 @@ return {
   debug = { rowY = 40, rowHeight = 40, labelWidth = 110, buttonWidth = 128, buttonGap = 8, statusGap = 12, toastGap = 22, promptGap = 34,
     promptLines = 14, promptChars = 120, promptLineHeight = 15 },
 
+  -- Emergency-advance notification (GR5-74, spec §8.5): a banner pinned to the top right of the main panel.
+  notice = { width = 420, height = 44, margin = 8, buttonWidth = 110 },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed

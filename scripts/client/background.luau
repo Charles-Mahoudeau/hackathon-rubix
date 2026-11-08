@@ -17,7 +17,7 @@ end
 
 local shader, texture
 
-local function material(name: string, def, r)
+local function material(name: string, def, r, size)
 	shader = shader or engine.assets.shader(r.shaderPath)
 	texture = texture or engine.assets.texture(r.texturePath)
 	local stars = def.stars or { "text", "text" }
@@ -27,7 +27,9 @@ local function material(name: string, def, r)
 		values = {
 			mode = def.mode,
 			seed = def.seed,
-			pixels = def.pixels or r.pixels,
+			-- Square cells of r.pixelSize view pixels, about the planets' own grid, over the area this layer covers.
+			pixels = size.y / (def.pixelSize or r.pixelSize),
+			aspect = size.x / size.y,
 			size = def.size,
 			octaves = r.octaves,
 			drift = { x = def.drift.x, y = def.drift.y },
@@ -38,6 +40,7 @@ local function material(name: string, def, r)
 			ramp3 = paletteColor(def.ramp[4]),
 			star1 = paletteColor(stars[1]),
 			star2 = paletteColor(stars[2]),
+			twinkle = def.twinkle or 0,
 		},
 	})
 end
@@ -59,7 +62,7 @@ function Background.new(screenId: string, size, position)
 				texture = texture,
 				source = { x = 0, y = 0, z = r.textureSize, w = r.textureSize }, -- the whole texture: UV 0..1
 				origin = { x = r.textureSize / 2, y = r.textureSize / 2 },
-				material = material("background." .. screenId .. "." .. i, def, r),
+				material = material("background." .. screenId .. "." .. i, def, r, size),
 				layer = def.layer,
 			},
 		}
