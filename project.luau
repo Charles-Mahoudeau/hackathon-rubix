@@ -9,7 +9,12 @@ engine.settings.scripts.server = "server/main"
 
 local plugins = {}
 
-if engine.isServer then
+-- `--selftest`: boot the engine, run the sim checks of scripts/server/selftest.luau, exit 0 (pass) or 1 (fail). No network call.
+local selftest = engine.args.selftest
+
+if selftest then
+	engine.settings.scripts.server = "server/selftest"
+elseif engine.isServer then
 	-- Axis AI (GR5-15): requests go out from the server only. The keys are read from the environment by the engine
 	-- (AXIS_API_KEY = apk-... platform key, AXIS_GATEWAY_KEY = Relais sk-... key) and never pass through a script.
 	-- Keep in step with scripts/config/ai.luau.
