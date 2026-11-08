@@ -129,9 +129,10 @@ function Monitor.validate(sim, agent, n, args)
   if not Monitor.inScope(sim, target, agent) then return false, "out_of_scope" end
   if target.monitorLock then return false, "agent_locked" end
   if n == "set_order" then
-    if type(args.text) ~= "string" then return false, "bad_args" end
-    if Compute.estimateTokens(sim.compute.cfg, args.text) > sim.compute.cfg.editor.orderMaxTokens then return false, "too_long" end
+    if args.text ~= nil and type(args.text) ~= "string" then return false, "bad_args" end
+    if Compute.estimateTokens(sim.compute.cfg, args.text or "") > sim.compute.cfg.editor.orderMaxTokens then return false, "too_long" end
   elseif n == "assign_skill" then
+    if args.skill == "none" then return true end -- clears the target's skill
     local skill, err = Skills.canStart(sim, target.id, args.skill, args.params)
     if not skill then
       if err == "unknown_skill" and sim.skills[args.skill or ""] then err = "wrong_agent_type" end
@@ -169,16 +170,17 @@ function Monitor.apply(sim, agentId, call, rid)
   local target = sim.agents[args.agent]
   local result, data = nil, {}
   if n == "set_order" then
-    sim:setOrder(target.id, args.text)
-    target.orderSource = "monitor"
+    local text = args.text or ""
+    sim:setOrder(target.id, text)
+    target.orderSource = text ~= "" and "monitor" or nil
     -- an aborted skill does not read the order: hand the agent back to its AI
     if skillAborted(target) then Skills.stop(sim, target.id) end
-    tell(sim, target.id, "order from the Monitor: " .. args.text)
-    result, data = "order set", { order_set = (args.text or "") ~= "" }
+    tell(sim, target.id, text ~= "" and ("order from the Monitor: " .. text) or "the Monitor cleared the order")
+    result, data = text ~= "" and "order set" or "order cleared", { order_set = text ~= "" }
   elseif n == "assign_skill" then
     Skills.assign(sim, target.id, args.skill, args.params)
-    tell(sim, target.id, "the Monitor assigned skill " .. args.skill)
-    result, data = "running " .. args.skill, { assigned = args.skill }
+    tell(sim, target.id, args.skill == "none" and "the Monitor cleared the skill" or ("the Monitor assigned skill " .. args.skill))
+    result, data = args.skill == "none" and "skill cleared" or ("running " .. args.skill), { assigned = args.skill }
   elseif n == "pause_agent" then
     target.pausedBy = "monitor"
     sim:pauseAgent(target.id, Words.pause.monitor)

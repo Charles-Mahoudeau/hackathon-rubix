@@ -164,13 +164,13 @@ do
   assert(#provider.records >= 2, "several decisions")
 end
 
--- ---- Failures never crash and fall back to the stub ----
+-- ---- Failures never crash; they count toward the pause (spec 8.4), no stub stands in ----
 local function failureCase(name, handler, expectLog, delay, cfgOverride, seconds, noFallback)
   local sim, provider, net = newSetup(handler, delay, cfgOverride)
   local okRun, err = pcall(run, sim, provider, seconds or 8)
   assert(okRun, name .. " crashed: " .. tostring(err))
   assert(logHas(sim, "ERROR", expectLog), name .. ": expected an ERROR log containing '" .. expectLog .. "'")
-  assert(noFallback or logHas(sim, "WARN", "fell back to stub"), name .. ": stub fallback")
+  assert(not logHas(sim, "WARN", "fell back to stub"), name .. ": no stub fallback (spec 8.4)")
   assert(sim.ships.s1.state ~= "idle" or sim.ships.s1.cargo > 0 or sim.tick > 0, name)
   return sim, provider, net
 end
@@ -197,10 +197,12 @@ failureCase("unknown tool", modelSays('{"tool":"dig","args":{}}'), "unknown or u
 failureCase("bad args", modelSays('{"tool":"mine","args":{"vein":7}}'), "must be a string")
 -- Schema-valid but refused by the sim: logged by apply(), no stub; the agent re-decides after the cooldown.
 failureCase("valid call the sim refuses", modelSays('{"tool":"mine","args":{"vein":"K99"}}'), "rejected mine (unknown vein)", nil, nil, nil, true)
--- A reply that never comes: the turn times out after timeoutSeconds, then the stub plays.
+-- A reply that never comes: the turn times out after timeoutSeconds and counts as a provider error.
 do
   local sim, provider, net = failureCase("timeout", function() return "never" end, "timeout", 0, { timeoutSeconds = 5 }, 8)
-  assert(next(provider.axis.turns) == nil, "timed-out turn forgotten")
+  local live = 0
+  for _ in pairs(provider.axis.turns) do live += 1 end
+  assert(live <= 1, "timed-out turn forgotten (only the retry may be in flight)")
   assert(next(net.cancelled) ~= nil, "in-flight request cancelled")
 end
 -- A slow reply that lands after the deadline is dropped, not applied.

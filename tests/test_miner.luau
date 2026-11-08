@@ -118,7 +118,7 @@ do
     return s
   end
   local s = pausedAfter(function() return { name = "dig", args = {} } end)
-  assert(s.agents.miner.state == "paused_error", "2 invalid responses pause: " .. s.agents.miner.state)
+  assert(s.agents.miner.state == "paused_error", "the same refused call twice pauses: " .. s.agents.miner.state)
   local n = 0
   for _, l in ipairs(s.logs) do if l.msg:find("rejected dig", 1, true) then n += 1 end end
   assert(n == 2, "stopped after 2, got " .. n)
@@ -138,6 +138,18 @@ do
   assert(p.agents.miner.state ~= "paused_error", "2 provider errors are tolerated")
   p:noteFailure("miner", "provider")
   assert(p.agents.miner.state == "paused_error", "3 provider errors pause")
+
+  local inv = Sim.new()
+  inv:noteFailure("miner", "invalid")
+  assert(inv.agents.miner.state ~= "paused_error", "1 invalid response is tolerated")
+  inv:noteFailure("miner", "invalid")
+  assert(inv.agents.miner.state == "paused_error" and inv.agents.miner.blockReason == require("@scripts/config/copy").pause.invalid, "2 invalid responses pause")
+
+  local two = Sim.new()
+  two:noteFailure("miner", "sim", "call A"); two:noteFailure("miner", "sim", "call B"); two:noteFailure("miner", "sim", "call A")
+  assert(two.agents.miner.state ~= "paused_error", "two different sim failures do not pause")
+  two:noteFailure("miner", "sim", "call A")
+  assert(two.agents.miner.state == "paused_error" and two.agents.miner.blockReason == "Agent stuck: same action failed twice.", "same failing call twice: exact message")
 
   local ok = Sim.new()
   ok:noteFailure("miner", "invalid"); ok:noteSuccess("miner"); ok:noteFailure("miner", "invalid")

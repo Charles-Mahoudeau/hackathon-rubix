@@ -127,16 +127,15 @@ function Log.failed(sim, rec, why, call)
   emit(sim, rec, true)
 end
 
--- The sim accepted the call (apply). A fallback keeps the provider's failure as its validation.
-function Log.accepted(sim, rec, call, fallback)
+-- The sim accepted the call (apply).
+function Log.accepted(sim, rec, call)
   if not rec then return end
   rec.tool_call = { tool = call.name, args = call.args or {} }
   if rec.validation == "pending" then rec.validation = "ok" end
-  if fallback then rec.fallback = true end
   rec.t_real_received = rec.t_real_received or now(sim)
   countError(sim, rec)
   emit(sim, rec, true)
-  if rec.source == "ai" and not fallback then sim:emit("decision_accepted", { agent = rec.agent_id, id = rec.id }) end
+  if rec.source == "ai" then sim:emit("decision_accepted", { agent = rec.agent_id, id = rec.id }) end
 end
 
 -- The action ended (a feed line got its result).

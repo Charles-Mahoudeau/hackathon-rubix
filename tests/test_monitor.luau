@@ -150,6 +150,23 @@ do
   assert(s.agents.miner.state == "idle")
 end
 
+-- 4b. assign_skill "none" and a null set_order clear what the Monitor set (GR5-78, spec 8.9)
+do
+  local s = withMonitor()
+  s.agents.monitor_1.directive = "Manage."
+  assert(s:apply("monitor_1", { name = "assign_skill", args = { agent = "miner", skill = "Titanium loop", params = { vein = "K1" } } }))
+  assert(s.agents.miner.mode == "skill" and s.agents.miner.activeSkill == "Titanium loop")
+  local ok, err = s:apply("monitor_1", { name = "assign_skill", args = { agent = "miner", skill = "none" } })
+  assert(ok, tostring(err))
+  assert(s.agents.miner.mode == "ai" and s.agents.miner.activeSkill == nil, "assign_skill none clears the skill")
+  assert(s:apply("monitor_1", { name = "set_order", args = { agent = "miner", text = "mine cobalt" } }))
+  assert(s.agents.miner.order == "mine cobalt" and s.agents.miner.orderSource == "monitor")
+  ok, err = s:apply("monitor_1", { name = "set_order", args = { agent = "miner" } })
+  assert(ok, tostring(err))
+  assert(s.agents.miner.order == "" and s.agents.miner.orderSource == nil, "null set_order clears order and order_source")
+  assert(not s:apply("monitor_1", { name = "set_order", args = { agent = "miner", text = 5 } }), "non-string text still refused")
+end
+
 -- 5. mission 8: the Monitor resolves 3 alerts within budget
 do
   local Missions = require("@scripts/sim/missions")
