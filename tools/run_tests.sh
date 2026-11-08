@@ -5,6 +5,8 @@ dir=$(cd "$(dirname "$0")/.." && pwd)
 status=0
 echo "== check_palette"
 "$dir/tools/check_palette.sh" || status=1
+echo "== check_audio"
+"$dir/tools/check_audio.sh" || status=1
 for t in "$dir"/tests/*.luau; do
   echo "== $(basename "$t")"
   luau "$t" || status=1
