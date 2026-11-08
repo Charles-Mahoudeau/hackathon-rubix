@@ -461,6 +461,8 @@ function Shell.editorFields()
   return {
     directive = { x = x0 + L.pad, y = y, w = e.directiveWidth - 2 * L.pad, h = e.fieldHeight },
     order = { x = x0 + e.directiveWidth + e.gap + L.pad, y = y, w = ow - 2 * L.pad, h = e.fieldHeight },
+    -- display name: top of the right column of the tools box
+    name = { x = x0 + e.directiveWidth - L.pad - e.teamColW, y = m.y + e.toolsY + 34, w = e.teamColW, h = 26 },
   }
 end
 
@@ -653,7 +655,7 @@ local function editorScreen(font, r, m, opts)
   local ident = panel({ x = x0, y = r.y, w = dw, h = e.identityHeight }, nil)
   local k = {}
   k[#k + 1] = Icon.at(Icon.agentKeyOfId(m.agentId), L.pad, 4, 32, opts.state == "paused_error" and Theme.semantic.error or "cyan")
-  k[#k + 1] = at(L.pad + 44, 4, text(font, m.agentId, T.heading, "text"), 200, 20)
+  k[#k + 1] = at(L.pad + 44, 4, text(font, m.team.name == m.agentId and m.agentId or ("%s (%s)"):format(m.team.name, m.agentId), T.heading, "text"), 260, 20)
   k[#k + 1] = at(L.pad + 44, 24, text(font, ("%s  -  %s  -  %s"):format(m.type, m.state, m.mode), T.small, "dim"), 300, 16)
   for _, n in ipairs(Glow.light({ x = L.pad + 36, y = 28 }, opts.state, opts.time or 0)) do k[#k + 1] = n end
   for _, n in ipairs(tabs(font, "editor", 300, 6)) do k[#k + 1] = n end
@@ -707,14 +709,25 @@ local function editorScreen(font, r, m, opts)
   local tw = e.directiveWidth - 2 * L.pad
   tb.children[#tb.children + 1] = at(e.directiveWidth - L.pad - 100, 4, button(font, "Context", "editor.tab.context", "cyan", 100))
   local tools = {}
+  local listW = tw - e.teamColW - L.pad
   for _, t in ipairs(m.tools) do
-    tools[#tools + 1] = row({ Icon.node(Icon.toolKey(t.name), ICON.row, "dim"), text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") })
+    tools[#tools + 1] = row({ Icon.node(Icon.toolKey(t.name), ICON.row, "dim"), text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text"),
+      button(font, "x", "editor.tool." .. t.name, "dim", 24) })
+  end
+  for _, name in ipairs(m.team.freeTools) do
+    tools[#tools + 1] = row({ Icon.node(Icon.toolKey(name), ICON.row, "dim"), text(font, name, T.small, "dim"), button(font, "+", "editor.tool." .. name, "cyan", 24) })
   end
   for _, t in ipairs(m.lockedTools) do
     tools[#tools + 1] = row({ Icon.node(Icon.toolKey(t.name), ICON.row, Theme.semantic.warning), text(font, ("%s  locked: %s"):format(t.name, t.reason), T.small, Theme.semantic.warning) })
   end
   tools[#tools + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
-  tb.children[#tb.children + 1] = scrollBox(L.pad, 34, tw, e.toolsHeight - 34 - L.pad, tools)
+  tb.children[#tb.children + 1] = scrollBox(L.pad, 34, listW, e.toolsHeight - 34 - L.pad, tools)
+  -- right column: the name input sits in the hole at the top, then the home station and Dismiss
+  local colX = e.directiveWidth - L.pad - e.teamColW
+  if m.team.home then
+    tb.children[#tb.children + 1] = at(colX, 62, button(font, "Home: " .. m.team.home.station, m.team.home.action, "dim", e.teamColW))
+  end
+  tb.children[#tb.children + 1] = at(colX, 90, button(font, opts.confirmDismiss and "Confirm dismiss" or "Dismiss", m.team.dismissAction, opts.confirmDismiss and "amber" or "dim", e.teamColW))
   out[#out + 1] = tb
   out[#out + 1] = modeBox(font, x0 + e.directiveWidth + e.gap, r.y + e.toolsY, ow, e.toolsHeight, m, opts.compute)
 
@@ -1498,6 +1511,7 @@ function Shell.inputsSpec(draft, opts)
     children = {
       field(f.directive, draft.directive, "editor.directive", e.placeholder.directive),
       field(f.order, draft.order, "editor.order", e.placeholder.order),
+      field(f.name, draft.name or "", "editor.name", e.placeholder.name),
     } }
 end
 
@@ -1565,7 +1579,7 @@ function Shell.spec(sim, screenId: string, opts)
       local draft = opts.draft or Editor.newDraft(sim, id)
       nodes = editorScreen(font, rects.main, Editor.model(sim, id, draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute,
         state = sim.agents[id].state, time = opts.time, draft = draft, list = Editor.list(sim, id), feed = Editor.feed(sim, id),
-        examples = Editor.examplesView(sim, id, opts.examples) })
+        examples = Editor.examplesView(sim, id, opts.examples), confirmDismiss = opts.confirmDismiss })
     end
     for _, n in ipairs(nodes) do children[#children + 1] = n end
   elseif screenId == "logs" and LogsView.total(sim) > 0 then
