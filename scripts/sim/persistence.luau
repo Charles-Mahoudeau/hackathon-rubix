@@ -22,6 +22,7 @@ function Persistence.serialize(sim, savedAt)
   for id, ship in pairs(sim.ships) do
     local copy = Sim.deepCopy(ship)
     copy.vein = ship.vein and ship.vein.id or nil
+    copy.feedEntry = ship.feedEntry and ship.feedEntry.id or nil -- relinked to the feed list on load
     ships[id] = copy
   end
   return {
@@ -43,6 +44,8 @@ function Persistence.serialize(sim, savedAt)
       logs = sim.logs,
       debug = sim.debug,
       lastDecision = sim.lastDecision,
+      feed = sim.feed,
+      feedSeq = sim.feedSeq,
     }),
     veins = veins,
     ships = ships,
@@ -53,7 +56,7 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "deepNav", "home", "skills", "logs", "debug", "lastDecision" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
@@ -67,6 +70,11 @@ function Persistence.restore(data, opts)
   sim.ships = {}
   for id, saved in pairs(Sim.deepCopy(data.ships)) do
     saved.vein = saved.vein and sim.veins[saved.vein] or nil
+    if saved.feedEntry then
+      local id = saved.feedEntry
+      saved.feedEntry = nil
+      for _, e in ipairs(sim.feed) do if e.id == id then saved.feedEntry = e end end
+    end
     sim.ships[id] = saved
   end
   return sim

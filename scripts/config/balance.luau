@@ -23,15 +23,14 @@ return {
     logistician = { tools = { "store", "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
   },
   ai = {
-    delaySecondsMin = 2, delaySecondsMax = 4, computePerDecision = 1, vagueErrorRate = 0.5,
+    delaySecondsMin = 2, delaySecondsMax = 4, vagueErrorRate = 0.5, -- Compute cost per decision: config/ai.luau
     thrashMaxDecisions = 5, thrashWindowSeconds = 30, -- spec §8.3: max decisions per agent per window of game time
-    stubTokensPerDecision = 600, -- placeholder until the token estimator (spec §6.4) replaces it
   },
   crowding = { perExtraShip = 0.5 }, -- spec §5.1: each ship on a shared vein mines at 1 / (1 + perExtraShip x (n - 1))
   -- spec §8.5: the only free Compute in the game
   bailout = { computeBelow = 2, creditsBelow = 200, grantCompute = 3, cooldownSeconds = 300 },
   freighter = { cargo = 500 }, -- spec §5.2
-  warehouse = { capacity = 2000 },
+  warehouse = { capacity = 2000, unlockTier = 3 },
   logMax = 200,
   seed = 1234,
 }

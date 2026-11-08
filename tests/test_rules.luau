@@ -74,7 +74,7 @@ do
   local s = Sim.new()
   s.resources.compute = 100000
   local times = {}
-  s:setDecider(function(sim, id) times[#times + 1] = sim.tick; return { name = "dig", args = {} } end) -- always invalid, ship stays idle
+  s:setDecider(function(sim, id) times[#times + 1] = sim.tick; return { name = "report", args = { message = "x" } } end) -- valid but does nothing, ship stays idle
   s:run(6000)
   local win, worst = s:ticks(Balance.ai.thrashWindowSeconds), 0
   for i = 1, #times do
