@@ -46,9 +46,17 @@ function View.model(sim)
     types[#types + 1] = { type = t, label = Copy.alert(t), on = st.alertTypes[t] == true, action = "alerts.type." .. t }
   end
   local blocker = Monitor.hireBlocker(sim)
+  local agents = {}
+  for _, id in ipairs(sim.agentOrder) do
+    local a = sim.agents[id]
+    local scope = sim.registry:scopeOfAgentType(a.type)
+    if a.type ~= "monitor" and (st.scope == "company" or scope == st.scope) then
+      agents[#agents + 1] = { id = id, state = a.state, task = a.activeSkill or a.mode, locked = a.monitorLock == true }
+    end
+  end
   local rows = Alerts.rows(sim, monitor or false)
   for _, r in ipairs(rows) do r.label = Copy.alert(r.type) end
-  local acts = history(monitor, Screens.alerts.historyRows)
+  local acts = history(monitor, monitor and #monitor.history or 0)
   return {
     hired = hired,
     state = hired and Words.states.open or (blocker and Words.states.locked or Words.states.available),
@@ -62,13 +70,15 @@ function View.model(sim)
     heartbeatActions = { down = "alerts.heartbeat.down", up = "alerts.heartbeat.up", off = "alerts.heartbeat.off" },
     types = types,
     rows = rows,
+    agents = agents,
   }
 end
 
 function View.signature(sim)
   local monitor = Monitor.agent(sim, sim.monitorSettings.scope)
   local st = monitor and monitor.monitorSettings or sim.monitorSettings
-  local parts = { tostring(monitor ~= nil), sim.monitorSettings.scope, tostring(st.heartbeat), tostring(#sim.alerts.list) }
+  local parts = { tostring(monitor ~= nil), sim.monitorSettings.scope, tostring(st.heartbeat), tostring(#sim.alerts.list), tostring(sim.recordRev) }
+  for _, id in ipairs(sim.agentOrder) do local a = sim.agents[id]; parts[#parts + 1] = id .. a.state .. tostring(a.monitorLock) .. tostring(a.activeSkill) end
   for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(st.alertTypes[t]) end
   for _, r in ipairs(Alerts.rows(sim, monitor or false)) do parts[#parts + 1] = r.id .. r.status end
   parts[#parts + 1] = tostring(monitor and #monitor.history or 0) .. tostring(monitor and monitor.histSeq or 0)
