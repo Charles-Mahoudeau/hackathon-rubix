@@ -1198,7 +1198,7 @@ function Shell.spawn(commands, sim, screenId: string, opts)
   opts = opts or {}
   opts.font = opts.font or UiTheme.font()
   opts.skin = opts.skin or UiTheme.panelSkin()
-  Icon.loader = Icon.loader or engine.assets.texture
+  Icon.useLoader(engine.assets.texture)
   local spec, shown = Shell.spec(sim, screenId, opts)
   return engine.ui.spawn(commands, spec), shown
 end

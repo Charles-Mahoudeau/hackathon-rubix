@@ -40,6 +40,11 @@ jobs:
             echo "::error::Engine exited with code $code while booting the game — see log above."
             exit 1
           fi
+          # The engine can print "Error: ..." (e.g. unordered systems) and keep a server alive, so the log is checked too.
+          if grep -nE '^Error:|\[ScriptSystem\].*failed' engine-run.log; then
+            echo "::error::The engine logged an error while booting the game — see above."
+            exit 1
+          fi
           echo "Game booted cleanly on engine nightly for 15s with no crash."
 
       - name: Upload boot log
