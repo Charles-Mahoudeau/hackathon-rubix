@@ -3,6 +3,7 @@
 -- skill mode. Pure sim logic: it talks to the UI only through sim events.
 local World = require("@scripts/config/world")
 local Feed = require("./feed")
+local Words = require("@scripts/config/copy")
 local Market = require("./market")
 local Alerts = require("./alerts")
 
@@ -311,7 +312,7 @@ local function stop(sim, agentId, agent, reason, completed)
   Skills.closeRun(sim, agentId, completed and "completed" or reason)
   local text = completed and ("skill '%s' completed"):format(name) or ("skill '%s' aborted: %s"):format(name, reason)
   sim:log(completed and "INFO" or "WARN", agentId .. ": " .. text)
-  Feed.error(sim, agentId, text)
+  Feed.error(sim, agentId, completed and text or ("%s %s: %s"):format(Words.skill.aborted, name, reason))
   local inbox = agent.inbox
   inbox[#inbox + 1] = text
   if #inbox > 20 then table.remove(inbox, 1) end

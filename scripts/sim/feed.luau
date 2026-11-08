@@ -2,6 +2,7 @@
 -- Sim-side data plus events only; the UI reads `sim.feed` and listens to `feed_event`.
 local Ai = require("@scripts/config/ai")
 local DecisionLog = require("@scripts/sim/decision_log")
+local Copy = require("@scripts/sim/copy")
 
 local Feed = {}
 
@@ -75,7 +76,7 @@ end
 function Feed.refused(sim, agentId, call, err)
   local name = type(call) == "table" and call.name or "?"
   return push(sim, { agent = agentId, kind = "error", status = "failed", tool = name,
-    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. " → ERROR " .. tostring(err) })
+    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. (" → ERROR %s (%s)"):format(Copy.error(err), tostring(err)) })
 end
 
 function Feed.info(sim, agentId, text, source) return push(sim, { agent = agentId, kind = "info", text = text, source = source }) end

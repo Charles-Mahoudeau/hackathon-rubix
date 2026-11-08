@@ -6,6 +6,7 @@ local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
 local Skills = require("@scripts/sim/skills")
+local Words = require("@scripts/config/copy")
 
 local Editor = {}
 
@@ -30,6 +31,14 @@ function Editor.canSave(sim, draft)
     and Compute.estimateTokens(sim.compute.cfg, draft.order) <= e.orderMaxTokens
 end
 
+-- Which limit blocks saving, in the words of config/copy.luau (nil when both texts fit).
+function Editor.limitNote(directive, order)
+  local parts = {}
+  if directive.state == "over" then parts[#parts + 1] = Words.editor.directiveOver end
+  if order.state == "over" then parts[#parts + 1] = Words.editor.orderOver end
+  return #parts > 0 and table.concat(parts, " ") or nil
+end
+
 -- The whole editor for one agent.
 function Editor.model(sim, agentId, draft)
   local cfg = sim.compute.cfg
@@ -47,11 +56,14 @@ function Editor.model(sim, agentId, draft)
   end
 
   local saved = Editor.newDraft(sim, agentId)
+  local directiveCounter = counter(cfg, draft.directive, cfg.editor.directiveMaxTokens)
+  local orderCounter = counter(cfg, draft.order, cfg.editor.orderMaxTokens)
   return {
     agentId = agentId,
-    directive = counter(cfg, draft.directive, cfg.editor.directiveMaxTokens),
-    order = counter(cfg, draft.order, cfg.editor.orderMaxTokens),
+    directive = directiveCounter,
+    order = orderCounter,
     canSave = Editor.canSave(sim, draft),
+    limitNote = Editor.limitNote(directiveCounter, orderCounter),
     dirty = draft.directive ~= saved.directive or draft.order ~= saved.order,
     orderActive = agent.order ~= "",
     orderSource = (agent.order ~= "" and agent.orderSource) or nil,

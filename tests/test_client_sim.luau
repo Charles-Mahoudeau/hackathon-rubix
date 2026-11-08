@@ -35,7 +35,8 @@ assert(sold, "feed lists the sale")
 -- without the decider (the old client path) nothing happens
 local Sim = require("@scripts/sim/sim")
 local bare = Sim.new()
+local feed0 = #bare.feed
 bare:setDirective(id, "mine titanium at K1, return at 90%")
 bare:run(600)
-assert(#bare.feed == 0 and bare.resources.credits == credits0, "a sim with no decider stays idle")
+assert(#bare.feed == feed0 and bare.resources.credits == credits0, "a sim with no decider stays idle")
 print("test_client_sim ok")

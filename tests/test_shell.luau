@@ -222,7 +222,7 @@ do
   assert(Debug.run(s, "setStuck"), "debug panel sets the stuck state")
   s:step()
   local n = Model.notification(s)
-  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.text:find("%+3"), "offer in the shell model")
+  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.button:find("%+3"), "offer in the shell model")
   assert(Model.signature(s, "map") ~= sigBefore, "the shell redraws when the offer appears")
   for _, screen in ipairs({ "map", "missions" }) do
     assert(#claimButtons(Shell.spec(s, screen), {}) == 1, "Claim button on " .. screen)

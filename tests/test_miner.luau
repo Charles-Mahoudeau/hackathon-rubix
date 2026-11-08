@@ -57,11 +57,11 @@ do
   local miner = s.agents.miner
   assert(miner.state == "no_compute" and miner.blockReason, "badge: " .. tostring(miner.state))
   local msgs = 0
-  for _, e in ipairs(s.feed) do if e.text:find("no_compute", 1, true) then msgs += 1 end end
+  for _, e in ipairs(s.feed) do if e.text == require("@scripts/config/copy").notEnoughCompute then msgs += 1 end end
   assert(msgs == 1, "one feed message, got " .. msgs)
   s:run(100)
   msgs = 0
-  for _, e in ipairs(s.feed) do if e.text:find("no_compute", 1, true) then msgs += 1 end end
+  for _, e in ipairs(s.feed) do if e.text == require("@scripts/config/copy").notEnoughCompute then msgs += 1 end end
   assert(msgs == 1, "still one message")
   local cr, cp = s.resources.credits, s.resources.compute
   assert(s:buyCompute(1))
@@ -127,7 +127,7 @@ do
   assert(#feedCalls(s) >= 1, "plays again after resume")
 
   s = pausedAfter(function() return { name = "mine", args = { vein = "K99" } } end, { errorRules = { invalidResponses = 99, providerErrors = 3, sameFailingCall = 2 } })
-  assert(s.agents.miner.state == "paused_error" and s.agents.miner.blockReason:find("same call"), "same failing call twice")
+  assert(s.agents.miner.state == "paused_error" and s.agents.miner.blockReason == require("@scripts/config/copy").pause.same, "same failing call twice")
 
   local p = Sim.new()
   p:noteFailure("miner", "provider"); p:noteFailure("miner", "provider")
