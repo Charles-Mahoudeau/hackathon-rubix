@@ -12,6 +12,7 @@ local DebugPanel = {}
 DebugPanel.entries = {
   { name = "addCredits", label = "+ Credits" },
   { name = "addCompute", label = "+ Compute" },
+  { name = "setStuck", label = "Stuck state" },
   { name = "setTier", label = "Set tier" },
   { name = "revealVeins", label = "Reveal all veins" },
   { name = "triggerShortage", label = "Trigger shortage" },
@@ -72,7 +73,8 @@ function DebugPanel.model(sim, state)
   for _, h in ipairs(c.awayChoices) do away[#away + 1] = btn("simulateAway", ("%d h"):format(h), h) end
   local provider = Ai.provider()
   local groups = {
-    { label = "Economy", buttons = { btn("addCredits", ("+%d credits"):format(c.creditBoost)), btn("addCompute", ("+%d Compute"):format(c.computeBoost)) } },
+    { label = "Economy", buttons = { btn("addCredits", ("+%d credits"):format(c.creditBoost)), btn("addCompute", ("+%d Compute"):format(c.computeBoost)),
+      btn("setStuck", "Stuck state") } },
     { label = "Progress", buttons = tiers },
     { label = "World", buttons = { btn("revealVeins", "Reveal veins"), btn("triggerShortage", "Shortage") } },
     { label = "Away", buttons = away },
@@ -99,6 +101,7 @@ end
 local function describe(name, arg, res)
   if name == "addCredits" then return ("+%d credits (now %d)"):format(arg and tonumber(arg) or DebugConfig.creditBoost, res) end
   if name == "addCompute" then return ("+%d Compute (now %.1f)"):format(arg and tonumber(arg) or DebugConfig.computeBoost, res) end
+  if name == "setStuck" then return res and "Stuck: HMC offers an emergency advance" or "Stuck state set (a skill or cargo still blocks the offer)" end
   if name == "setTier" then return "Tier set to T" .. res end
   if name == "revealVeins" then return ("Revealed %d veins"):format(res) end
   if name == "triggerShortage" then return ("Shortage started at %s on %s"):format(DebugConfig.shortage.market, DebugConfig.shortage.ore) end
