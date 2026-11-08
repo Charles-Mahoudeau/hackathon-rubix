@@ -34,12 +34,14 @@ local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
 local Cues = require("@scripts/render/vfx/cues")
+local DebugConfig = require("@scripts/config/debug")
+local QaTour = require("@scripts/client/qa_tour")
 
 -- One entity per sprite of a ship on the map (client/fleet_map.luau); `slot` finds its pose, which game.MapSprites writes.
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
 
 local state = {
-	fleet = FleetMap.new(), sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, tour = DebugConfig.qaTour and QaTour.new() or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
@@ -129,7 +131,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
 	state.shell.screen = shown
 end
 
@@ -170,6 +172,54 @@ local function editorClick(action)
 	return true
 end
 
+-- One click, wherever it came from (a UI button, or the QA tour). Returns true when the screen needs a redraw.
+local function dispatch(action, now, utc)
+	local changed = false
+	if editorClick(action) then changed = true end
+	if Shell.act(state.shell, action) then changed = true end
+	if ComputeView.act(state.sim, Screens.editor.agent, action) then changed = true end
+	if Model.act(state.sim, action) then changed = true end
+	if LogsView.act(state.logs, action) then changed = true end
+	if ShopView.act(state.sim, action) then changed = true end
+	if FleetView.act(state.sim, action) then changed = true end
+	if StationView.act(state.station, action) then changed = true end
+	if MissionsView.act(state.sim, action) then changed = true end
+	if AlertsView.act(state.sim, action) then changed = true end
+	if BranchesView.act(state.sim, action) then changed = true end
+	if ArchiveView.act(state.sim, action) then changed = true end
+	local handled, openScreen = SkillStudio.act(state.sim, state.studio, action)
+	if handled then changed = true end
+	if openScreen and openScreen ~= state.shell.screen then
+		state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
+	end
+	if OfflineView.act(state.sim, action) then changed = true end
+	local debugHandled, freshSim = DebugPanel.act(state.sim, state.debug, action, { storage = state.storage, path = state.save.cfg.file, savedAt = utc })
+	if debugHandled then changed = true end
+	if freshSim then Save.reset(state.save, now) end
+	local saveHandled, erased = Save.act(state.save, state.sim, action, now, utc)
+	if saveHandled then changed = true end
+	freshSim = freshSim or erased
+	if freshSim then
+		state.sim, state.draft, state.toast, state.inputsDirty = SimHost.attach(freshSim), nil, nil, true
+		state.uiSig, state.worldSig = nil, nil
+	end
+	if Clock.act(state.sim, action) then changed = true end
+	local teamHandled, teamAgent = TeamView.act(state.sim, action)
+	if teamHandled and teamAgent then
+		Screens.editor.agent = teamAgent
+		action = "nav.agents"
+		state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
+	end
+	local screen = Shell.parseAction(action, state.sim.tier)
+	if screen and screen ~= state.shell.screen then
+		state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
+		if screen == "agents" then
+			state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, Screens.editor.agent), nil, true
+		end
+	end
+	return changed
+end
+
 engine.ecs.system("game.Shell", {
 	phase = "Update",
 	side = "client",
@@ -191,6 +241,12 @@ engine.ecs.system("game.Shell", {
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
+		if state.tour and QaTour.update(state.tour, {
+			dispatch = function(a) return dispatch(a, now, utc) end, now = now, sim = function() return state.sim end,
+			setSim = function(sim) state.sim, state.draft, state.inputsDirty, state.uiSig, state.worldSig = SimHost.attach(sim), nil, true, nil, nil end,
+		}) then
+			state.uiSig = nil
+		end
 		Clock.advance(state.sim, dt)
 		local changed = false
 		if not state.musicStarted then
@@ -222,48 +278,7 @@ engine.ecs.system("game.Shell", {
 		for click in ctx.events.read("rtype.UiClicked") do
 			local tick = Audio.onEvent(state.audio, { name = "ui_click" }, { speed = 1 })
 			if tick then Sounds.play(ctx, tick) end
-			if editorClick(click.action) then changed = true end
-			if Shell.act(state.shell, click.action) then changed = true end
-			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
-			if Model.act(state.sim, click.action) then changed = true end
-			if LogsView.act(state.logs, click.action) then changed = true end
-			if ShopView.act(state.sim, click.action) then changed = true end
-			if FleetView.act(state.sim, click.action) then changed = true end
-			if StationView.act(state.station, click.action) then changed = true end
-			if MissionsView.act(state.sim, click.action) then changed = true end
-			if AlertsView.act(state.sim, click.action) then changed = true end
-			if BranchesView.act(state.sim, click.action) then changed = true end
-			if ArchiveView.act(state.sim, click.action) then changed = true end
-			local handled, openScreen = SkillStudio.act(state.sim, state.studio, click.action)
-			if handled then changed = true end
-			if openScreen and openScreen ~= state.shell.screen then
-				state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
-			end
-			if OfflineView.act(state.sim, click.action) then changed = true end
-			local debugHandled, freshSim = DebugPanel.act(state.sim, state.debug, click.action, { storage = state.storage, path = state.save.cfg.file, savedAt = utc })
-			if debugHandled then changed = true end
-			if freshSim then Save.reset(state.save, now) end
-			local saveHandled, erased = Save.act(state.save, state.sim, click.action, now, utc)
-			if saveHandled then changed = true end
-			freshSim = freshSim or erased
-			if freshSim then
-				state.sim, state.draft, state.toast, state.inputsDirty = SimHost.attach(freshSim), nil, nil, true
-				state.uiSig, state.worldSig = nil, nil
-			end
-			if Clock.act(state.sim, click.action) then changed = true end
-			local teamHandled, teamAgent = TeamView.act(state.sim, click.action)
-			if teamHandled and teamAgent then
-				Screens.editor.agent = teamAgent
-				click = { action = "nav.agents" }
-				state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
-			end
-			local screen = Shell.parseAction(click.action, state.sim.tier)
-			if screen and screen ~= state.shell.screen then
-				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
-				if screen == "agents" then
-					state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, Screens.editor.agent), nil, true
-				end
-			end
+			if dispatch(click.action, now, utc) then changed = true end
 		end
 
 		-- The window is closing: save before the frame ends (the engine finishes this frame, then exits).

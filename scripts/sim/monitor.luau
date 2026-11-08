@@ -179,9 +179,9 @@ function Monitor.apply(sim, agentId, call, rid)
   return true, { agent = target.id, result = result }
 end
 
--- Number of decisions of `agentId` that ended in an error during the last 10 game minutes.
+-- Number of decisions of `agentId` that ended in an error during the last `monitorErrorWindowSeconds`.
 local function errors10m(sim, agentId)
-  local from, n = sim.tick * sim.b.tickSeconds - 600, 0
+  local from, n = sim.tick * sim.b.tickSeconds - sim.b.monitorErrorWindowSeconds, 0
   for _, rec in ipairs(sim.records[agentId] or {}) do
     if rec.t_game >= from and DecisionLog.isError(rec) then n += 1 end
   end
