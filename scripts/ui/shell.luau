@@ -178,8 +178,8 @@ local function empty(font, r, id)
   })
 end
 
-local function feedStrip(font, r, lines)
-  local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
+local function feedStrip(font, r, lines, qaLabel)
+  local rows = { text(font, "AGENT FEED" .. (qaLabel and ("   [QA " .. qaLabel .. "]") or ""), T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
   -- One line per entry, cut to the strip: a wrapped entry would push the newest ones out of the fixed-height panel.
   local gap = 4
@@ -1106,7 +1106,7 @@ function Shell.spec(sim, screenId: string, opts)
   local children = {
     topBar(font, rects.top, bar),
     nav(font, rects.nav, Model.nav(sim.tier, screenId), screenId),
-    feedStrip(font, rects.feed, Model.feed(sim)),
+    feedStrip(font, rects.feed, Model.feed(sim), opts.qaLabel),
   }
   if screenId == Screens.defaultScreen then
     -- The map panel is transparent over the world: planets are drawn behind it, labels and routes in front.
