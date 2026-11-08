@@ -1,2 +1,4 @@
 - 2026-11-07 — GR5-19: Miner tiers = one hull (Support Ship) + module overlay sprites; Freighter = Frigate hull at 1.6x. Reason: tier look without 3 full sprites; distinct silhouette at map size. Map uses simplified icons (diamond vs wide rect) so readability does not depend on the sprite.
 - 2026-11-07 — GR5-19: Void Fleet Pack 1 is CC0 → no credits entry required (optional courtesy line only).
+- 2026-11-08 — GR5-19: Pack has no isolated Mk2/Mk3 module overlays, so miner tiers share the Support ship hull and differ by engine overlay scale + shader `tier_glow` param (config/ships.luau). Dedicated module art deferred. Stretch candidate "Battleship" → "Battlecruiser" (actual pack name).
+- 2026-11-08 — GR5-19: Map-icon readability is guaranteed by simplified shape icons (diamond vs wide rect), not by downscaled sprites; hulls also differ in silhouette (Support ship wide with pincers, Frigate tall/narrow) and the freighter is 1.6x.
