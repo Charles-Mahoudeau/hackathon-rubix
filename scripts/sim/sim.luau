@@ -9,6 +9,7 @@ local Prompt = require("@scripts/sim/prompt")
 local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
+local Versions = require("@scripts/sim/versions")
 local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 local Missions = require("@scripts/sim/missions")
@@ -16,6 +17,7 @@ local Market = require("@scripts/sim/market")
 local Rng = require("@scripts/sim/rng")
 local Skills = require("@scripts/sim/skills")
 local Logistics = require("@scripts/sim/logistics")
+local Clock = require("@scripts/sim/clock")
 local MarketConfig = require("@scripts/config/market")
 
 local Sim = {}
@@ -47,6 +49,7 @@ function Sim.new(opts)
     self.rng.stub = s
     return s / 2147483648
   end
+  Clock.init(self)
   Feed.init(self)
   DecisionLog.init(self)
   self.resources = { credits = b.startCredits, compute = b.startCompute, reputation = b.startReputation }
@@ -87,7 +90,8 @@ function Sim.new(opts)
     for k, v in pairs(AiConfig) do aiCfg[k] = v end
     for k, v in pairs(opts.aiConfig) do aiCfg[k] = v end
   end
-  self.aiQueue = AiQueue.new(aiCfg, opts.aiClock or function() return self.tick * b.tickSeconds end)
+  -- The hourly token budget is a REAL hour (spec §10.4): the default clock is real seconds (game time / speed).
+  self.aiQueue = AiQueue.new(aiCfg, opts.aiClock or function() return self.realTicks * b.tickSeconds end)
   self.aiConfig = aiCfg
   self.compute = Compute.new(self.resources, aiCfg, function() return self.tick * b.tickSeconds end, self.aiQueue)
   self.missions = Missions.new()
@@ -862,6 +866,13 @@ function Sim:thrashAllowed(agent)
   return #h < self.b.ai.thrashMaxDecisions
 end
 
+-- Above x1 a real provider gets at most one request per agent per `speed.aiMinRealSeconds` of REAL time, so the world
+-- running faster never raises the real request rate. The stub makes no request and is not paced. Game-time deterministic.
+function Sim:paceAllowed(agent)
+  if not self.provider or self.speed <= 1 or not agent.lastRequestTick then return true end
+  return self.tick - agent.lastRequestTick >= self:ticks(self.b.speed.aiMinRealSeconds * self.speed)
+end
+
 local function setAgentState(self, agent, state, why)
   if agent.state == state then return end
   if agent.state == "paused_error" then return end -- only resumeAgent leaves it
@@ -986,6 +997,7 @@ function Sim:stepAgent(id, agent)
     if (agent.type == "miner" or agent.type == "logistician") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
     return
   end
+  if not self:paceAllowed(agent) then return end
   local prompt = Prompt.build(self, id)
   local canSend, reason = self.compute:canSend(prompt.input)
   if not canSend then
@@ -1017,6 +1029,7 @@ function Sim:stepAgent(id, agent)
   local charge, cost = self.compute:charge(id, prompt.input)
   local rec = DecisionLog.open(self, id, prompt, cost)
   agent.decisions[#agent.decisions + 1] = self.tick
+  agent.lastRequestTick = self.tick
   if self.provider then
     agent.pending = { provider = true, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, rec = rec.id,
       started = status == "running", prompt = Prompt.forProvider(self, id, prompt) }
@@ -1034,6 +1047,7 @@ end
 
 function Sim:step()
   self.tick = self.tick + 1
+  self.realTicks = self.realTicks + 1 / self.speed
   if self.provider then
     for _, resp in ipairs(self.provider:drain()) do self:onAiResponse(resp) end
   end
@@ -1056,6 +1070,7 @@ function Sim:step()
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
   end
   if not offline then self:updateBailout() end
+  Versions.step(self)
   Missions.update(self)
 end
 

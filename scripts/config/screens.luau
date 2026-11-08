@@ -90,6 +90,10 @@ return {
     sources = { { id = "all", label = "All" }, { id = "ai", label = "AI" }, { id = "skill", label = "Skills" } },
     agentButtonWidth = 96, sourceButtonWidth = 64, errorsButtonWidth = 120,
     hint = "Click a record to see its tokens, reasoning, call and result.",
+    compareButtonWidth = 150,
+    -- Prompt-version comparison (GR5-13): version picker buttons, diff line width in characters, column layout.
+    compare = { maxVersions = 8, lineChars = 58, maxLines = 9, lineHeight = 16, versionButtonWidth = 120, labelWidth = 150, valueWidth = 150, rowHeight = 20, wordGap = 5,
+      hint = "Pick two versions of one agent. A version is the directive, the equipped tools and the context settings together." },
   },
   -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
   shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },

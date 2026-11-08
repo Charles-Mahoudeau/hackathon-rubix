@@ -4,28 +4,29 @@
 -- Pure Luau, headless, no UI calls: the UI reads `sim.records` and listens to `decision_record` events.
 local Settings = require("./context_settings")
 local Prompt = require("./prompt")
+local Versions = require("./versions")
 
 local Log = {}
 
 local function now(sim) return sim.realClock and sim.realClock() or sim.tick * sim.b.tickSeconds end
 
--- Short hash of directive + equipped tools + context settings (spec §12.3): a new version starts when one of them changes.
-function Log.promptVersion(sim, agentId)
-  local agent = sim.agents[agentId]
-  local keys = {}
-  for k in pairs(agent.contextSettings) do keys[#keys + 1] = k end
-  table.sort(keys)
-  local parts = { agent.directive or "", table.concat(sim:equippedTools(agentId), ",") }
-  for _, k in ipairs(keys) do parts[#parts + 1] = k .. "=" .. tostring(agent.contextSettings[k]) end
-  local h = 2166136261 -- FNV-1a, 32 bit
-  for _, byte in ipairs({ string.byte(table.concat(parts, "\n"), 1, -1) }) do
-    h = bit32.band(bit32.bxor(h, byte) * 16777619, 0xFFFFFFFF)
-  end
-  return ("%08x"):format(h):sub(1, 6)
-end
+-- Short hash of directive + equipped tools + context settings (spec §12.3), see sim/versions.luau.
+function Log.promptVersion(sim, agentId) return Versions.sync(sim, agentId).id end
 
 function Log.init(sim)
   sim.records, sim.recordSeq, sim.recordRev, sim.earnings = {}, 0, 0, {}
+  Versions.init(sim)
+end
+
+-- The version a record belongs to (nil once the save it came from had none).
+local function versionOf(sim, rec) return Versions.find(sim, rec.agent_id, rec.prompt_version) end
+
+-- An error counts once per record, whenever it first shows (refused call, failed turn, failed action).
+local function countError(sim, rec)
+  if rec.error_counted or not Log.isError(rec) then return end
+  rec.error_counted = true
+  local v = versionOf(sim, rec)
+  if v then v.errors += 1 end
 end
 
 local function list(sim, agentId)
@@ -81,7 +82,10 @@ function Log.open(sim, agentId, prompt, cost)
   local t = zeroTokens()
   for k, v in pairs(prompt.sections) do t[k] = v end
   t.total = prompt.input
-  return add(sim, { agent_id = agentId, prompt_version = Log.promptVersion(sim, agentId), t_game = sim.tick * sim.b.tickSeconds,
+  local v = Versions.sync(sim, agentId)
+  v.decisions += 1
+  v.compute += cost
+  return add(sim, { agent_id = agentId, prompt_version = v.id, t_game = sim.tick * sim.b.tickSeconds,
     t_real_sent = now(sim), tokens = t, compute_spent = cost, validation = "pending", source = "ai", credits_delta = 0,
     context_sizes = contextSizes(sim, agentId, prompt) })
 end
@@ -89,7 +93,9 @@ end
 -- A skill step (spec §13): it costs no Compute and carries no tokens.
 function Log.skillStep(sim, agentId, skillName)
   local t = now(sim)
-  return add(sim, { agent_id = agentId, prompt_version = Log.promptVersion(sim, agentId), t_game = sim.tick * sim.b.tickSeconds,
+  local v = Versions.sync(sim, agentId)
+  v.decisions += 1
+  return add(sim, { agent_id = agentId, prompt_version = v.id, t_game = sim.tick * sim.b.tickSeconds,
     t_real_sent = t, t_real_received = t, tokens = zeroTokens(), compute_spent = 0, validation = "pending",
     source = "skill:" .. skillName, credits_delta = 0 })
 end
@@ -101,7 +107,11 @@ function Log.answered(sim, rec, info)
   rec.t_real_received = now(sim)
   rec.tokens.output = info.output or rec.tokens.output
   rec.tokens.total = info.total or (rec.tokens.total + rec.tokens.output)
-  if info.cost then rec.compute_spent = info.cost end
+  if info.cost then
+    local v = versionOf(sim, rec)
+    if v then v.compute += info.cost - rec.compute_spent end
+    rec.compute_spent = info.cost
+  end
   if info.reasoning and info.reasoning ~= "" then rec.reasoning = info.reasoning end
   if info.realTokens then rec.real_tokens = true end
   emit(sim, rec, true)
@@ -113,6 +123,7 @@ function Log.failed(sim, rec, why, call)
   if rec.validation == "pending" then rec.validation = why end
   if call ~= nil and rec.tool_call == nil then rec.tool_call = { tool = call.name, args = call.args or {} } end
   rec.t_real_received = rec.t_real_received or now(sim)
+  countError(sim, rec)
   emit(sim, rec, true)
 end
 
@@ -123,6 +134,7 @@ function Log.accepted(sim, rec, call, fallback)
   if rec.validation == "pending" then rec.validation = "ok" end
   if fallback then rec.fallback = true end
   rec.t_real_received = rec.t_real_received or now(sim)
+  countError(sim, rec)
   emit(sim, rec, true)
 end
 
@@ -131,6 +143,7 @@ function Log.finished(sim, recordId, text, ok)
   local rec = Log.find(sim, recordId)
   if not rec or rec.result then return end
   rec.result = { ok = ok ~= false, result = text, error = ok == false and text or nil }
+  countError(sim, rec)
   emit(sim, rec, true)
 end
 
@@ -142,6 +155,8 @@ function Log.earned(sim, agentId, recordId, amount)
     rec.credits_delta += amount
     emit(sim, rec, true)
   end
+  local v = rec and versionOf(sim, rec) or Versions.sync(sim, agentId)
+  if v then v.credits += amount end
   local e = sim.earnings[agentId]
   if not e then e = {}; sim.earnings[agentId] = e end
   e[#e + 1] = { t = sim.tick * sim.b.tickSeconds, amount = amount }

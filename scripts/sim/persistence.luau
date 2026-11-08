@@ -61,6 +61,7 @@ function Persistence.serialize(sim, savedAt)
       feed = sim.feed,
       feedSeq = sim.feedSeq,
       records = sim.records,
+      versions = sim.versions,
       recordSeq = sim.recordSeq,
       missions = sim.missions,
       stationOrder = sim.stationOrder,
@@ -79,7 +80,7 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "missions" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for i, fresh in ipairs(Missions.new()) do -- older saves hold fewer missions: the new ones start locked

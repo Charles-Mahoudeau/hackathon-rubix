@@ -69,6 +69,7 @@ return {
   timeoutSeconds = 20, -- real seconds for a whole provider turn (spec §8.4); GR5-15 said 10, tune here
   reasoningMaxChars = 200, -- spec §10.3 step 4
   recordsMax = 500, -- spec §12.1: decision records kept
+  versions = { minSeconds = 180 }, -- spec §12.3: a prompt version with less activity is "not enough data"
   axis = {
     platformUrl = "https://api.platform.lacale-atlantle.com",
     relaisUrl = "https://relais.lacale-atlantle.com/v1/messages",
