@@ -22,8 +22,8 @@ return {
     miner = { tools = { "mine", "return", "sell", "report", "wait", "scan", "run_skill" }, startTier = 1 },
     logistician = { tools = { "store", "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
   },
-  ai = { delaySecondsMin = 2, delaySecondsMax = 4, computePerDecision = 1, vagueErrorRate = 0.5 },
-  warehouse = { capacity = 2000 },
+  ai = { delaySecondsMin = 2, delaySecondsMax = 4, vagueErrorRate = 0.5 }, -- Compute cost per decision: config/ai.luau
+  warehouse = { capacity = 2000, unlockTier = 3 },
   logMax = 200,
   seed = 1234,
 }
