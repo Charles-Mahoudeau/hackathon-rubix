@@ -24,6 +24,8 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
+local Audio = require("@scripts/client/audio")
+local Sounds = require("@scripts/client/sounds")
 
 local state = {
 	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
@@ -31,6 +33,7 @@ local state = {
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
+	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
 }
 
 local function despawnAll(commands, list)
@@ -96,7 +99,8 @@ engine.ecs.system("game.Shell", {
 	phase = "Update",
 	side = "client",
 	query = { read = { "rtype.UiText", "rtype.UiTextInput" } },
-	events = { read = { "rtype.UiClicked", "rtype.UiTextChanged" } },
+	events = { read = { "rtype.UiClicked", "rtype.UiTextChanged" }, send = { "rtype.PlayMusic" } },
+	calls = { "rtype.audio.playSound" },
 	run = function(ctx)
 		local now = ctx.time.elapsed
 		state.sim = state.sim or Sim.new()
@@ -105,8 +109,17 @@ engine.ecs.system("game.Shell", {
 
 		Clock.advance(state.sim, dt)
 		local changed = false
+		if not state.musicStarted then
+			state.musicStarted = true
+			Sounds.startMusic(ctx)
+		end
+		Audio.beginFrame(state.audio, now)
 		for _, event in ipairs(state.sim:drainEvents()) do
-			if Shell.onSimEvent(state.shell, event) then changed = true end
+			-- The AI-error sound plays only when the glitch accepted the same event, so sound and flicker stay one trigger.
+			local glitched = Shell.onSimEvent(state.shell, event)
+			if glitched then changed = true end
+			local play = Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
+			if play then Sounds.play(ctx, play) end
 		end
 		local glitchFrame = Shell.update(state.shell, dt)
 

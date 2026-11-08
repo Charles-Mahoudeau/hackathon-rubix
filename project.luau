@@ -27,13 +27,18 @@ if engine.isClient then
 	else
 		-- Only the windowed client draws the shell; a headless client has no window and no Ui plugin.
 		engine.settings.scripts.client = "client/main"
-		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.Text", "rtype.Ui" }, 1, 6, #plugins + 1, plugins)
+		table.move({ "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.Text", "rtype.Ui", "rtype.audio" }, 1, 7, #plugins + 1, plugins)
 		engine.settings.platform = "glfw"
 		engine.settings.renderer = "vulkan"
 		engine.settings.window.title = "GRIDMIND"
 		-- Keep in step with config/theme.luau layout.view: the UI shell lays out in these view pixels.
 		engine.settings.window.size = { 1280, 720 }
 		engine.settings.vulkan.virtualResolution = { 1280, 720 }
+		-- Sound (GR5-23): numbers are in config/audio.luau, keep in step with its `volume`.
+		engine.settings.audio.backend = "miniaudio"
+		engine.settings.audio.volume.master = 0.8
+		engine.settings.audio.volume.music = 0.45
+		engine.settings.audio.volume.effects = 1.0
 	end
 end
 
