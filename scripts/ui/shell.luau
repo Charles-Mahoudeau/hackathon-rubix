@@ -21,6 +21,7 @@ local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
 local StationView = require("@scripts/ui/station_view")
+local DebugPanel = require("@scripts/ui/debug")
 local Glitch = require("@scripts/render/vfx/glitch")
 local Route = require("@scripts/render/vfx/route")
 local Vfx = require("@scripts/config/vfx")
@@ -980,6 +981,35 @@ local function marketScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Debug (spec §16.4, GR5-72): one row of buttons per action group, the status and result lines, then the last prompt.
+local function debugScreen(font, r, m)
+  local c = Screens.debug
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, m.title .. "  not shipped in release builds", T.small, "dim"))
+  local y = c.rowY
+  for _, g in ipairs(m.groups) do
+    nodeAt(L.pad, y + 6, text(font, g.label, T.small, "dim"))
+    local x = L.pad + c.labelWidth
+    for _, b in ipairs(g.buttons) do
+      nodeAt(x, y, button(font, b.label, b.action, b.selected and "cyan" or "dim", c.buttonWidth))
+      x += c.buttonWidth + c.buttonGap
+    end
+    y += c.rowHeight
+  end
+  y += c.statusGap
+  nodeAt(L.pad, y, text(font, m.status, T.small, "text"))
+  if m.toast then nodeAt(L.pad, y + c.toastGap, text(font, m.toast, T.small, "green")) end
+  if m.promptTitle then
+    y += c.promptGap + c.toastGap
+    nodeAt(L.pad, y, text(font, m.promptTitle, T.small, "dim"))
+    for i, line in ipairs(m.promptLines) do
+      nodeAt(L.pad, y + c.toastGap + (i - 1) * c.promptLineHeight, text(font, line == "" and " " or line, T.small, "text"))
+    end
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- The two text inputs, in their own tree (see config/screens.luau editor). `draft` gives their starting text.
 function Shell.inputsSpec(draft, opts)
   opts = opts or {}
@@ -1054,6 +1084,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))
   elseif screenId == "station" and sim:hasWarehouse() then
     children[#children + 1] = stationScreen(font, rects.main, StationView.model(sim, opts.station), opts.time or 0)
+  elseif screenId == "debug" and Model.screenVisible(sim.tier, "debug") then
+    children[#children + 1] = debugScreen(font, rects.main, DebugPanel.model(sim, opts.debug or DebugPanel.new()))
   elseif screenId == "market" and sim:hasWarehouse() then
     children[#children + 1] = marketScreen(font, rects.main, MarketView.model(sim))
   else
