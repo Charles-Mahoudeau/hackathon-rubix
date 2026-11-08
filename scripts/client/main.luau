@@ -8,6 +8,7 @@ local Sim = require("@scripts/sim/sim")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
+local ShopView = require("@scripts/ui/shop_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
@@ -111,6 +112,7 @@ engine.ecs.system("game.Shell", {
 		for click in ctx.events.read("rtype.UiClicked") do
 			if editorClick(click.action) then changed = true end
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
+			if ShopView.act(state.sim, click.action) then changed = true end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
@@ -137,6 +139,7 @@ engine.ecs.system("game.Shell", {
 			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
 				table.concat(rates, ","), table.concat(settings, ",") }, "|")
 		end
+		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		local due = now - state.lastRefresh >= Screens.refreshSeconds
 		if glitchFrame or changed or (due and (sig ~= state.uiSig or #state.sim.freighters > 0)) then

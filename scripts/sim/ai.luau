@@ -10,7 +10,7 @@ local providers = {} -- name -> decide(sim, agentId, ctx); the real provider reg
 local provider = "stub"
 
 local function optimal(sim, agentId, ctx)
-  if agentId ~= "miner" then return { name = "report", args = { message = "idle" } } end
+  if sim.agents[agentId].type ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local ship = ctx.ship
   if ship.cargo > 0 then return { name = "sell", args = { ship = ship.id } } end
   -- best known vein on a reachable planet: richness (band midpoint if unscanned) x hardness x depot price, per trip jump
@@ -50,7 +50,7 @@ end
 -- sim's stub stream, so a vague prompt wanders (random ore, random hold %) and a precise one works well.
 -- The order is read first, so it wins over the directive.
 local function directiveStub(sim, agentId, ctx)
-  if agentId ~= "miner" then return { name = "report", args = { message = "idle" } } end
+  if sim.agents[agentId].type ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local agent = sim.agents[agentId]
   local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
   local function first(fn)
@@ -73,7 +73,7 @@ local function directiveStub(sim, agentId, ctx)
       end
     end
   end
-  if first(function(t) if t:find("scan", 1, true) then return true end end) then
+  if sim:hasTool(agentId, "scan") and first(function(t) if t:find("scan", 1, true) then return true end end) then
     for _, pid in ipairs(World.planetOrder) do
       local p = ctx.planets[pid]
       if p and p.reachable then
