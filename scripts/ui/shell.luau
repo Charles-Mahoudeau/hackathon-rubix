@@ -262,7 +262,7 @@ local function badgeChip(font, r, badge, id: string?)
     for _, n in ipairs(glyph({ x = r.x + r.w / 2, y = r.y + r.h / 2 }, badge.shape, r.w - 4, badge.tone)) do out[#out + 1] = n end
   else
     for _, n in ipairs(glyph({ x = r.x + 8, y = r.y + r.h / 2 }, badge.shape, 8, badge.tone)) do out[#out + 1] = n end
-    out[#out + 1] = { style = { position = "absolute", left = r.x + 16, top = r.y, width = r.w - 18, height = r.h, justifyContent = "center", ignorePointer = true },
+    out[#out + 1] = { style = { position = "absolute", left = r.x + 16, top = r.y, width = r.w - 18, height = r.h, justify = "center", ignorePointer = true },
       children = { text(font, badge.label, T.small, badge.tone) } }
   end
   if id then out[#out + 1] = hitArea(r, id, badge.tone) end
@@ -270,7 +270,7 @@ local function badgeChip(font, r, badge, id: string?)
 end
 
 local function plainChip(font, r, str: string, colorName: string)
-  return { { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, justifyContent = "center", alignItems = "center", ignorePointer = true },
+  return { { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, justify = "center", alignItems = "center", ignorePointer = true },
     background = { color = UiTheme.color("bg", 0.85), radius = 3, borderColor = UiTheme.color(colorName, 0.8), borderWidth = 1 },
     children = { text(font, str, T.small, colorName) } } }
 end
@@ -322,14 +322,14 @@ local function mapLifeNodes(font, r, life, points, planetNames, t)
     end
     if cue.label > 0 then
       local w = #(planetNames[cue.id] or cue.id) * 8 + 74
-      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - w / 2, top = c.y - R - 30, width = w, height = 18, justifyContent = "center", alignItems = "center", ignorePointer = true },
+      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - w / 2, top = c.y - R - 30, width = w, height = 18, justify = "center", alignItems = "center", ignorePointer = true },
         background = { color = UiTheme.color("bg", 0.85 * cue.label), radius = 3, borderColor = UiTheme.color(neon, cue.label), borderWidth = 1 },
         children = { { text = { text = (planetNames[cue.id] or cue.id) .. " reachable", font = font, size = T.small, color = UiTheme.color(neon, cue.label) } } } }
     end
   end
   local mw = Screens.map.motionButtonW
   nodes[#nodes + 1] = buttonNode({ position = "absolute", left = r.x + r.w - mw - L.gap, top = r.y + r.h - 24 - L.gap, width = mw, height = 22,
-    justifyContent = "center", alignItems = "center" }, "map.motion", life.reduced and "amber" or "dim",
+    justify = "center", alignItems = "center" }, "map.motion", life.reduced and "amber" or "dim",
     { text(font, life.reduced and "MOTION: REDUCED" or "MOTION: FULL", T.small, life.reduced and "amber" or "dim") }, life.reduced)
   return nodes
 end
@@ -411,7 +411,7 @@ local function mapOverlay(font, r, map, opts)
       for _, n in ipairs(badgeChip(font, chipRect, st.status, nil)) do nodes[#nodes + 1] = n end
       for i, tag in ipairs(st.tags or {}) do
         nodes[#nodes + 1] = { style = { position = "absolute", left = chipRect.x + chipRect.w + 4 + (i - 1) * 34, top = chipRect.y, ignorePointer = true },
-          children = { text(font, tag, T.small, "cyan") } }
+          children = { text(font, tag.label, T.small, tag.tone) } }
       end
     end
   end

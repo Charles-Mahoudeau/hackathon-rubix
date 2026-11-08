@@ -176,8 +176,19 @@ do
   local itc, cv = find(sprites, "interceptor:i1:hull"), find(sprites, "convoy:C1:hull")
   assert(math.sqrt((itc.x - cv.x) ^ 2 + (itc.y - cv.y) ^ 2) < 80, "alongside the convoy")
 
+  -- A station right under the convoy: with no fight its turret stays parked; the real fight engages it, and a pause keeps it.
+  fleet.stationList = { { at = { x = cv.x + 20, y = cv.y } } }
+  sprites, t = play(fleet, s, t, 0.5, seen)
+  assert(next(fleet.turrets) == nil, "no fight, no turret fire, even with a convoy right above the station")
+
   ok("attack")
   sprites, t = play(fleet, s, t, 4, seen)
+  assert(fleet.turrets[1] and fleet.turrets[1].since, "the real fight engages the station turret")
+  s.paused = true
+  local since = fleet.turrets[1].since
+  sprites, t = play(fleet, s, t, 0.5, seen)
+  assert(fleet.turrets[1] and fleet.turrets[1].since == since, "pause keeps the actual turret state")
+  s.paused = false
   assert(find(sprites, "convoy:C1:shield") and find(sprites, "interceptor:i1:shield"), "shields while fighting")
   assert(find(sprites, "interceptor:i1:hull").sheet:find("Weapons"), "weapon flash replaces the hull while firing")
   assert(seen.bullet and seen.torpedo and seen.wave, "projectiles and the impact wave appear: " .. table.concat((function() local l = {} for k in pairs(seen) do l[#l + 1] = k end table.sort(l) return l end)(), ","))

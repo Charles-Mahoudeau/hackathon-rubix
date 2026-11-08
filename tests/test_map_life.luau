@@ -259,4 +259,13 @@ do
   assert(fleet.chips[1].badge.tone ~= "magenta")
 end
 
+-- Turrets engage the nearest real fight in range, and only that
+do
+  local stations = { { at = { x = 0, y = 0 } }, { at = { x = 1000, y = 0 } } }
+  assert(next(MapLife.turretTargets(stations, {}, 260)) == nil, "no fight, no target")
+  local t = MapLife.turretTargets(stations, { { x = 100, y = 0 }, { x = 50, y = 0 } }, 260)
+  assert(t[1] and t[1].x == 50 and t[2] == nil, "nearest fight in range; the far station stays parked")
+  assert(next(MapLife.turretTargets(stations, { { x = 500, y = 500 } }, 260)) == nil, "out of range is ignored")
+end
+
 print("map life tests passed")

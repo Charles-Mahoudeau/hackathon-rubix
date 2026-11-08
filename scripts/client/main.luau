@@ -54,7 +54,7 @@ local state = {
 }
 state.save = Save.new(state.storage)
 state.reveal = MapLife.newReveal() -- the reachability reveal of a planet that just lit up (GR5-104)
-StationFx.source = state.fleet
+StationFx.bind(state.fleet)
 
 local function despawnAll(commands, list)
 	for _, e in ipairs(list) do commands:despawn(e) end

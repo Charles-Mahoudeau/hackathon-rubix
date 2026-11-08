@@ -184,4 +184,18 @@ assert(not pcall(Stations.bloom, "off") and not pcall(Stations.entities, "nope",
 local a, b = Remap.ramp("player"), Remap.ramp("rivalA")
 assert(a[1] == b[1] and a[2] == b[2] and a[4] == b[4] and a[3] ~= b[3])
 
+-- GR5-104: a station wears its real state and the roles it hosts; nothing is made up
+do
+  local s = Sim.new()
+  local sid = SystemMap.stations(s)[1].sid
+  assert(SystemMap.status(s, sid).label == "IDLE" and SystemMap.status(s, sid).tone == "dim", "a quiet station is idle")
+  s.alertTrack.stations[sid] = true
+  assert(SystemMap.status(s, sid).label == "FULL" and SystemMap.status(s, sid).alert, "station_full shows as an alert")
+  s.alertTrack.stations[sid] = nil
+  assert(#SystemMap.tags(s, sid) == 0, "no role tag without the role")
+  local labels = SystemMap.stationLabels(s)
+  assert(labels[1].status and labels[1].tags, "labels carry status and tags")
+  for _, r in ipairs(SystemMap.reserved(s)) do assert(r.w > 0 and r.h > 0) end
+end
+
 print("station tests passed")
