@@ -38,7 +38,7 @@ local Shell = {}
 local L = Theme.layout
 local T = Theme.type
 local ICON = Theme.layout.icon -- icon sizes in px
-local TOP_BAR = { titleMargin = 16, gap = 24 } -- the heading's right margin and the row gap of the top bar (topBar below)
+local TOP_BAR = { titleMargin = 16, gap = 24, creditsMin = 132, reputationMin = 250 } -- the heading's right margin and the row gap of the top bar (topBar below)
 
 -- Rectangles in view pixels. Absolute layout keeps the world-drawn planets and the UI labels on the same coordinates.
 function Shell.layout()
@@ -137,10 +137,10 @@ local function topBar(font, r, bar)
   local repLine = rep.next and ("%s  %s / %s"):format(bar.reputationText, Model.thousands(rep.revenue), Model.thousands(rep.next))
     or ("%s  max"):format(bar.reputationText)
   local gaugeColor = bar.computeLevel == "ok" and "cyan" or Theme.semantic.warning
-  local function cell(label, value, valueColor, extra, iconKey)
+  local function cell(label, value, valueColor, minWidth, iconKey)
     local head = { style = { direction = "row", gap = 4, alignItems = "center" },
       children = { Icon.node(iconKey, ICON.small, "dim"), text(font, label, T.small, "dim") } }
-    return { style = { direction = "column", gap = 2, justify = "center", extra },
+    return { style = { direction = "column", gap = 2, justify = "center", minWidth = minWidth },
       children = { head, text(font, value, T.heading, valueColor or "text") } }
   end
   local note = bar.computeLevel == "empty" and "  EMPTY" or (bar.computeLevel == "low" and "  low" or "")
@@ -163,10 +163,10 @@ local function topBar(font, r, bar)
   end
   local children = {
     text(font, "GRIDMIND", T.heading, "cyan", { marginRight = TOP_BAR.titleMargin }),
-    cell("Credits", bar.creditsText, "text", nil, "resource.credits"),
+    cell("Credits", bar.creditsText, "text", TOP_BAR.creditsMin, "resource.credits"),
     gauge,
     buy,
-    cell("Reputation", repLine, "text", nil, "resource.reputation"),
+    cell("Reputation", repLine, "text", TOP_BAR.reputationMin, "resource.reputation"),
     cell("Tier", bar.tierText, "green"),
     speed,
   }
@@ -1448,7 +1448,7 @@ local function marketScreen(font, r, m)
     local color = row.best and "green" or (row.event and Theme.semantic.warning or "text")
     nodeAt(L.pad, y, Icon.node(Icon.resourceKey(row.resource), ICON.row - 2, row.best and "green" or "dim"))
     nodeAt(L.pad + ICON.row + 4, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
-    nodeAt(c.sparkX - 40, y, text(font, row.trend == "up" and "^" or (row.trend == "down" and "v" or "-"), T.small, "dim"))
+    nodeAt(c.sparkX, y, text(font, row.trend == "up" and "^" or (row.trend == "down" and "v" or "-"), T.small, "dim"))
     y += c.rowHeight
   end
   y += c.noticeGap
