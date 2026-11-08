@@ -181,7 +181,7 @@ local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
 	local onMap = state.shell.screen == Screens.defaultScreen
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, missions = state.missions, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label and (state.revealFrame and ("%s t=%.2f"):format(state.tour.label, state.revealFrame.t) or state.tour.label) or nil, reveal = state.revealFrame, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, confirmDismiss = state.confirmDismiss == Screens.editor.agent, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, missions = state.missions, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label and (state.revealFrame and ("%s t=%.2f"):format(state.tour.label, state.revealFrame.t) or state.tour.label) or nil, reveal = state.revealFrame, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
 	state.shell.screen = shown
 end
 
@@ -229,6 +229,16 @@ local function editorClick(action)
 		else
 			state.examples = { open = true, selected = state.examples.selected }
 			state.toast = why == "too_long" and "That example is over the directive limit." or nil
+		end
+	elseif action == "editor.dismiss" and not state.confirmDismiss then
+		state.confirmDismiss = id -- a second click confirms
+	elseif action == "editor.home.cycle" or action == "editor.dismiss" or action:sub(1, 12) == "editor.tool." then
+		local _, ok, why = Editor.act(state.sim, id, action)
+		state.toast = ok == false and ("Cannot: " .. tostring(why)) or nil
+		if action == "editor.dismiss" and ok then
+			state.confirmDismiss = nil
+			Screens.editor.agent = state.sim.agentOrder[1] or "miner"
+			state.draft, state.inputsDirty = nil, true
 		end
 	elseif action:sub(1, 14) == "editor.preset." then
 		Editor.applyPreset(state.sim, state.draft, action:sub(15))
@@ -357,7 +367,8 @@ engine.ecs.system("game.Shell", {
 		for _ in ctx.events.read("rtype.UiTextChanged") do
 			for _, text, input in ctx.query do
 				if input.action == "editor.directive" then state.draft.directive = text.text
-				elseif input.action == "editor.order" then state.draft.order = text.text end
+				elseif input.action == "editor.order" then state.draft.order = text.text
+				elseif input.action == "editor.name" then state.draft.name = text.text end
 			end
 			state.toast, changed = nil, true
 		end
@@ -400,7 +411,7 @@ engine.ecs.system("game.Shell", {
 			local settings = {}
 			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
 			table.sort(settings)
-			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", tostring(state.examples.open), state.examples.selected or "", state.examples.confirm or "", m.totalTokens,
+			extra = table.concat({ state.tab, tostring(state.confirmDismiss), state.draft.directive, state.draft.order, state.toast or "", tostring(state.examples.open), state.examples.selected or "", state.examples.confirm or "", m.totalTokens,
 				table.concat(rates, ","), table.concat(settings, ","), Screens.editor.agent, TeamView.signature(state.sim), tostring(state.sim.feedSeq) }, "|")
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end

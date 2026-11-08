@@ -117,7 +117,7 @@ do
   assert(inputs == 0, "the shell holds no input (they are their own tree)")
   local inputsSpec = Shell.inputsSpec(draft, {})
   walk(inputsSpec)
-  assert(inputs == 2, "directive and order inputs: " .. inputs)
+  assert(inputs == 3, "directive, order and name inputs: " .. inputs)
   local f = Shell.editorFields()
   assert(f.directive.x + f.directive.w < f.order.x and f.order.y == f.directive.y, "fields sit side by side without overlapping")
   assert(buttons["editor.save"] and buttons["editor.clear_order"] and buttons["editor.preset.vague"] and buttons["editor.preset.precise"])

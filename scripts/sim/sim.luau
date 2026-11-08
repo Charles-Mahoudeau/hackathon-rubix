@@ -123,7 +123,7 @@ function Sim:addAgent(id, kind, opts)
   opts = opts or {}
   local def = self.registry.agentTypes[kind]
   local agent = { id = id, type = kind, tier = opts.tier or def.startTier, tools = {}, pending = nil, mode = "ai", wakeAiOnSkillAbort = true,
-    state = "idle", station = opts.station or self.home, decisions = {}, throttled = false,
+    state = "idle", station = opts.station or self.home, homeStation = kind == "miner" and (opts.station or self.home) or nil, decisions = {}, throttled = false,
     directive = "", order = "", history = {}, inbox = {}, contextSettings = ContextSettings.defaults() }
   for _, t in ipairs(def.tools) do agent.tools[t] = true end
   self.agents[id] = agent
@@ -199,6 +199,89 @@ function Sim:warehouseUsed()
   local n = 0
   for _, ore in ipairs(self.b.ores) do n += self.warehouse[ore] end
   return n
+end
+
+-- The dock `return(home)` goes to: the Miner's home station (spec §7), the main station when unset or gone.
+function Sim:homeOf(agentId)
+  local agent = agentId and self.agents[agentId]
+  local h = agent and agent.homeStation
+  return h and self.stations[h] and h or self.home
+end
+
+-- Player picks a Miner's home station (spec §16.2 set_home_station): any built station, the main one included.
+function Sim:setHomeStation(agentId, stationId)
+  local agent = self.agents[agentId]
+  if not agent then return false, "unknown agent" end
+  if agent.type ~= "miner" then return false, "not_a_miner" end
+  if not self.stations[stationId or ""] then return false, "unknown_station" end
+  agent.homeStation = stationId
+  self:log("INFO", ("%s: home station set to %s"):format(agentId, stationId))
+  self:emit("agent_changed", { agent = agentId })
+  return true
+end
+
+-- Display name only (spec §16.2 rename_agent); the id the sim and the saves use never changes.
+function Sim:renameAgent(agentId, name)
+  local agent = self.agents[agentId]
+  if not agent then return false, "unknown agent" end
+  if type(name) ~= "string" then return false, "bad name" end
+  name = name:gsub("^%s+", ""):gsub("%s+$", "")
+  if #name < 1 or #name > 24 then return false, "bad name" end
+  agent.displayName = name
+  self:emit("agent_changed", { agent = agentId })
+  return true
+end
+
+function Sim:agentName(agentId)
+  local agent = self.agents[agentId]
+  return agent and agent.displayName or agentId
+end
+
+-- Dismisses an agent (spec §16.2 dismiss_agent): frees its command slot; its ships and stations stay, unstaffed.
+-- The last Miner cannot go: the company would have no one left to mine.
+function Sim:dismissAgent(agentId)
+  local agent = self.agents[agentId]
+  if not agent then return false, "unknown agent" end
+  if agent.type == "miner" then
+    local n = 0
+    for _, a in pairs(self.agents) do if a.type == "miner" then n += 1 end end
+    if n <= 1 then return false, "last_miner" end
+  end
+  if agent.pending then return false, "decision_pending" end
+  for _, id in ipairs(self.shipOrder) do
+    local ship = self.ships[id]
+    if ship.owner == agentId then ship.owner = nil end
+  end
+  for _, ref in pairs(self.refining and self.refining.refineries or {}) do if ref.owner == agentId then ref.owner = nil end end
+  self.agents[agentId] = nil
+  for i, id in ipairs(self.agentOrder) do
+    if id == agentId then table.remove(self.agentOrder, i) break end
+  end
+  self:log("INFO", ("%s: dismissed"):format(agentId))
+  self:emit("agent_removed", { agent = agentId })
+  return true
+end
+
+-- Equips exactly `names` (spec §16.2 set_tools): known tools the agent's kind offers, within its tool slots.
+function Sim:setTools(agentId, names)
+  local agent = self.agents[agentId]
+  if not agent then return false, "unknown agent" end
+  if type(names) ~= "table" then return false, "bad tools" end
+  local def = self.registry.agentTypes[agent.type]
+  local allowed = {}
+  for _, t in ipairs(def.tools) do allowed[t] = true end
+  local set, used = {}, 0
+  for _, name in ipairs(names) do
+    if not allowed[name] then return false, "unknown or disallowed tool: " .. tostring(name) end
+    if not set[name] then
+      set[name] = true
+      if not self.b.freeTools[name] and tierHasTool(self, agent, name) then used += 1 end -- tier-locked ones take no slot yet
+    end
+  end
+  if used > (def.toolSlots or 0) then return false, "no_tool_slot" end
+  agent.tools = set
+  self:emit("agent_changed", { agent = agentId })
+  return true
 end
 
 -- Where a docked ship is: the warehouse dock (home, once the warehouse stands) or a plain HMC depot.
@@ -604,7 +687,7 @@ function Sim:apply(agentId, call, opts)
       ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
     end
   elseif n == "return" then
-    local dest = args.to == "local_depot" and ship.at or self.home
+    local dest = args.to == "local_depot" and ship.at or self:homeOf(ship.owner)
     ship.state, ship.dest = "travel_back", dest
     ship.timer = travelTicks(self, ship, ship.at, dest, ship.vein and ship.vein.jumps or 0)
   elseif n == "sell" then
