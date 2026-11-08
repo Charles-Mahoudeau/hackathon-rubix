@@ -37,7 +37,9 @@ return {
     alert = { info = "cyan", success = "green", warning = "amber", error = "amber" },
   },
 
-  font = { path = "fonts/jetbrains_mono.json" }, -- the single font of the game (SIL OFL 1.1, assets/fonts/OFL.txt)
+  -- The single font of the game (SIL OFL 1.1, assets/fonts/OFL.txt). `glyphs` are the code point ranges baked into the atlas
+  -- (assets/fonts/charset.txt): any other character, an arrow for one, draws as "?", so UI text must stay inside them.
+  font = { path = "fonts/jetbrains_mono.json", glyphs = { { 0x20, 0x7E }, { 0xA0, 0xFF } } },
   type = { title = 22, heading = 16, body = 14, small = 12 },
 
   -- Screen layout in view pixels. The window and the engine's virtual resolution are `view` (project.luau).

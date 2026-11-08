@@ -3,6 +3,8 @@
 -- a maxWidth (and shrink) from their nearest sized ancestor, single-line texts (absolute-positioned, or inside a box of
 -- fixed height) are cut with "..." instead of wrapping into their neighbours. Fit.check reports what is still wrong.
 -- The font is JetBrains Mono, whose advance is 0.6 em, so widths are exact without the engine.
+local Theme = require("@scripts/config/theme")
+
 local Fit = {}
 
 Fit.advance = 0.6
@@ -147,6 +149,22 @@ function Fit.apply(root, viewWidth: number)
   return root
 end
 
+-- The characters of `text` the font has no glyph for (they would draw as "?"), as a list of code points. Invalid UTF-8 counts too.
+function Fit.missingGlyphs(text: string): { number }
+	local out = {}
+	local ok = pcall(function()
+		for _, cp in utf8.codes(text) do
+			local has = false
+			for _, r in ipairs(Theme.font.glyphs) do
+				if cp >= r[1] and cp <= r[2] then has = true break end
+			end
+			if not has and cp ~= 10 then out[#out + 1] = cp end
+		end
+	end)
+	if not ok then out[#out + 1] = 0xFFFD end
+	return out
+end
+
 -- Problems left in a spec: { "path: what" }. `view` = { w, h }.
 function Fit.check(root, view)
   local problems = {}
@@ -167,6 +185,12 @@ function Fit.check(root, view)
     end
 
     local t = node.text
+    if t and t.text ~= "" then
+      local missing = Fit.missingGlyphs(t.text)
+      if #missing > 0 then
+        report(path .. " '" .. string.sub(t.text, 1, 24) .. "'", ("no glyph in the UI font for U+%04X"):format(missing[1]))
+      end
+    end
     if t and not node.input and t.text ~= "" then
       local size = t.size or 24
       local avail = outer and (outer - padX(s)) or nil

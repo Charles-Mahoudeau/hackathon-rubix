@@ -37,8 +37,8 @@ local function paramsText(params)
   return #parts > 0 and table.concat(parts, ",") or nil
 end
 
-function Alerts.inScope(sim, alert)
-  local scope = sim.monitorSettings.scope
+function Alerts.inScope(sim, alert, monitor)
+  local scope = (monitor and monitor.monitorSettings or sim.monitorSettings).scope
   return scope == "company" or alert.group == scope
 end
 
@@ -47,10 +47,14 @@ function Alerts.raise(sim, kind, agentId, reason, extra)
   extra = extra or {}
   local st = sim.alerts
   st.seq += 1
-  local monitor = Alerts.monitorOf(sim)
   local a = { id = st.seq, type = kind, agent = agentId, reason = reason or "", tick = sim.tick, group = groupOf(sim, kind, agentId),
-    skill = extra.skill, params = paramsText(extra.params),
-    queued = monitor ~= nil and sim.monitorSettings.alertTypes[kind] == true }
+    skill = extra.skill, params = paramsText(extra.params), deliveries = {} }
+  for _, id in ipairs(sim.agentOrder) do
+    local monitor = sim.agents[id]
+    if monitor.type == "monitor" and monitor.monitorSettings.alertTypes[kind] and Alerts.inScope(sim, a, monitor) then
+      a.deliveries[id] = true
+    end
+  end
   st.list[#st.list + 1] = a
   if #st.list > cfg(sim).logMax then table.remove(st.list, 1) end
   sim:log("WARN", ("alert %s%s: %s"):format(kind, agentId and (" " .. agentId) or "", a.reason))
@@ -61,37 +65,42 @@ end
 local function maxAgeTicks(sim) return sim:ticks(sim.b.monitor.queueMaxSeconds) end
 
 -- The alerts the Monitor can still act on, oldest first.
-function Alerts.queue(sim)
-  local out, monitor = {}, Alerts.monitorOf(sim)
+function Alerts.queue(sim, monitor)
+  local out = {}
+  monitor = monitor or Alerts.monitorOf(sim)
   if not monitor then return out end
   local oldest = sim.tick - maxAgeTicks(sim)
   for _, a in ipairs(sim.alerts.list) do
-    if a.queued and not a.handled and a.tick >= oldest and Alerts.inScope(sim, a) then out[#out + 1] = a end
+    if a.deliveries and a.deliveries[monitor.id] == true and a.tick >= oldest and Alerts.inScope(sim, a, monitor) then out[#out + 1] = a end
   end
   return out
 end
 
 -- The Monitor takes the oldest queued alert for the decision it just sent: one decision, one alert (spec §8.7).
-function Alerts.consume(sim)
-  local head = Alerts.queue(sim)[1]
-  if head then head.handled = sim.tick end
+function Alerts.consume(sim, monitor)
+  monitor = monitor or Alerts.monitorOf(sim)
+  local head = Alerts.queue(sim, monitor)[1]
+  if head then head.deliveries[monitor.id] = sim.tick; head.handled = sim.tick end
   return head
 end
 
-function Alerts.status(sim, a)
-  if a.handled then return "handled" end
-  if not a.queued then return "unwatched" end
+function Alerts.status(sim, a, monitor)
+  local delivery = monitor and a.deliveries and a.deliveries[monitor.id]
+  if delivery ~= nil and delivery ~= true then return "handled" end
+  if not delivery then return "unwatched" end
   if a.tick < sim.tick - maxAgeTicks(sim) then return "expired" end
   return "queued"
 end
 
 -- Panel rows, newest first.
-function Alerts.rows(sim)
+function Alerts.rows(sim, monitor)
   local rows, dt = {}, sim.b.tickSeconds
+  if monitor == nil then monitor = Alerts.monitorOf(sim) end
+  if monitor == false then monitor = nil end
   for i = #sim.alerts.list, 1, -1 do
     local a = sim.alerts.list[i]
     rows[#rows + 1] = { id = a.id, type = a.type, agent = a.agent, reason = a.reason, skill = a.skill, params = a.params,
-      ageS = math.floor((sim.tick - a.tick) * dt), status = Alerts.status(sim, a) }
+      ageS = math.floor((sim.tick - a.tick) * dt), status = Alerts.status(sim, a, monitor) }
   end
   return rows
 end

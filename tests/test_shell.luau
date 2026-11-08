@@ -160,7 +160,7 @@ local function walk(spec, where)
     if spec.background.borderColor then checkColor(spec.background.borderColor, where) end
   end
   if spec.text then assert(type(spec.text.text) == "string" and spec.text.size, where .. ": text") checkColor(spec.text.color, where) end
-  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.") or spec.button.action:match("^debug%.")), where .. ": button action") end
+  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.") or spec.button.action:match("^missions%.") or spec.button.action:match("^debug%.") or spec.button.action:match("^alerts%.")), where .. ": button action") end
   for _, child in ipairs(spec.children or {}) do walk(child, where) end
 end
 for tier = 1, 5 do
@@ -238,6 +238,42 @@ do
   local h2, ok2 = Model.act(s, "notice.claim")
   assert(h2 and not ok2 and s.resources.compute == 0, "a late click grants nothing")
   assert(not Model.act(s, "nav.map"), "foreign actions are not handled")
+end
+
+-- GR5-104: the map choreography overlay renders what the fleet hands it, and the motion switch is a real action.
+do
+  local function texts(spec, out)
+    out = out or {}
+    if spec.text and spec.text.text then out[#out + 1] = spec.text.text end
+    for _, c in ipairs(spec.children or {}) do texts(c, out) end
+    return out
+  end
+  local function joined(spec) return table.concat(texts(spec), "|") end
+  local hull = { x = 400, y = 300, w = 28, h = 28 }
+  local life = {
+    chips = {
+      { key = "ship:s1", focusId = "ship_s1", badge = { tone = "green", shape = "square", label = "WORK" }, selected = true, clickable = true,
+        hull = hull, x = 380, y = 278, w = 72, h = 16 },
+      { key = "ship:s2", focusId = "ship_s2", badge = { tone = "amber", shape = "bar", label = "WARN" }, hull = hull, clickable = false,
+        x = 440, y = 330, w = 14, h = 14, number = 1 },
+    },
+    aggregates = { { id = "kessa", count = 3, x = 100, y = 300, w = 30, h = 16 } },
+    hidden = 3, away = { { key = "scav:j1", where = "Tessar", badge = { tone = "green", shape = "square", label = "WORK" } } },
+    reduced = false,
+  }
+  local sim = Sim.new()
+  sim.alertTrack.stations[SystemMap.stations(sim)[1].sid] = true
+  walk((Shell.spec(sim, "map", { mapLife = life, mapStations = SystemMap.stationLabels(sim) })), "map life")
+  local on = joined((Shell.spec(sim, "map", { mapLife = life })))
+  assert(on:find("WORK") and on:find("+3") and on:find("OFF MAP") and on:find("Tessar") and on:find("MOTION: FULL"), "overlay shows chips, +N, off-map list and the motion switch")
+  assert(on:find("%\+3 more ships not drawn"), "the legend counts the hidden hulls")
+  life.reduced = true
+  assert(joined((Shell.spec(sim, "map", { mapLife = life }))):find("MOTION: REDUCED"), "the switch shows reduced motion")
+  local shellState = Shell.new()
+  assert(Shell.act(shellState, "map.motion") and shellState.reduced == true, "map.motion turns reduced motion on")
+  assert(Shell.act(shellState, "map.motion") and shellState.reduced == false, "and off again")
+  assert(Shell.act(shellState, "map.focus.ship_s1") and shellState.focus == "ship_s1", "a ship can be focused")
+  assert(#texts((Shell.spec(sim, "map", {}))) > 0 and not joined((Shell.spec(sim, "map", {}))):find("MOTION"), "no life layer without opts.mapLife")
 end
 
 print("shell OK")

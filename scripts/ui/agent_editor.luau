@@ -2,6 +2,7 @@
 -- cost of one decision. Pure reads of the sim plus a draft table, no engine calls, so it is testable headless.
 -- Cost uses the real prompt builder with the draft swapped in, so what the editor shows is what the ledger will bill.
 local Compute = require("@scripts/sim/compute")
+local Feed = require("@scripts/sim/feed")
 local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
@@ -75,7 +76,7 @@ function Editor.feed(sim, agentId)
   for i = #list, 1, -1 do
     local e = list[i]
     if e.agent == agentId then
-      out[#out + 1] = { text = e.text, status = e.status or "ok", source = e.source, tool = e.tool }
+      out[#out + 1] = { text = Feed.display(e.text), status = e.status or "ok", source = e.source, tool = e.tool }
       if #out >= Screens.editor.feedLines then break end
     end
   end
@@ -119,7 +120,7 @@ function Editor.model(sim, agentId, draft)
     orderActive = agent.order ~= "",
     orderSource = (agent.order ~= "" and agent.orderSource) or nil,
     -- the Monitor lock: only shown once a Monitor is hired, and never for the Monitor itself
-    lock = (sim.agents.monitor and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
+    lock = (require("@scripts/sim/alerts").monitorOf(sim) and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
     sections = p.sections,
     inputTokens = p.input,
     outputTokens = cfg.estimatedOutputTokens,

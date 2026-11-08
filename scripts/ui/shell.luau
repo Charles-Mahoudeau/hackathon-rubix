@@ -237,6 +237,99 @@ local function focusArea(center, size: number, id: string, colorName: string)
     button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
 end
 
+-- GR5-104: the badges of the ships and stations on the map. A badge is a tone (palette role), a shape and a short label, so the
+-- state reads without colour: circle moving, square working, ring waiting / docked, bar warning / combat, cross AI failure.
+local function glyph(center, shape: string, size: number, colorName: string)
+  local x, y = center.x - size / 2, center.y - size / 2
+  local abs = { position = "absolute", ignorePointer = true }
+  if shape == "circle" then return { dot(center, size, colorName) } end
+  if shape == "ring" then
+    return { { style = { abs, { left = x, top = y, width = size, height = size } },
+      background = { color = UiTheme.color(colorName, 0), radius = size / 2, borderColor = UiTheme.color(colorName), borderWidth = 1.5 } } }
+  end
+  if shape == "bar" then
+    return { { style = { abs, { left = x, top = center.y - size * 0.2, width = size, height = size * 0.4 } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+  end
+  if shape == "cross" then
+    return {
+      { style = { abs, { left = x, top = center.y - 1.5, width = size, height = 3 } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+      { style = { abs, { left = center.x - 1.5, top = y, width = 3, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+    }
+  end
+  return { { style = { abs, { left = x, top = y, width = size, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+end
+
+local function hitArea(r, id: string, colorName: string)
+  return { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h },
+    background = { color = UiTheme.color(colorName, 0), radius = 3 },
+    button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
+end
+
+-- One badge at rectangle `r` (x, y, w, h): the shape alone when the box is small, shape and label when it is wide.
+local function badgeChip(font, r, badge, id: string?)
+  local out = {}
+  local small = r.w <= Screens.map.badgeShapeOnly
+  out[#out + 1] = { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = small and r.w / 2 or 3, borderColor = UiTheme.color(badge.tone, 0.8), borderWidth = 1 } }
+  if small then
+    for _, n in ipairs(glyph({ x = r.x + r.w / 2, y = r.y + r.h / 2 }, badge.shape, r.w - 4, badge.tone)) do out[#out + 1] = n end
+  else
+    for _, n in ipairs(glyph({ x = r.x + 8, y = r.y + r.h / 2 }, badge.shape, 8, badge.tone)) do out[#out + 1] = n end
+    out[#out + 1] = { style = { position = "absolute", left = r.x + 16, top = r.y, width = r.w - 18, height = r.h, justify = "center", ignorePointer = true },
+      children = { text(font, badge.label, T.small, badge.tone) } }
+  end
+  if id then out[#out + 1] = hitArea(r, id, badge.tone) end
+  return out
+end
+
+local function plainChip(font, r, str: string, colorName: string)
+  return { { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, justify = "center", alignItems = "center", ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = 3, borderColor = UiTheme.color(colorName, 0.8), borderWidth = 1 },
+    children = { text(font, str, T.small, colorName) } } }
+end
+
+-- The choreography layer of the map (opts.mapLife, from client/fleet_map): ship badges and their selection halo, the `+N` of
+-- hidden hulls, the legend of numbered markers, ships working off the map, and the motion switch.
+local function mapLifeNodes(font, r, life, points, planetNames, t)
+  local nodes = {}
+  local function add(list) for _, n in ipairs(list) do nodes[#nodes + 1] = n end end
+  local legend = {}
+  for _, chip in ipairs(life.chips) do
+    local hull = chip.hull
+    if chip.selected then
+      for _, n in ipairs(Glow.halo({ x = hull.x + hull.w / 2, y = hull.y + hull.h / 2 }, hull.w / 2 + 4, "selected", t, false)) do nodes[#nodes + 1] = n end
+    end
+    if chip.clickable then nodes[#nodes + 1] = hitArea(hull, chip.focusId, chip.badge.tone) end
+    if chip.number then
+      add(plainChip(font, chip, tostring(chip.number), chip.badge.tone))
+      legend[#legend + 1] = { str = ("%d  %s  %s"):format(chip.number, chip.badge.label, (chip.key:match(":(.+)$") or chip.key)), tone = chip.badge.tone }
+    else
+      add(badgeChip(font, chip, chip.badge, chip.clickable and chip.focusId or nil))
+    end
+  end
+  for _, g in ipairs(life.aggregates) do add(plainChip(font, g, "+" .. g.count, "dim")) end
+  if life.hidden > 0 then legend[#legend + 1] = { str = ("+%d more ships not drawn (map is crowded)"):format(life.hidden), tone = "dim" } end
+  if #legend > 0 then
+    local y = r.y + r.h - L.gap - #legend * 14
+    for i, line in ipairs(legend) do
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = y + (i - 1) * 14, ignorePointer = true }, children = { text(font, line.str, T.small, line.tone) } }
+    end
+  end
+  if #life.away > 0 then
+    nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = r.y + L.gap, ignorePointer = true }, children = { text(font, "OFF MAP", T.small, "dim") } }
+    for i, a in ipairs(life.away) do
+      add(badgeChip(font, { x = r.x + L.gap, y = r.y + L.gap + 6 + i * 20, w = Screens.map.badgeAwayW, h = 16 }, a.badge))
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap + Screens.map.badgeAwayW + 6, top = r.y + L.gap + 8 + i * 20, ignorePointer = true },
+        children = { text(font, a.where, T.small, "dim") } }
+    end
+  end
+  local mw = Screens.map.motionButtonW
+  nodes[#nodes + 1] = buttonNode({ position = "absolute", left = r.x + r.w - mw - L.gap, top = r.y + r.h - 24 - L.gap, width = mw, height = 22,
+    justify = "center", alignItems = "center" }, "map.motion", life.reduced and "amber" or "dim",
+    { text(font, life.reduced and "MOTION: REDUCED" or "MOTION: FULL", T.small, life.reduced and "amber" or "dim") }, life.reduced)
+  return nodes
+end
+
 -- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
 local function mapOverlay(font, r, map, opts)
   local cfg = Screens.map
@@ -340,6 +433,20 @@ local function mapOverlay(font, r, map, opts)
     title.text.align = "center"
     nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
       children = { title } }
+    -- Its state badge and the roles it hosts (LOG / MON / REF): roles live on stations, never on ships (GR5-103).
+    if st.status then
+      local chipRect = { x = st.at.x - Screens.map.badgeAwayW / 2, y = st.at.y + T.small + 6, w = Screens.map.badgeAwayW, h = 16 }
+      for _, n in ipairs(badgeChip(font, chipRect, st.status, nil)) do nodes[#nodes + 1] = n end
+      for i, tag in ipairs(st.tags or {}) do
+        nodes[#nodes + 1] = { style = { position = "absolute", left = chipRect.x + chipRect.w + 4 + (i - 1) * 34, top = chipRect.y, ignorePointer = true },
+          children = { text(font, tag.label, T.small, tag.tone) } }
+      end
+    end
+  end
+  if opts.mapLife then
+    local names = {}
+    for _, p in ipairs(map.planets) do names[p.id] = p.name end
+    for _, n in ipairs(mapLifeNodes(font, r, opts.mapLife, points, names, t)) do nodes[#nodes + 1] = n end
   end
   return nodes
 end
@@ -781,7 +888,8 @@ local function logsScreen(font, r, m)
     if d.record then rows[#rows + 1] = button(font, d.record.label, d.record.action, "cyan", 220) end
   end
   local rightPanel = panel({ x = r.x + c.listWidth + L.gap, y = r.y, w = r.w - c.listWidth - L.gap, h = r.h },
-    { direction = "column", gap = 3, padding = L.pad, overflow = "hidden" })
+    { direction = "column", gap = 3, padding = L.pad, overflow = "scroll" })
+  rightPanel.scroll = { speed = 30 }
   return leftPanel, withChildren(rightPanel, rows)
 end
 
@@ -1043,8 +1151,10 @@ local function missionsScreen(font, r, m)
   -- The mission list sits in a column to the right of the current mission, so it never runs past the panel's bottom edge.
   for i, row in ipairs(m.rows) do
     local y = c.listY + (i - 1) * c.rowHeight
-    local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
-    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    local color = (row.state == "claimed" or row.state == "complete") and "green" or (row.state == "active" and "cyan" or "dim")
+    local label = row.name .. "  [" .. row.state .. "]"
+    nodeAt(c.listX, y, buttonNode({ width = c.rewardX - 8, height = c.rowHeight, justify = "center" }, row.action, color,
+      { text(font, Fit.truncate(label, T.small, c.rewardX - 20), T.small, color) }, cur and cur.id == row.id))
     for i, key in ipairs(row.icons) do nodeAt(c.listX + c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
     nodeAt(c.listX + c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
@@ -1080,6 +1190,8 @@ local function alertsScreen(font, r, m)
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
   nodeAt(L.pad, L.pad, text(font, ("%s  %s"):format(Words.monitor.title, m.state), T.small, "dim"))
   local x = L.pad
+  nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+  x += c.buttonWidth + c.gap
   if m.hire then
     nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
   elseif m.hireNote then
@@ -1087,8 +1199,6 @@ local function alertsScreen(font, r, m)
   end
   local y = c.typesY
   if m.hired then
-    nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
-    x += c.buttonWidth + c.gap
     nodeAt(x, c.controlsY + 6, text(font, Words.monitor.heartbeat .. " " .. m.heartbeatText, T.small, "text"))
     x += 140
     nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))
@@ -1101,22 +1211,30 @@ local function alertsScreen(font, r, m)
     end
     y += math.ceil(#m.types / c.typesPerRow) * c.typeRowHeight
   end
-  nodeAt(L.pad, y, text(font, Words.monitor.alerts, T.small, "dim"))
-  y += c.headingGap
-  if m.emptyAlerts then nodeAt(L.pad, y, text(font, m.emptyAlerts, T.small, "dim")) end
-  for i, row in ipairs(m.rows) do
-    if i > c.maxRows then break end
-    local line = ("%5ds ago  %-22s %-12s %-10s %s"):format(row.ageS, row.label, row.agent or "-", row.status, row.reason)
+  local top = y + c.sectionGap
+  local leftW = math.floor((r.w - 3 * L.pad) * 0.32)
+  local rightX, rightW = L.pad + leftW + L.pad, r.w - 3 * L.pad - leftW
+  local height = r.h - top - L.pad
+  local agents = { text(font, "AGENTS IN SCOPE", T.small, "cyan") }
+  if #m.agents == 0 then agents[#agents + 1] = text(font, "No agents in scope", T.small, "dim") end
+  for _, a in ipairs(m.agents) do
+    agents[#agents + 1] = text(font, a.id .. "  " .. a.state, T.small, "text")
+    agents[#agents + 1] = text(font, tostring(a.task) .. (a.locked and "  PLAYER LOCK" or ""), T.small, a.locked and Theme.semantic.warning or "dim")
+  end
+  local alerts = { text(font, Words.monitor.alerts, T.small, "cyan") }
+  if #m.rows == 0 then alerts[#alerts + 1] = text(font, m.emptyAlerts, T.small, "dim") end
+  for _, row in ipairs(m.rows) do
     local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
-    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+    alerts[#alerts + 1] = text(font, ("%ds ago  %s  %s  %s: %s"):format(row.ageS, row.label, row.agent or "-", row.status, row.reason), T.small, color)
   end
-  y += math.max(1, math.min(#m.rows, c.maxRows)) * c.rowHeight + c.sectionGap
-  nodeAt(L.pad, y, text(font, Words.monitor.history, T.small, "dim"))
-  y += c.headingGap
-  if m.emptyHistory then nodeAt(L.pad, y, text(font, m.emptyHistory, T.small, "dim")) end
-  for i, h in ipairs(m.history) do
-    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, h.ok and h.text or (h.text .. "  " .. h.error), T.small, h.ok and "green" or Theme.semantic.warning))
+  local history = { text(font, Words.monitor.history, T.small, "cyan") }
+  if #m.history == 0 then history[#history + 1] = text(font, m.emptyHistory, T.small, "dim") end
+  for _, rec in ipairs(m.history) do
+    history[#history + 1] = text(font, rec.ok and rec.text or (rec.text .. "  " .. rec.error), T.small, rec.ok and "green" or Theme.semantic.warning)
   end
+  nodeAt(L.pad, top, scrollBox(0, 0, leftW, height, agents, 4))
+  nodeAt(rightX, top, scrollBox(0, 0, rightW, math.floor(height / 2), alerts, 4))
+  nodeAt(rightX, top + math.floor(height / 2) + 4, scrollBox(0, 0, rightW, math.floor(height / 2) - 4, history, 4))
   return withChildren(panel(r, nil), kids)
 end
 
@@ -1333,26 +1451,34 @@ local function debugScreen(font, r, m)
   local c = Screens.debug
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, m.title .. "  not shipped in release builds", T.small, "dim"))
-  local y = c.rowY
+  nodeAt(L.pad, L.pad, text(font, m.title .. " / DEMO   " .. m.status, T.small, Theme.semantic.warning))
+  local controls = {}
   for _, g in ipairs(m.groups) do
-    nodeAt(L.pad, y + 6, text(font, g.label, T.small, "dim"))
-    local x = L.pad + c.labelWidth
+    controls[#controls + 1] = text(font, g.label, T.small, "dim")
     for _, b in ipairs(g.buttons) do
-      nodeAt(x, y, button(font, b.label, b.action, b.selected and "cyan" or "dim", c.buttonWidth))
-      x += c.buttonWidth + c.buttonGap
+      controls[#controls + 1] = button(font, b.label, b.action, b.selected and "cyan" or "dim", 200)
     end
-    y += c.rowHeight
   end
-  y += c.statusGap
-  nodeAt(L.pad, y, text(font, m.status, T.small, "text"))
-  if m.toast then nodeAt(L.pad, y + c.toastGap, text(font, m.toast, T.small, "green")) end
-  if m.promptTitle then
-    y += c.promptGap + c.toastGap
-    nodeAt(L.pad, y, text(font, m.promptTitle, T.small, "dim"))
-    for i, line in ipairs(m.promptLines) do
-      nodeAt(L.pad, y + c.toastGap + (i - 1) * c.promptLineHeight, text(font, line == "" and " " or line, T.small, "text"))
-    end
+  local x, top = 240, 48
+  local w, h = r.w - x - L.pad, r.h - top - L.pad
+  nodeAt(L.pad, top, scrollBox(0, 0, 212, h, controls, 4))
+  local prompt = { text(font, m.promptTitle, T.small, "cyan") }
+  for _, line in ipairs(m.promptLines) do
+    prompt[#prompt + 1] = text(font, line == "" and " " or line, T.small, "text")
+  end
+  nodeAt(x, top, scrollBox(0, 0, w, math.floor(h * 0.7), prompt, 2))
+  nodeAt(x, top + math.floor(h * 0.7) + 8, scrollBox(0, 0, w, math.floor(h * 0.3) - 8,
+    { text(font, "RESULT", T.small, "cyan"), text(font, m.toast or "No result yet", T.small, "text") }, 4))
+  if m.confirmReset then
+    local mw, mh = 360, 120
+    local dialog = panel({ x = (r.w - mw) / 2, y = (r.h - mh) / 2, w = mw, h = mh }, nil)
+    dialog.children = {
+      at(L.pad, L.pad, text(font, "Reset save?", T.heading, Theme.semantic.warning)),
+      at(L.pad, 42, text(font, "This starts a new game.", T.small, "text")),
+      at(L.pad, 76, button(font, "Cancel", "debug.cancelReset", "dim", 140)),
+      at(L.pad + 152, 76, button(font, "Reset save", "debug.resetSave", Theme.semantic.warning, 140)),
+    }
+    kids[#kids + 1] = dialog
   end
   return withChildren(panel(r, nil), kids)
 end
@@ -1458,7 +1584,7 @@ function Shell.spec(sim, screenId: string, opts)
   elseif screenId == "team" then
     children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim), opts.time or 0)
   elseif screenId == "missions" then
-    children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
+    children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim, opts.missions))
   elseif screenId == "branches" and sim.tier >= 2 then
     children[#children + 1] = branchesScreen(font, rects.main, BranchesView.model(sim), opts.time or 0)
   elseif screenId == "alerts" and sim.tier >= 5 then
@@ -1495,6 +1621,10 @@ function Shell.new() return { screen = Screens.defaultScreen, glitch = Glitch.ne
 -- Map hover / select: "map.focus.<id>" focuses a planet or market (its routes glow); the same click again clears it.
 function Shell.act(state, action): boolean
   if type(action) ~= "string" then return false end
+  if action == "map.motion" then
+    state.reduced = not state.reduced
+    return true
+  end
   local id = action:match("^map%.focus%.([%w_]+)$")
   if not id then return false end
   state.focus = (state.focus ~= id) and id or nil

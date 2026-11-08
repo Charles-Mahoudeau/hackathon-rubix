@@ -58,10 +58,6 @@ local function promptLines(text)
     end
     lines[#lines + 1] = raw
   end
-  if #lines > c.promptLines then
-    lines = table.move(lines, 1, c.promptLines, 1, {})
-    lines[#lines] = "..."
-  end
   return lines
 end
 
@@ -89,7 +85,8 @@ function DebugPanel.model(sim, state)
     status = ("Provider %s   Tier T%d   Credit boosts %d/%d%s"):format(provider, sim.tier, boosts, c.demoMaxCreditBoosts,
       Debug.withinDemoBudget(sim) and "" or "  OVER DEMO BUDGET"),
     toast = state.toast,
-    promptTitle = state.prompt and "LAST PROMPT" or nil,
+    confirmReset = state.confirmReset,
+    promptTitle = state.prompt and "LAST PROMPT" or "NO PROMPT YET",
     promptLines = state.prompt and promptLines(state.prompt) or {},
   }
 end
@@ -112,6 +109,7 @@ end
 
 -- ctx = { storage, path, savedAt } for the save reset. -> handled, freshSim. A reset returns the new Sim: the caller swaps it in.
 function DebugPanel.act(sim, state, action, ctx)
+  if action == "debug.cancelReset" then state.confirmReset = false; return true end
   local name, arg = DebugPanel.parseAction(action)
   if not name then return false end
   if not DebugConfig.enabled then state.toast = "debug disabled"; return true end

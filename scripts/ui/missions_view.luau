@@ -26,13 +26,15 @@ local function rewardIcons(r)
   return out
 end
 
-function View.model(sim)
+function View.new() return { selected = nil } end
+
+function View.model(sim, view)
   local cur, def, index = Missions.current(sim)
   local rows = {}
   for i, e in ipairs(sim.missions) do
     local d = Missions.def(e.id)
-    local state = e.status == "claimed" and "claimed" or (e == cur and "current" or "locked")
-    rows[#rows + 1] = { id = e.id, name = ("%d. %s"):format(i, d.name), state = state, reward = rewardText(d.reward), icons = rewardIcons(d.reward) }
+    local state = e.status == "claimed" and "claimed" or e.status
+    rows[#rows + 1] = { id = e.id, name = ("%d. %s"):format(i, d.name), state = state, reward = rewardText(d.reward), icons = rewardIcons(d.reward), action = "missions.select." .. e.id }
   end
   local out = { rows = rows, total = #Config.missions, allDone = cur == nil, optional = {} }
   -- The raiding branch's own mission (spec §15b.5, V3): optional, listed under the main path once the first interceptor is owned.
@@ -61,8 +63,16 @@ function View.model(sim)
       brief = v.brief, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
+  if view and view.selected then
+    for i, e in ipairs(sim.missions) do
+      if e.id == view.selected then cur, def, index = e, Missions.def(e.id), i; break end
+    end
+  end
   if not cur then return out end
   local p = Missions.progress(sim, cur)
+  if cur.status == "locked" and index > 1 and sim.missions[index - 1].status ~= "claimed" then
+    p.text = "Claim the previous mission"
+  end
   out.current = {
     id = def.id, index = index, name = def.name, brief = def.brief, hint = def.hint, status = cur.status,
     fraction = p.fraction, percent = math.floor(p.fraction * 100), progressText = p.text, lines = p.lines,
@@ -94,8 +104,10 @@ function View.signature(sim)
 end
 
 -- "missions.claim.<id>" / "missions.retry.<id>" -> handled, ok, err.
-function View.act(sim, action)
+function View.act(sim, action, view)
   if type(action) ~= "string" then return false end
+  local selected = action:match("^missions%.select%.(%d+)$")
+  if selected and view then view.selected = tonumber(selected); return true end
   local rverb, rid = action:match("^missions%.(%a+)%.(V%d+)$")
   if rid == Refining.mission(sim).id then
     if rverb == "claim" then return true, Refining.claimMission(sim) end
