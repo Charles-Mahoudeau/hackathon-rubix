@@ -41,4 +41,16 @@ play("monitor-order")
 local tagged = false
 for _, l in ipairs(Feed.recent and Feed.recent(fresh, 20) or fresh.feed or {}) do if l.source == "monitor" then tagged = true end end
 assert(tagged, "the Monitor's order is in the feed tagged monitor")
+-- GR5-104 map tour: every step's setup runs on the prepared company, the depot really fills (a real station_full alert) and the raid is a real fight
+do
+  local sim = Tour.prepare()
+  for _, step in ipairs(Tour.mapSteps) do
+    if step.run then step.run(sim, {}) end
+    sim:run(sim:ticks(2))
+  end
+  assert(sim.alertTrack.stations[sim.home], "the depot is really full, so the alert is the sim's own")
+  assert(#sim.raid.convoys >= 1 or sim.raid.attacks >= 1, "the convoy is a real raid convoy")
+  assert(Tour.new("map").steps == Tour.mapSteps and Tour.new().steps == Tour.steps)
+end
+
 print("test_qa_tour OK")

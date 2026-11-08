@@ -107,6 +107,15 @@ local function expand(strip): { string }
 	return out
 end
 
+local framesOf = {}
+local function framesFor(kind: string)
+	if framesOf[kind] then return framesOf[kind] end
+	local def = config.turrets.kinds[kind]
+	assert(def, "Stations: unknown turret '" .. tostring(kind) .. "'")
+	framesOf[kind] = { idle = expand(def.idle), open = expand(def.open), fire = expand(def.fire) }
+	return framesOf[kind]
+end
+
 local sequences = {}
 -- The frame paths of one turn of a turret: idle for `idleHold` seconds, the opening, then the firing `fireLoops` times.
 function Stations.turretSequence(kind: string): { string }
@@ -122,10 +131,29 @@ function Stations.turretSequence(kind: string): { string }
 	return out
 end
 
--- The texture path a turret of `kind` shows at `t` seconds (phase already added by the caller).
+-- The texture path a turret of `kind` shows at `t` seconds of the idle/open/fire cycle.
 function Stations.turretPath(kind: string, t: number): string
 	local seq = Stations.turretSequence(kind)
 	return seq[math.floor(math.max(0, t) * config.turrets.fps) % #seq + 1]
+end
+
+-- GR5-104: a turret is parked (the first idle frame, still) until the map reports a real fight in range.
+function Stations.turretParked(kind: string): string return framesFor(kind).idle[1] end
+
+-- The frame of a turret that has been engaged for `age` seconds: the opening once, then the firing loop. Reduced motion shows
+-- one still firing frame (the state, without the animation).
+function Stations.turretEngaged(kind: string, age: number, reduced: boolean?): string
+	local f = framesFor(kind)
+	if reduced then return f.fire[1] end
+	local i = math.floor(math.max(0, age) * config.turrets.fps)
+	if i < #f.open then return f.open[i + 1] end
+	return f.fire[(i - #f.open) % #f.fire + 1]
+end
+
+-- True when animation frame `frame` of an engaged turret (floor(age * fps)) starts a firing loop: one shot per loop.
+function Stations.engagedFireStart(kind: string, frame: number): boolean
+	local f = framesFor(kind)
+	return frame >= #f.open and (frame - #f.open) % #f.fire == 0
 end
 
 -- True when absolute animation frame `frame` (floor(t * fps), any integer) is the first frame of a firing loop: one shot per loop.
@@ -170,7 +198,7 @@ end
 
 -- Entity descriptions (hub first) to pass to ctx.commands:spawn(). position: station centre in world units;
 -- scale: world units per sprite pixel; upgrades: the stages reached (nil = the base station). Turrets come last, on top;
--- the animated ones carry game.StationTurret { kind, phase, aim, corp } for client/station_fx to animate.
+-- the animated ones carry game.StationTurret { kind, site, aim, corp } for client/station_fx to engage (site: set by SystemMap).
 function Stations.entities(stationId: string, state: string, position, scale: number?, corp: string?, upgrades)
 	local parts = Stations.parts(stationId, upgrades)
 	local material, k, out = Stations.material(stationId, state, corp), scale or 1, {}
@@ -191,8 +219,8 @@ function Stations.entities(stationId: string, state: string, position, scale: nu
 			boosted.scale = { x = k * config.turrets.boost, y = k * config.turrets.boost }
 			out[#out + 1] = {
 				["rtype.Transform"] = boosted,
-				["rtype.SpriteRenderer"] = sprite(Stations.turretPath(t.kind, t.phase or 0), frame, frame, material, config.turretLayer),
-				["game.StationTurret"] = { kind = idx, phase = math.floor((t.phase or 0) * 10 + 0.5), aim = Stations.aimOf(t.x, t.y),
+				["rtype.SpriteRenderer"] = sprite(Stations.turretParked(t.kind), frame, frame, material, config.turretLayer),
+				["game.StationTurret"] = { kind = idx, site = 0, aim = Stations.aimOf(t.x, t.y),
 					corp = table.find(corpNames, corp or config.corp[stationId]) or 1 },
 			}
 		else

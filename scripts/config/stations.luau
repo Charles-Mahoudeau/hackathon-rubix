@@ -38,10 +38,10 @@ return {
 	},
 
 	-- Animated turrets (the [PLAYER] sets of the pack, 64x64 frames). A strip is { dir, prefix, from, to, digits } (numbered
-	-- files) or { dir, file } (one file). A turret loops `idle` for `idleHold` seconds, opens, fires `fireLoops` times, repeats.
+	-- files) or { dir, file } (one file). A turret is parked on its first `idle` frame; engaged (a real fight in range) it plays `open` once, then loops `fire`.
 	turrets = {
 		fps = 12,
-		idleHold = 4,
+		idleHold = 4, -- seconds of the idle loop at the start of a cycle (the ambient animation of GR5-52/GR5-100)
 		fireLoops = 2,
 		kinds = {
 			XN22 = {
@@ -74,21 +74,23 @@ return {
 	-- Planet stations hang off the planet; market stations stand above their node (the node and label stay as the hit area).
 	map = {
 		-- `scale` is the biggest world unit per sprite pixel; a station shrinks below it so that its whole extent (modules, turrets,
-		-- debris) fits `fit` (px; `perStage` more px per width and height for every stage reached), which is how the depot stays on the map as the command centre grows it. The home entry is also the
-		-- depot dock point of the ships (client/fleet_map): dx, dy from the planet centre, so the ships dock at the station itself.
-		home = { station = "hmc_depot", planet = "kessa", dx = 64, dy = -62, scale = 0.5, fit = { w = 76, h = 76, perStage = 20 }, label = "HMC DEPOT" },
+		-- debris) fits `fit` (px), which is how the depot stays 64-80 px wide on the map however far the command centre grows it
+		-- (GR5-103 density budget). The home entry is also the depot dock point of the ships (client/fleet_map): dx, dy from the
+		-- planet centre, so the ships dock at the station itself. dx, dy keep the whole grown depot `gap` px clear of Kessa.
+		home = { station = "hmc_depot", planet = "kessa", dx = 116, dy = 10, scale = 0.5, fit = { w = 80, h = 80 }, label = "HMC DEPOT" },
 		outposts = {
-			varn = { station = "outpost_varn", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "VARN OUTPOST" },
-			ashfall = { station = "outpost_ashfall", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "ASHFALL OUTPOST" },
-			lumen = { station = "outpost_lumen", dx = -80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "LUMEN OUTPOST" },
+			varn = { station = "outpost_varn", dx = 90, dy = -96, scale = 0.32, fit = { w = 130, h = 120 }, label = "VARN OUTPOST" },
+			ashfall = { station = "outpost_ashfall", dx = 90, dy = -96, scale = 0.32, fit = { w = 130, h = 120 }, label = "ASHFALL OUTPOST" },
+			lumen = { station = "outpost_lumen", dx = -98, dy = -98, scale = 0.32, fit = { w = 130, h = 120 }, label = "LUMEN OUTPOST" },
 		},
 		markets = {
 			-- `side`: where the station stands against its node: "up" (default), "left" or "right", whichever keeps clear of the
 			-- planets and their labels.
 			orbis = { station = "orbis_exchange", scale = 0.3, side = "right" },
-			halcyon = { station = "halcyon_shipyards", scale = 0.3 },
-			meridian = { station = "meridian_institute", scale = 0.3, side = "left" },
+			halcyon = { station = "halcyon_shipyards", scale = 0.24 },
+			meridian = { station = "meridian_institute", scale = 0.26, side = "left" },
 		},
+		gap = 24, -- px kept clear between any two stations / planets on the map (tests/test_stations)
 		marketGap = 18, -- px between the node centre and the nearest edge of its station
 		edge = 8, -- px a station keeps from the edge of the main panel
 		dock = { gap = 4, spacing = 9 }, -- the dock line from a planet to its depot: dash spacing, and the clearance at the planet rim
