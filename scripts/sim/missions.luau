@@ -27,6 +27,11 @@ local function computeSpent(sim, e)
   return math.floor((sim.compute.lifetimeTotal - e.baseCompute) * 10 + 0.5) / 10
 end
 
+-- Compute the Monitor spent since the mission opened, on the same 0.1 billing step.
+local function monitorSpent(sim, e)
+  return math.floor(((sim.compute.lifetime.monitor or 0) - e.baseMonitor) * 10 + 0.5) / 10
+end
+
 -- Fresh counters for a mission that just opened (or is retried).
 local function begin(sim, e, d)
   if d.check == "streak" then e.streaks = {}
@@ -52,6 +57,7 @@ local function begin(sim, e, d)
         break
       end
     end
+  elseif d.check == "watch" then e.resolved, e.pending, e.failed, e.baseMonitor = 0, {}, false, sim.compute.lifetime.monitor or 0
   elseif d.check == "frugal" then e.baseRevenue, e.baseCompute, e.failed = sim.lifetimeRevenue, sim.compute.lifetimeTotal, false end
 end
 
@@ -79,7 +85,7 @@ local function startMet(sim, d)
   return true
 end
 
-local UPGRADE_LABEL = { warehouse = "the warehouse", tradingPost = "the trading post" }
+local UPGRADE_LABEL = { warehouse = "the warehouse", tradingPost = "the trading post", commandCenter = "the command center" }
 
 -- Why the current mission has not started: nil once its `start` holds.
 function Missions.lockReason(sim, d)
@@ -159,6 +165,12 @@ function Missions.progress(sim, e)
     local text = ("%d:%02d left"):format(math.floor(left / 600), math.floor(left / 10) % 60)
     if e.failed then text = "Failed (an error or too few deliveries) - retry" end
     return { fraction = #e.agents > 0 and sum / #e.agents or 0, text = text, failed = e.failed == true, lines = lines }
+  elseif d.check == "watch" then
+    local n = math.min(e.resolved or 0, d.resolve)
+    local spent = monitorSpent(sim, e)
+    local text = ("%d / %d alerts resolved  -  Monitor Compute %.1f / %d"):format(n, d.resolve, spent, d.computeMax)
+    if e.failed then text = text .. "  -  over budget, retry" end
+    return { fraction = n / d.resolve, text = text, failed = e.failed == true, lines = {} }
   else
     local earned = math.max(0, sim.lifetimeRevenue - e.baseRevenue)
     local spent = computeSpent(sim, e)
@@ -204,6 +216,21 @@ local function check(sim, e, d)
     if d.check == "divide" and e.errors > 0 then ok = false end
     if not ok then e.failed = true end
     return ok
+  end
+  if d.check == "watch" then
+    local back = sim:ticks(d.backSeconds)
+    local keep = {}
+    for _, p in ipairs(e.pending) do
+      local agent = sim.agents[p.agent]
+      if agent and agent.state == "acting" then
+        e.resolved += 1
+      elseif sim.tick - p.tick <= back then
+        keep[#keep + 1] = p
+      end
+    end
+    e.pending = keep
+    if monitorSpent(sim, e) > d.computeMax then e.failed = true end
+    return not e.failed and e.resolved >= d.resolve
   end
   if computeSpent(sim, e) > d.computeMax then e.failed = true end
   return not e.failed and sim.lifetimeRevenue - e.baseRevenue >= d.revenue
@@ -295,6 +322,21 @@ function Missions.onOrbisSale(sim, ore, qty, unit)
   if unit >= d.minRatio * hmc then
     e.units = (e.units or 0) + qty
     Missions.update(sim)
+  end
+end
+
+-- The Monitor acted on `agentId`. It counts toward mission 8 when it answered an alert of that agent (one fix per alert)
+-- and the agent is acting again within the mission's window.
+function Missions.onMonitorFix(sim, agentId)
+  local e, d = Missions.current(sim)
+  if not e or e.status ~= "active" or d.check ~= "watch" then return end
+  for i = #sim.alerts.list, 1, -1 do
+    local a = sim.alerts.list[i]
+    if a.agent == agentId and a.handled and not a.resolved then
+      a.resolved = true
+      e.pending[#e.pending + 1] = { agent = agentId, tick = sim.tick }
+      return
+    end
   end
 end
 

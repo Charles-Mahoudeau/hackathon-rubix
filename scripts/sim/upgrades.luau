@@ -4,7 +4,7 @@ local Upgrades = {}
 
 function Upgrades.new()
   return { drill = 1, hold = 1, engine = 1, scanner = false, archive = 0, ships = 0, warehouse = false, tradingPost = false,
-    hub = false, deepNav = false }
+    hub = false, deepNav = false, commandCenter = false }
 end
 
 local function item(sim, id) return sim.b.shop.items[id] end
@@ -41,6 +41,7 @@ local function owned(sim, it)
   if it.stat == "tradingPost" then return up.tradingPost end
   if it.stat == "hub" then return up.hub == true end
   if it.stat == "deepNav" then return up.deepNav == true end
+  if it.stat == "commandCenter" then return up.commandCenter == true end
   return up.ships >= it.n
 end
 
@@ -114,6 +115,9 @@ function Upgrades.buy(sim, id)
   elseif it.stat == "hub" then
     up.hub = true
     sim:enterTier(sim.b.logistics.hubTier)
+  elseif it.stat == "commandCenter" then
+    up.commandCenter = true
+    sim:enterTier(sim.b.monitor.tier)
   elseif it.stat == "deepNav" then
     up.deepNav, sim.deepNav = true, true
   elseif it.stat == "ship" then

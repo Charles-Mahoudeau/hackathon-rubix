@@ -17,6 +17,8 @@ local Market = require("@scripts/sim/market")
 local Rng = require("@scripts/sim/rng")
 local Skills = require("@scripts/sim/skills")
 local Logistics = require("@scripts/sim/logistics")
+local Alerts = require("@scripts/sim/alerts")
+local Monitor = require("@scripts/sim/monitor")
 local Clock = require("@scripts/sim/clock")
 local MarketConfig = require("@scripts/config/market")
 
@@ -75,6 +77,8 @@ function Sim.new(opts)
   self.agents, self.agentOrder, self.ships, self.shipOrder, self.freighters = {}, {}, {}, {}, {}
   self.events, self.offer, self.lastAdvanceTick, self.reqs = {}, nil, nil, {}
   Logistics.init(self)
+  Alerts.init(self)
+  Monitor.init(self)
   for _, kind in ipairs(b.startAgents) do self:addAgent(kind, kind) end
   self:addShip("s1", "miner")
   self.skills = {}
@@ -334,6 +338,7 @@ function Sim:validate(agentId, call)
   if n == "report" and args.to ~= nil and args.to ~= "player" then
     if args.to == agentId or type(args.to) ~= "string" or not self.agents[args.to] then return false, "unknown_recipient" end
   end
+  if agent.type == "monitor" then return Monitor.validate(self, agent, n, args) end
   if agent.type == "logistician" and n == "sell" then
     local st = self.stations[agent.station]
     if args.buyer ~= nil and args.buyer ~= "hmc" and not (args.buyer == "orbis" and st.kind == "main" and self:marketUnlocked("orbis")) then
@@ -453,6 +458,7 @@ function Sim:apply(agentId, call, opts)
   local args, n = call.args or {}, call.name
   local agent = self.agents[agentId]
   local ship = agent.type == "miner" and self.ships[args.ship or ownedShip(self, agentId).id] or nil
+  if agent.type == "monitor" then return Monitor.apply(self, agentId, call, rid) end
   if agent.type == "logistician" and n == "sell" then
     local st = self.stations[agent.station]
     local q = stockQty(st.stock, args)
@@ -748,7 +754,7 @@ end
 function Sim:resumeAgent(agentId)
   local agent = self.agents[agentId]
   if not agent or agent.state ~= "paused_error" then return false, "not_paused" end
-  agent.state, agent.blockReason, agent.errs = "idle", nil, nil
+  agent.state, agent.blockReason, agent.errs, agent.pausedBy = "idle", nil, nil, nil
   Feed.info(self, agentId, "resumed")
   self:emit("agent_resumed", { agent = agentId })
   return true
@@ -766,7 +772,15 @@ end
 
 function Sim:setDirective(agentId, text) return setText(self, agentId, "directive", text, self.compute.cfg.editor.directiveMaxTokens) end
 
-function Sim:setOrder(agentId, text) return setText(self, agentId, "order", text, self.compute.cfg.editor.orderMaxTokens) end
+function Sim:setOrder(agentId, text)
+  local ok, err = setText(self, agentId, "order", text, self.compute.cfg.editor.orderMaxTokens)
+  if ok then self.agents[agentId].orderSource = nil end
+  return ok, err
+end
+
+function Sim:hireMonitor() return Monitor.hire(self) end
+function Sim:setMonitorSettings(changes) return Monitor.setSettings(self, changes) end
+function Sim:setMonitorLock(agentId, locked) return Monitor.setLock(self, agentId, locked) end
 
 -- Skills the company Archive can hold (spec D1: 1 from T1, +1 per Archive upgrade, +2 with the warehouse). The Archive is
 -- shared, so the agent only decides which type it may run.
@@ -1029,6 +1043,7 @@ function Sim:stepAgent(id, agent)
     return
   end
   local charge, cost = self.compute:charge(id, prompt.input)
+  if agent.type == "monitor" then Monitor.onSend(self, agent) end
   local rec = DecisionLog.open(self, id, prompt, cost)
   agent.decisions[#agent.decisions + 1] = self.tick
   agent.lastRequestTick = self.tick
@@ -1072,6 +1087,7 @@ function Sim:step()
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
   end
   if not offline then self:updateBailout() end
+  Alerts.step(self)
   Versions.step(self)
   Missions.update(self)
 end
@@ -1080,6 +1096,7 @@ function Sim:needsDecision(agentId)
   local agent = self.agents[agentId]
   if agent.type == "miner" then return ownedShip(self, agentId).state == "idle" end
   if agent.type == "logistician" then return self.tick >= (agent.waitUntil or 0) end
+  if agent.type == "monitor" then return Monitor.needsDecision(self, agent) end
   return false
 end
 
@@ -1096,6 +1113,7 @@ function Sim:richnessBand(richness) return band(richness) end
 -- Hidden veins are omitted and unscanned veins expose only a richness band (spec §4.3).
 function Sim:context(agentId)
   local agent = self.agents[agentId]
+  if agent.type == "monitor" then return Monitor.context(self) end
   if agent.type == "logistician" then
     local st = self.stations[agent.station]
     local markets = {}

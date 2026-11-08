@@ -5,6 +5,7 @@ local World = require("@scripts/config/world")
 local ToolsConfig = require("@scripts/config/tools")
 local Feed = require("./feed")
 local Market = require("./market")
+local Alerts = require("./alerts")
 
 local Skills = {}
 
@@ -308,6 +309,7 @@ local function stop(sim, agentId, agent, reason, completed)
   inbox[#inbox + 1] = text
   if #inbox > 20 then table.remove(inbox, 1) end
   sim:emit("skill_aborted", { agent = agentId, skill = name, reason = reason, completed = completed or false })
+  if not completed and not sim.offline then Alerts.raise(sim, "skill_aborted", agentId, reason, { skill = name, params = agent.skillParams }) end
   if sim.tally then
     local t = sim.tally.aborted
     t[#t + 1] = { agent = agentId, skill = name, reason = reason, completed = completed or false,

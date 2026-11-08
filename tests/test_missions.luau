@@ -42,12 +42,12 @@ end
 -- 1. framework: mission 1 is active from the first tick, 2 and 3 are locked, nothing is claimable
 do
   local s = Sim.new()
-  assert(#s.missions == 7 and status(s, 1) == "active" and status(s, 2) == "locked" and status(s, 3) == "locked")
+  assert(#s.missions == 8 and status(s, 1) == "active" and status(s, 2) == "locked" and status(s, 3) == "locked")
   local ok, err = Missions.claim(s, 1)
   assert(not ok and err == "not_complete", "cannot claim an unfinished mission")
   assert(select(2, Missions.claim(s, 99)) == "unknown_mission")
   local m = MissionsView.model(s)
-  assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 7 and #m.rows == 7)
+  assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 8 and #m.rows == 8)
   assert(m.current.hint:find("Say which ore, which vein", 1, true), "hint text from the spec")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
 end
@@ -178,7 +178,7 @@ do
   assert(status(s, 3) == "complete", "1,000 revenue at 0 Compute")
   local credits = s.resources.credits
   assert(Missions.claim(s, 3) and s.resources.credits == credits + 800)
-  assert(not MissionsView.model(s).allDone and MissionsView.model(s).current.id == 4 and #MissionsView.model(s).rows == 7)
+  assert(not MissionsView.model(s).allDone and MissionsView.model(s).current.id == 4 and #MissionsView.model(s).rows == 8)
 
   -- exactly 15 Compute is allowed
   s = open3()
@@ -239,7 +239,7 @@ do
   local spec, shown = Shell.spec(s, "missions", {})
   assert(shown == "missions")
   local all = table.concat(texts(spec), "\n")
-  assert(all:find("Clear orders", 1, true) and all:find("MISSION 1 / 7", 1, true) and all:find("0 / 3 trips in a row", 1, true))
+  assert(all:find("Clear orders", 1, true) and all:find("MISSION 1 / 8", 1, true) and all:find("0 / 3 trips in a row", 1, true))
   assert(not buttons(spec)["missions.claim.1"], "no Claim button before the goal is met")
   s.missions[1].status = "complete"
   local done = Shell.spec(s, "missions", {})
@@ -296,7 +296,7 @@ do
   local old = Persistence.serialize(s, 1)
   old.state.missions = { old.state.missions[1], old.state.missions[2], old.state.missions[3] }
   local r = assert(Persistence.restore(old))
-  assert(#r.missions == 7 and r.missions[4].status == "locked" and r.missions[5].status == "locked", "old save gains missions 4-5")
+  assert(#r.missions == 8 and r.missions[4].status == "locked" and r.missions[5].status == "locked", "old save gains missions 4-5")
 end
 
 -- 11. mission 5: needs warehouse + trading post; only Orbis units paid >= 1.5x the Kessa HMC price count

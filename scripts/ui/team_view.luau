@@ -21,9 +21,22 @@ local function assetOf(sim, id, agent)
     for _, sid in ipairs(sim.shipOrder) do
       if sim.ships[sid].owner == id then return sid end
     end
+  elseif agent.type == "monitor" then
+    return "command center"
   elseif agent.type == "logistician" then
     local st = sim.stations[agent.station]
     return st and Logistics.label(st) or agent.station
+  end
+  return "-"
+end
+
+-- "agent_idle 2 min ago" for the newest alert of an agent, "-" when it never had one.
+local function lastAlert(sim, id)
+  for i = #sim.alerts.list, 1, -1 do
+    local a = sim.alerts.list[i]
+    if a.agent == id then
+      return ("%s %ds ago"):format(a.type, math.floor((sim.tick - a.tick) * sim.b.tickSeconds))
+    end
   end
   return "-"
 end
@@ -38,7 +51,7 @@ function View.model(sim)
       id = id, type = a.type, asset = assetOf(sim, id, a),
       mode = a.mode == "skill" and (a.activeSkill or "skill") or "AI",
       state = a.state, computePerHour = round1(stats.compute_per_hour), netPerHour = math.floor(stats.net_per_hour + 0.5),
-      errors = errorsLast(sim, id, span), lastAlert = "-", action = "team.open." .. id,
+      errors = errorsLast(sim, id, span), lastAlert = lastAlert(sim, id), locked = a.monitorLock == true, action = "team.open." .. id,
     }
   end
   local idleShips = {}
@@ -54,7 +67,7 @@ function View.signature(sim)
   local parts = { tostring(#sim.agentOrder) }
   for _, id in ipairs(sim.agentOrder) do
     local a = sim.agents[id]
-    parts[#parts + 1] = id .. a.state .. a.mode .. math.floor(sim.compute:agentRatePerHour(id) * 10)
+    parts[#parts + 1] = id .. a.state .. a.mode .. math.floor(sim.compute:agentRatePerHour(id) * 10) .. lastAlert(sim, id)
   end
   return table.concat(parts, ",")
 end

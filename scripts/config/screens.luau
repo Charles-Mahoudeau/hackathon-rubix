@@ -82,6 +82,7 @@ return {
       prices_hmc = "HMC depot prices", prices_orbis = "Orbis prices", prices_halcyon = "Halcyon prices",
       prices_meridian = "Meridian prices", price_trends = "Price trends", format = "Context format",
       recent_results = "Recent results", veins = "Veins shown", inbox = "Inbox", warehouse = "Warehouse stock",
+      agent_detail = "Agent detail", show_skills = "Skills list", show_veins = "Veins list", show_prices = "Market prices",
     },
     values = { ["true"] = "on", ["false"] = "off" }, -- everything else is shown as its own text
   },
@@ -119,6 +120,10 @@ return {
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
   missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
     buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360 },
+
+  -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
+  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
+    listY = 160, rowHeight = 20, maxRows = 14, noteX = 190 },
 
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,

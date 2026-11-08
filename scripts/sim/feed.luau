@@ -18,6 +18,9 @@ local function fmtArgs(tool, a)
   if tool == "wait" then return tostring(a.seconds) end
   if tool == "report" then return a.to or "player" end
   if tool == "scan" then return tostring(a.planet) end
+  if tool == "set_order" then return ("%s, %q"):format(tostring(a.agent), tostring(a.text)) end
+  if tool == "assign_skill" then return ("%s, %s"):format(tostring(a.agent), tostring(a.skill)) end
+  if tool == "pause_agent" or tool == "resume_agent" then return tostring(a.agent) end
   return ""
 end
 
@@ -56,7 +59,7 @@ function Feed.refused(sim, agentId, call, err)
     text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. " → ERROR " .. tostring(err) })
 end
 
-function Feed.info(sim, agentId, text) return push(sim, { agent = agentId, kind = "info", text = text }) end
+function Feed.info(sim, agentId, text, source) return push(sim, { agent = agentId, kind = "info", text = text, source = source }) end
 function Feed.error(sim, agentId, text) return push(sim, { agent = agentId, kind = "error", text = text }) end
 
 return Feed
