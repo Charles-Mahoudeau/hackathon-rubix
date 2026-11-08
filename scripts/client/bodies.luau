@@ -1,14 +1,12 @@
 -- Asteroids (veins), stars and galaxy backdrop built on the planet shader (see Planet.fromDef). Client only.
 -- Each returns an entity description for ctx.commands:spawn(). No new shader code.
 -- Stars: this is the only star renderer; the GR5-17 background must call Star.new rather than build its own.
+local Planet = require("./planet")
+local config = require("@scripts/config/bodies")
 
-Asteroid = {}
-Star = {}
-Galaxy = {}
-
-if not engine.isClient then
-	return
-end
+local Asteroid = {}
+local Star = {}
+local Galaxy = {}
 
 local function look(base, land)
 	return {
@@ -20,7 +18,7 @@ local function look(base, land)
 end
 
 local function tierFor(richness: number)
-	for _, t in ipairs(GameConfig.asteroid.tiers) do
+	for _, t in ipairs(config.asteroid.tiers) do
 		if richness <= t.max then
 			return t, "r" .. tostring(_)
 		end
@@ -30,7 +28,7 @@ end
 -- veinSeed: the planet's stable seed (number); index: vein number 1..4; richness: 0.5..1.5.
 -- revealed=false (before `scan`) draws a dark rock that hides richness (same size too); true shows the richness tell.
 function Asteroid.new(veinSeed: number, index: number, richness: number, revealed: boolean, position)
-	local c = GameConfig.asteroid
+	local c = config.asteroid
 	local seed = veinSeed + index * c.seedStep
 	local radius, land, state
 	if revealed then
@@ -48,15 +46,17 @@ function Asteroid.new(veinSeed: number, index: number, richness: number, reveale
 end
 
 function Star.new(radius: number, position)
-	local c = GameConfig.star
+	local c = config.star
 	local def = look({ seed = c.seed, pixels = c.pixels, layer = c.layer }, c.land)
 	def.size = c.size
 	return Planet.fromDef("star", def, radius, position)
 end
 
 function Galaxy.new(radius: number, position)
-	local c = GameConfig.galaxy
+	local c = config.galaxy
 	local def = look({ seed = c.seed, tilt = c.tilt, pixels = c.pixels, layer = c.layer }, c.land)
 	def.size = c.size
 	return Planet.fromDef("galaxy", def, radius, position)
 end
+
+return { Asteroid = Asteroid, Star = Star, Galaxy = Galaxy }

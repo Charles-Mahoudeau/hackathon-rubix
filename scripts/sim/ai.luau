@@ -1,8 +1,10 @@
 -- AI decision interface. Swapping in RUBIX later = replace ONLY Ai.decide.
 -- Contract: decide(sim, agentId, context) -> { name = string, args = table }
 -- AI output is always a tool call, never free text; Sim validates everything.
-Ai = Ai or {}
-Ai.mode = "stub" -- "stub" | "vague"
+local World = require("@scripts/config/world")
+
+local Ai = {}
+local mode = "stub" -- "stub" | "vague"
 
 local function stub(sim, agentId, ctx)
   if agentId ~= "miner" then return { name = "report", args = { message = "idle" } } end
@@ -35,8 +37,15 @@ local function vague(sim, agentId, ctx)
   return stub(sim, agentId, ctx)
 end
 
+-- The returned module table is read-only, so the mode lives in a local behind a setter.
+function Ai.setMode(m)
+  assert(m == "stub" or m == "vague", "Ai.setMode: unknown mode " .. tostring(m))
+  mode = m
+end
+
 function Ai.decide(sim, agentId, ctx)
-  if Ai.mode == "vague" then return vague(sim, agentId, ctx) end
+  if mode == "vague" then return vague(sim, agentId, ctx) end
   return stub(sim, agentId, ctx)
 end
 
+return Ai

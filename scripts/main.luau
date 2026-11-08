@@ -1,5 +1,5 @@
 -- A component, and a system that counts: the smallest game that does something on the server.
--- Every file of `scripts/` is loaded, in sorted order, on the server and on every client.
+-- Default entry (`scripts.main`): runs on the server and on every client. Other files run only when an entry requires them.
 
 engine.ecs.component("game.Counter", { fields = { value = "u32" } })
 

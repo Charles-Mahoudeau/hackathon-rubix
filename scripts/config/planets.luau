@@ -1,10 +1,9 @@
 -- Planet look: the theme palette, and one fixed entry per MVP planet. Balance/art numbers live here only.
--- Files of scripts/ load in sorted order, so logic reads these globals at call time, never at load time.
 
-GameConfig = GameConfig or {}
+local config = {}
 
 -- The 8-colour theme (GR5-3), as 0xRRGGBB. PLACEHOLDER values until GR5-3 fixes the real ones: change them here only.
-GameConfig.palette = {
+config.palette = {
 	void = 0x0B0E1A,
 	deep = 0x1F2A44,
 	steel = 0x3E5C76,
@@ -15,7 +14,7 @@ GameConfig.palette = {
 	bone = 0xF2EBDD,
 }
 
-GameConfig.planetRender = {
+config.planetRender = {
 	pixels = 64, -- pixel grid of a planet
 	shaderPath = "shaders/planet.glsl",
 	texturePath = "textures/white.png",
@@ -29,7 +28,7 @@ GameConfig.planetRender = {
 
 -- Stable seeds: picked once, never regenerated. Colours are palette names, lit to shadow.
 -- waterLevel 0 = all land; cloudCover >= 1 = no clouds. Trade planets get the same treatment as harvest ones.
-GameConfig.planets = {
+config.planets = {
 	kessa = { -- harvest (Kessa): barren rock
 		seed = 3.17,
 		tilt = 0.4,
@@ -91,3 +90,5 @@ GameConfig.planets = {
 		cloud = { "bone", "ice" },
 	},
 }
+
+return config

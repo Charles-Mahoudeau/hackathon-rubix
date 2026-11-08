@@ -1,6 +1,7 @@
 -- Shared neon-bloom primitive. Every other VFX/asset ticket asks this module for its params.
-local cfg = VfxConfig.bloom
-Bloom = {}
+local cfg = require("@scripts/config/vfx").bloom
+
+local Bloom = {}
 
 -- Is this pixel part of the bloom? tagged = neon mask value in [0,1].
 function Bloom.isNeon(luminance: number, tagged: boolean?): boolean
@@ -20,4 +21,4 @@ function Bloom.params(scale: number?)
 	}
 end
 
-
+return Bloom
