@@ -5,6 +5,7 @@ local Sim = require("@scripts/sim/sim")
 local Registry = require("@scripts/sim/branches/registry")
 local Branches = require("@scripts/sim/branches/index")
 local Mining = require("@scripts/sim/branches/mining")
+local RaidingBranch = require("@scripts/sim/branches/raiding")
 local Persistence = require("@scripts/sim/persistence")
 local BranchesView = require("@scripts/ui/branches_view")
 local AlertsView = require("@scripts/ui/alerts_view")
@@ -19,14 +20,14 @@ end
 do
   local s = Sim.new()
   local r = s.registry
-  assert(#Branches.all == 1 and Branches.all[1] == Mining and r.byId.mining)
+  assert(#Branches.all == 2 and Branches.all[1] == Mining and Branches.all[2] == RaidingBranch and r.byId.mining and r.byId.raiding)
   assert(Registry.isOpen(s, "mining") and s.agents.miner and s.ships.s1 and s.ships.s1.owner == "miner")
   local miner = r.agentTypes.miner
   eq(miner.tools, { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" })
   assert(miner.toolSlots == 5 and miner.startTier == 1 and miner.branch == "mining")
   assert(r.toolTier.mine == 1 and r.toolTier["return"] == 1 and r.toolTier.scan == 2 and r.toolTier.store == 3)
   assert(r.toolTier.sell == 1 and r.toolTier.ship == 4 and r.toolTier.set_order == 5)
-  eq(r.alertTypes, { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle" })
+  eq(r.alertTypes, { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle", "notoriety_high", "retaliation" })
   eq(Registry.scopes(s), { "company", "mining", "logistics" })
   assert(r.alertGroup.crowding == "mining" and r:scopeOfAgentType("miner") == "mining" and r:scopeOfAgentType("logistician") == "logistics")
   for _, k in ipairs({ "vein", "resource", "pct", "site", "recipe", "route", "convoy_filter", "destination", "buyer", "station" }) do
@@ -34,11 +35,12 @@ do
   end
 end
 
--- 2. the Branches panel: mining open with its agents; nothing else to buy yet
+-- 2. the Branches panel: mining open with its agents; raiding locked until Tier 4
 do
   local s = Sim.new()
   local m = BranchesView.model(s)
-  assert(#m.rows == 1 and m.rows[1].id == "mining" and m.rows[1].state == "open" and #m.rows[1].agents == 1 and m.rows[1].agents[1] == "miner")
+  assert(#m.rows == 2 and m.rows[2].id == "raiding" and m.rows[2].state == "locked")
+  assert(m.rows[1].id == "mining" and m.rows[1].state == "open" and #m.rows[1].agents == 1 and m.rows[1].agents[1] == "miner")
   assert(m.used == 1 and m.capacity == s:commandCapacity())
   assert(s:openBranch("mining") == false and select(2, s:openBranch("mining")) == "already_open")
   assert(select(2, s:openBranch("nope")) == "unknown_branch")
@@ -111,7 +113,7 @@ do
   assert(not pcall(Sim.new, { branches = { Mining, clash } }))
 end
 
--- 5. with the default branches, nothing but mining exists in the alerts scope list
+-- 5. with the default branches, only mining adds a Monitor scope until raiding is opened
 do
   local s = Sim.new()
   eq(Registry.scopes(s), { "company", "mining", "logistics" })

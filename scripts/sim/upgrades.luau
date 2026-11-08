@@ -1,5 +1,7 @@
 -- Shop upgrades (spec §6.5, D22). State lives in `sim.upgrades`; drill/hold/engine are fleet-wide, so every mining ship
 -- (also one bought later) gets its stats from here. Pure sim logic: the shop screen only calls buy() and reads catalog().
+local Raiding = require("./raiding")
+
 local Upgrades = {}
 
 function Upgrades.new()
@@ -52,6 +54,7 @@ end
 
 -- Why `id` cannot be bought now, or nil: tier_locked | already_owned | needs_<previous> | reputation_<n> | not_enough_credits.
 function Upgrades.blocker(sim, id)
+  if Raiding.shopIndex(id) then return Raiding.shopBlocker(sim, id) end
   local it = item(sim, id)
   if not it then return "unknown_item" end
   if sim.tier < (it.tier or sim.b.shop.tier) then return "tier_locked" end
@@ -82,6 +85,7 @@ function Upgrades.catalog(sim)
     rows[#rows + 1] = { id = id, name = it.name, desc = it.desc, cost = it.cost, state = state, blocker = why, count = count, max = it.max,
       tier = it.tier or sim.b.shop.tier }
   end
+  for _, row in ipairs(Raiding.shopRows(sim)) do rows[#rows + 1] = row end
   return rows
 end
 
@@ -102,6 +106,7 @@ function Upgrades.claimShips(sim)
 end
 
 function Upgrades.buy(sim, id)
+  if Raiding.shopIndex(id) then return Raiding.shopBuy(sim, id) end
   local why = Upgrades.blocker(sim, id)
   if why then
     sim:log("ERROR", ("shop: cannot buy %s (%s)"):format(tostring(id), why))

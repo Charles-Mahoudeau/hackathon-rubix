@@ -2,6 +2,7 @@
 -- then every mission in order. Pure reads and sim calls, so the whole path is testable headless; the shell only lays it out.
 local Missions = require("@scripts/sim/missions")
 local Config = require("@scripts/config/missions")
+local Raiding = require("@scripts/sim/raiding")
 
 local View = {}
 
@@ -22,7 +23,17 @@ function View.model(sim)
     local state = e.status == "claimed" and "claimed" or (e == cur and "current" or "locked")
     rows[#rows + 1] = { id = e.id, name = ("%d. %s"):format(i, d.name), state = state, reward = rewardText(d.reward) }
   end
-  local out = { rows = rows, total = #Config.missions, allDone = cur == nil }
+  local out = { rows = rows, total = #Config.missions, allDone = cur == nil, optional = {} }
+  -- The raiding branch's own mission (spec §15b.5, V3): optional, listed under the main path once the first interceptor is owned.
+  if Raiding.isOpen(sim) then
+    local v = Raiding.mission(sim)
+    local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
+    local progress = v.failed and "failed: Notoriety reached 3" or ("%d / %d wins"):format(v.wins, v.target)
+    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }),
+      goal = v.goal, progressText = progress, failed = v.failed,
+      claim = v.status == "complete" and ("missions.claim." .. v.id) or nil,
+      retry = (v.status == "active" and v.failed) and ("missions.retry." .. v.id) or nil }
+  end
   if not cur then return out end
   local p = Missions.progress(sim, cur)
   out.current = {
@@ -43,12 +54,21 @@ function View.signature(sim)
     local p = Missions.progress(sim, e)
     parts[#parts + 1] = e.id .. e.status .. p.text
   end
+  if Raiding.isOpen(sim) then
+    local v = Raiding.mission(sim)
+    parts[#parts + 1] = v.id .. v.status .. v.wins .. tostring(v.failed)
+  end
   return table.concat(parts, ",")
 end
 
 -- "missions.claim.<id>" / "missions.retry.<id>" -> handled, ok, err.
 function View.act(sim, action)
   if type(action) ~= "string" then return false end
+  local rverb, rid = action:match("^missions%.(%a+)%.(V%d+)$")
+  if rid == Raiding.mission(sim).id then
+    if rverb == "claim" then return true, Raiding.claimMission(sim) end
+    if rverb == "retry" then return true, Raiding.retryMission(sim) end
+  end
   local verb, id = action:match("^missions%.(%a+)%.(%d+)$")
   if verb == "claim" then return true, Missions.claim(sim, tonumber(id)) end
   if verb == "retry" then return true, Missions.retry(sim, tonumber(id)) end

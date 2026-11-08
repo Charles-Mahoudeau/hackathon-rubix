@@ -19,6 +19,7 @@ local Logistics = require("@scripts/sim/logistics")
 local Alerts = require("@scripts/sim/alerts")
 local Monitor = require("@scripts/sim/monitor")
 local Clock = require("@scripts/sim/clock")
+local Raiding = require("@scripts/sim/raiding")
 local Registry = require("@scripts/sim/branches/registry")
 local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
@@ -79,6 +80,7 @@ function Sim.new(opts)
   self.events, self.offer, self.lastAdvanceTick, self.reqs = {}, nil, nil, {}
   self.registry = Registry.new(opts.branches or Branches.all, b)
   self.branchesOpen = {}
+  Raiding.init(self)
   Logistics.init(self)
   Alerts.init(self)
   Monitor.init(self)
@@ -90,6 +92,8 @@ function Sim.new(opts)
     self:emit("market_notice", { kind = kind, text = text })
     self:log("INFO", "market: " .. text)
   end)
+  -- With the raiding branch open, the rival sales are real convoys (sim/raiding.luau); until then the scripted sale runs.
+  self.market.convoyHook = function(m) return Raiding.spawnConvoy(self, m) end
   -- One AI budget authority: the queue (concurrency cap + hourly tokens). Its clock is game time here; the real
   -- provider injects real seconds (GR5-15). The Compute ledger bills in Compute and delegates the budget to it.
   local aiCfg = AiConfig
@@ -338,6 +342,7 @@ function Sim:validate(agentId, call)
   if not agent.tools[call.name] then return false, "unknown or disallowed tool: " .. call.name end
   if not tierHasTool(self, agent, call.name) then return false, "tool not equipped: " .. call.name end
   local n = call.name
+  if agent.type == "privateer" and n ~= "run_skill" then return Raiding.validate(self, agent, n, args) end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.validate then return branchTool.validate(self, agent, args) end
   local isMiner = agent.type == "miner"
@@ -466,6 +471,10 @@ function Sim:apply(agentId, call, opts)
   local rid = rec and rec.id
   local args, n = call.args or {}, call.name
   local agent = self.agents[agentId]
+  if agent.type == "privateer" and n ~= "run_skill" then
+    Raiding.apply(self, agentId, call, { record = rid, auto = opts and opts.auto })
+    return true
+  end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.apply then
     local entry = Feed.begin(self, agentId, call, self:takeReasoning(), rid)
@@ -487,6 +496,7 @@ function Sim:apply(agentId, call, opts)
     else
       gain = math.floor(q * self.planets[agent.station].depotRate * World.ores[args.resource].basePrice)
     end
+    gain = math.floor(gain * Raiding.priceFactor(self, args.buyer or "hmc"))
     st.stock[args.resource] = st.stock[args.resource] - q
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
     Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
@@ -620,6 +630,7 @@ function Sim:sell(ship, planetId, opts)
     else
       gain = math.floor(qty * self.planets[planetId].depotRate * World.ores[ship.ore].basePrice)
     end
+    gain = math.floor(gain * Raiding.priceFactor(self, opts.buyer or "hmc"))
     self:log("INFO", ("sold %d %s for %d"):format(qty, ship.ore, gain))
     self:credit(ship.owner, ship.recordId, gain)
     if orbisUnit then Missions.onOrbisSale(self, ship.ore, qty, orbisUnit) end
@@ -836,8 +847,9 @@ function Sim:stepFreighters()
       if f.timer <= 0 then
         if f.state == "out" then
           local l = f.load
+          Raiding.retaliation(self, f)
           local unit, total = Market.sell(self.market, l.destination, l.resource, l.qty)
-          local gain = math.floor(total)
+          local gain = math.floor(total * Raiding.priceFactor(self, l.destination))
           self:log("INFO", ("Delivery %s: %d %s sold on %s -> %d cr"):format(f.id, l.qty, l.resource, l.destination, gain))
           self:credit(f.owner, f.recordId, gain)
           local text = ("%s delivered: %d %s sold at %s for %d cr (%.1f each)"):format(f.id, l.qty, l.resource, l.destination, gain, unit)
@@ -1026,7 +1038,7 @@ function Sim:stepAgent(id, agent)
   end
   if not self.decide then return end
   if not self:needsDecision(id) then
-    if (agent.type == "miner" or agent.type == "logistician") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
+    if (agent.type == "miner" or agent.type == "logistician" or agent.type == "privateer") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
     return
   end
   if not self:paceAllowed(agent) then return end
@@ -1098,6 +1110,7 @@ function Sim:step()
   self:stepFreighters()
   self:updateTier()
   Upgrades.claimShips(self)
+  Raiding.step(self)
   for _, id in ipairs(self.agentOrder) do
     local agent = self.agents[id]
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
@@ -1113,6 +1126,7 @@ function Sim:needsDecision(agentId)
   if agent.type == "miner" then return ownedShip(self, agentId).state == "idle" end
   if agent.type == "logistician" then return self.tick >= (agent.waitUntil or 0) end
   if agent.type == "monitor" then return Monitor.needsDecision(self, agent) end
+  if agent.type == "privateer" then return Raiding.needsDecision(self, agent) end
   return false
 end
 
@@ -1130,6 +1144,7 @@ function Sim:richnessBand(richness) return band(richness) end
 function Sim:context(agentId)
   local agent = self.agents[agentId]
   if agent.type == "monitor" then return Monitor.context(self) end
+  if agent.type == "privateer" then return Raiding.context(self, agent) end
   if agent.type == "logistician" then
     local st = self.stations[agent.station]
     local markets = {}

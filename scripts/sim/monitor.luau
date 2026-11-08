@@ -9,7 +9,6 @@ local DecisionLog = require("./decision_log")
 local World = require("@scripts/config/world")
 local Missions = require("./missions")
 local Registry = require("./branches/registry")
-
 local Monitor = {}
 
 local function cfg(sim) return sim.b.monitor end
@@ -197,6 +196,8 @@ function Monitor.agentRows(sim)
       if a.type == "miner" then
         local ship = sim:ownedShip(id)
         at = ship.vein and (ship.vein.id .. "@" .. ship.at) or ship.at
+      elseif sim.registry.agentTypes[a.type] and sim.registry.agentTypes[a.type].at then
+        at = sim.registry.agentTypes[a.type].at(sim, a)
       else
         at = a.station
       end

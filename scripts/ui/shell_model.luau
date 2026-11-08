@@ -5,6 +5,7 @@ local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
 local ComputeView = require("@scripts/ui/compute_view")
 local Clock = require("@scripts/sim/clock")
+local Raiding = require("@scripts/sim/raiding")
 
 local Model = {}
 
@@ -130,7 +131,11 @@ function Model.map(sim)
       convoys[#convoys + 1] = { id = f.id, from = f.station, to = l.destination, t = math.max(0, math.min(1, 1 - f.timer / total)) }
     end
   end
-  return { planets = planets, markets = markets, routes = routes, convoys = convoys }
+  local rivals = {}
+  for _, c in ipairs(Raiding.mapConvoys(sim)) do
+    if shown[c.to] then rivals[#rivals + 1] = c end
+  end
+  return { planets = planets, markets = markets, routes = routes, convoys = convoys, rivals = rivals }
 end
 
 -- What the main panel says when a screen has nothing yet; nil for the screens that always have content (map).

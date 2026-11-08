@@ -29,6 +29,12 @@ function Persistence.serialize(sim, savedAt)
     copy.feedEntry = ship.feedEntry and ship.feedEntry.id or nil -- relinked to the feed list on load
     ships[id] = copy
   end
+  local interceptors = {}
+  for id, it in pairs(sim.interceptors) do
+    local copy = Sim.deepCopy(it)
+    copy.feedEntry = it.feedEntry and it.feedEntry.id or nil -- relinked to the feed list on load
+    interceptors[id] = copy
+  end
   local charges = {}
   for id, charge in pairs(sim.compute.charges) do charges[tostring(id)] = charge end
   local stations = {}
@@ -67,6 +73,8 @@ function Persistence.serialize(sim, savedAt)
       alerts = sim.alerts,
       monitorSettings = sim.monitorSettings,
       branchesOpen = sim.branchesOpen,
+      raid = sim.raid,
+      interceptorOrder = sim.interceptorOrder,
       stationOrder = sim.stationOrder,
       compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
         lifetime = sim.compute.lifetime, lifetimeTotal = sim.compute.lifetimeTotal, started = sim.compute.started },
@@ -76,6 +84,7 @@ function Persistence.serialize(sim, savedAt)
     }),
     veins = veins,
     ships = ships,
+    interceptors = interceptors,
   }
 end
 
@@ -136,6 +145,26 @@ function Persistence.restore(data, opts)
       for _, e in ipairs(sim.feed) do if e.id == id then saved.feedEntry = e end end
     end
     sim.ships[id] = saved
+  end
+  -- Raiding (spec §15b.4): older saves have none, so the fresh state from Sim.new stays.
+  if st.raid then
+    sim.raid = st.raid
+    sim.raid.standing = sim.raid.standing or {}
+    sim.raid.convoys = sim.raid.convoys or {}
+    sim.raid.fights = sim.raid.fights or {}
+  end
+  if data.interceptors then
+    sim.interceptorOrder = st.interceptorOrder or {}
+    sim.interceptors = {}
+    for id, saved in pairs(Sim.deepCopy(data.interceptors)) do
+      if saved.feedEntry then
+        local fid = saved.feedEntry
+        saved.feedEntry = nil
+        for _, e in ipairs(sim.feed) do if e.id == fid then saved.feedEntry = e end end
+      end
+      saved.hold, saved.scans = saved.hold or {}, saved.scans or {}
+      sim.interceptors[id] = saved
+    end
   end
   Upgrades.applyToFleet(sim)
   sim.savedAt = data.saved_at
