@@ -21,6 +21,36 @@ tools/engine.sh run           # start the game in a window
 
 `run` downloads the engine first if it is not there yet, so `tools/engine.sh run` works on its own.
 
+## How to play and what to learn
+
+You direct a space company by writing instructions for agents.
+Open Agents, select the Miner, and edit its directive: name a vein,
+when to return, and where to sell. Save it and watch the map and feed.
+Check Logs for decisions and errors; missions show goals and progress.
+Claim completed mission rewards to advance the main mission sequence.
+
+At T2, buy the Scanner in the Shop and equip scan in the agent editor.
+Ask the Miner to scan, then inspect the result before choosing a vein.
+Use the Archive to save and assign a successful routine as a skill.
+Skills repeat known steps without an AI decision for each step.
+AI decisions spend Compute; buy more when needed.
+
+Buy the Warehouse to reach T3 and store ore. Buy the Trading post
+to sell at Orbis; compare prices and which goods each buyer accepts.
+Give multiple Miners distinct work and watch for crowding.
+With a Warehouse and Reputation 1, buy the Logistics hub for T4.
+Hire Logisticians, arrange freighters, and watch for stock conflicts.
+Upgrade engines and navigation to reach farther planets.
+Salvage, refining, and raiding are optional purchases with different
+requirements, costs, risks, and buyers; inspect their results.
+At T4 with Reputation 2, buy the Command center to reach T5;
+hire a Monitor to watch alerts and help workers recover.
+
+Learn to give clear instructions, supply useful context, reuse routines,
+coordinate agents, and evaluate results as conditions change.
+The windowed client currently uses a deterministic keyword-based stub,
+so its behavior is not a demonstration of a live language model.
+
 ## Commands
 
 | Command | What it does |
