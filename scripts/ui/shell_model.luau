@@ -7,6 +7,7 @@ local DebugConfig = require("@scripts/config/debug")
 local Words = require("@scripts/config/copy")
 local ComputeView = require("@scripts/ui/compute_view")
 local Clock = require("@scripts/sim/clock")
+local Feed = require("@scripts/sim/feed")
 local Raiding = require("@scripts/sim/raiding")
 local Salvage = require("@scripts/sim/salvage")
 
@@ -168,8 +169,7 @@ function Model.feed(sim)
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
     local who = e.agent and sim.agents and sim.agents[e.agent]
-    -- the UI font is ASCII only: saves written before the feed switched to "->" still hold the arrow glyph
-    out[#out + 1] = { text = (e.text:gsub("\226\134\146", "->")), status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
+    out[#out + 1] = { text = Feed.display(e.text), status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
       tool = e.tool, agentType = who and who.type or nil }
   end
   return out

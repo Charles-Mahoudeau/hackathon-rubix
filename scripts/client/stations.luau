@@ -116,6 +116,27 @@ local function framesFor(kind: string)
 	return framesOf[kind]
 end
 
+local sequences = {}
+-- The frame paths of one turn of a turret: idle for `idleHold` seconds, the opening, then the firing `fireLoops` times.
+function Stations.turretSequence(kind: string): { string }
+	if sequences[kind] then return sequences[kind] end
+	local def, t = config.turrets.kinds[kind], config.turrets
+	assert(def, "Stations: unknown turret '" .. tostring(kind) .. "'")
+	local idle, out = expand(def.idle), {}
+	for i = 1, math.floor(t.idleHold * t.fps) do out[#out + 1] = idle[(i - 1) % #idle + 1] end
+	for _, f in ipairs(expand(def.open)) do out[#out + 1] = f end
+	local fire = expand(def.fire)
+	for _ = 1, t.fireLoops do for _, f in ipairs(fire) do out[#out + 1] = f end end
+	sequences[kind] = out
+	return out
+end
+
+-- The texture path a turret of `kind` shows at `t` seconds of the idle/open/fire cycle.
+function Stations.turretPath(kind: string, t: number): string
+	local seq = Stations.turretSequence(kind)
+	return seq[math.floor(math.max(0, t) * config.turrets.fps) % #seq + 1]
+end
+
 -- GR5-104: a turret is parked (the first idle frame, still) until the map reports a real fight in range.
 function Stations.turretParked(kind: string): string return framesFor(kind).idle[1] end
 

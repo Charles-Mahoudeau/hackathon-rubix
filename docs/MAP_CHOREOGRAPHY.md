@@ -28,3 +28,7 @@ raid-fight/raid-after (the real `sim.raid.fights` entry; the depot turret only e
 No station-damage state; no station-attacked event (turrets react only to real raid fights); abandoned planets have no map
 position (listed under OFF MAP); no inspector for NPC overflow (counts only); no camera, so no off-screen selection nudge.
 Muzzle VFX belongs to GR5-100, audio to GR5-99.
+
+## Depot size and gaps (GR5-104 follow-up)
+
+The HMC depot is 64-80 px wide at every stage (`map.home.fit` 80x80, no growth per stage), hangs right of Kessa (dx 116, dy 10) and every pair of stations/planets keeps `map.gap` (24 px). Frames at 1280x720, T5 company: `docs/qa/gr5-104-depot-t5-map.png`, `docs/qa/gr5-104-depot-t5-feed.png` (feed lines read `-> ...`).

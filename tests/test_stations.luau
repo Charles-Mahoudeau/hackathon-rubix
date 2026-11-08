@@ -142,25 +142,65 @@ for _, st in ipairs(SystemMap.stations(sim)) do
     assert(not covered, st.id .. " covers the planet " .. pid)
   end
 end
--- the depot stays small on the 1280x720 map: 64-80 px wide at the start, a bigger box once every stage is built, clear of Kessa
+-- the depot stays 64-80 px wide on the 1280x720 map at every stage, right next to Kessa (GR5-103 density budget)
 local function depotOf(s) return SystemMap.stations(s)[1] end
 local base = Sim.new()
 local d0 = depotOf(base)
 local e0 = Stations.extent("hmc_depot", nil, d0.scale)
-assert(e0.right - e0.left >= 64 and e0.right - e0.left <= 80.5, "the base depot is 64-80 px wide: " .. (e0.right - e0.left))
-assert(e0.bottom - e0.top <= 80.5, "the base depot is at most 80 px tall")
 assert(config.turrets.frame * config.turrets.boost * d0.scale >= 20, "an animated turret is at least 20 px")
 local off = { x = d0.at.x - kessa.x, y = d0.at.y - kessa.y }
-assert(off.x > 40 and off.x < 90 and off.y < -40 and off.y > -90, "the depot hangs about 60 px up-right of Kessa")
-local full = Sim.new()
-for _, up in ipairs({ "warehouse", "tradingPost", "hub", "commandCenter" }) do full.upgrades[up] = true end
-local d1 = depotOf(full)
-local e1 = Stations.extent("hmc_depot", full.upgrades, d1.scale)
-assert(inside(d1) and e1.right - e1.left <= 160 and e1.bottom - e1.top <= 160, "the full depot grows but stays within 160 px and the panel")
-assert(Stations.parts("hmc_depot", nil).modules[1].w * d1.scale >= 30, "the full depot hub is still at least 30 px")
-for _, d in ipairs({ d0, d1 }) do
-  local dx, dy = d.at.x - kessa.x, d.at.y - kessa.y
-  assert(math.sqrt(dx * dx + dy * dy) > Screens.map.planetRadius, "the depot hub is off Kessa's disc")
+assert(off.x > Screens.map.planetRadius and off.x < 140 and math.abs(off.y) < 60, "the depot hangs right next to Kessa")
+local stageUps = { "warehouse", "tradingPost", "hub", "commandCenter" }
+local grown = Sim.new()
+for n = 0, #stageUps do
+  if n > 0 then grown.upgrades[stageUps[n]] = true end
+  local d = depotOf(grown)
+  local e = Stations.extent("hmc_depot", grown.upgrades, d.scale)
+  assert(e.right - e.left >= 64 and e.right - e.left <= 80.5, "stage " .. n .. ": the depot is 64-80 px wide: " .. (e.right - e.left))
+  assert(e.bottom - e.top <= 80.5, "stage " .. n .. ": the depot is at most 80 px tall")
+  assert(inside(d), "stage " .. n .. ": the depot is inside the panel")
+  assert(math.abs(d.at.x - kessa.x - config.map.home.dx) < 1e-9, "the dock point does not move as the depot grows")
+end
+-- no two stations or planets come closer than config.map.gap px, at every tier and every depot stage (outposts built too)
+local function boxes(s)
+  local out = {}
+  for pid, p in pairs(planets) do out[#out + 1] = { name = pid, circle = { x = p.x, y = p.y, r = Screens.map.planetRadius } } end
+  for i, st in ipairs(SystemMap.stations(s)) do
+    local e = Stations.extent(st.id, st.upgrades, st.scale)
+    out[#out + 1] = { name = st.id, box = { l = st.at.x + e.left, r = st.at.x + e.right, t = st.at.y + e.top, b = st.at.y + e.bottom } }
+  end
+  return out
+end
+local function distance(a, b)
+  if a.circle and b.circle then return math.sqrt((a.circle.x - b.circle.x) ^ 2 + (a.circle.y - b.circle.y) ^ 2) - a.circle.r - b.circle.r end
+  if a.circle then a, b = b, a end
+  if b.circle then
+    local nx, ny = math.max(a.box.l, math.min(b.circle.x, a.box.r)), math.max(a.box.t, math.min(b.circle.y, a.box.b))
+    return math.sqrt((nx - b.circle.x) ^ 2 + (ny - b.circle.y) ^ 2) - b.circle.r
+  end
+  local dx, dy = math.max(a.box.l - b.box.r, b.box.l - a.box.r, 0), math.max(a.box.t - b.box.b, b.box.t - a.box.b, 0)
+  return math.sqrt(dx * dx + dy * dy)
+end
+for tier = 1, 5 do
+  for stage = 0, #stageUps do
+    for _, outposts in ipairs({ false, true }) do
+      local s = Sim.new()
+      s.tier = tier
+      for n = 1, stage do s.upgrades[stageUps[n]] = true end
+      if outposts then
+        for _, pid in ipairs({ "varn", "ashfall", "lumen" }) do s.stations[pid] = { id = pid, planet = pid, kind = "outpost", stock = {}, hangar = 0 } end
+      end
+      local all = boxes(s)
+      for i = 1, #all do
+        for j = i + 1, #all do
+          if not (all[i].circle and all[j].circle) then
+            local d = distance(all[i], all[j])
+            if d < config.map.gap - 1e-6 then error(("T%d stage %d%s: %s and %s are %.1f px apart (< %d)"):format(tier, stage, outposts and " +outposts" or "", all[i].name, all[j].name, d, config.map.gap)) end
+          end
+        end
+      end
+    end
+  end
 end
 -- the label and dock line tie the depot and each outpost to its planet
 local labels = SystemMap.stationLabels(sim)

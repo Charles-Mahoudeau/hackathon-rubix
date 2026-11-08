@@ -155,10 +155,10 @@ do
   FleetMap.update(fleet, s, 0)
   local before = FleetMap.update(fleet, s, 1.0)
   s.paused = true
-  FleetMap.update(fleet, s, 1.1)
-  local a = FleetMap.update(fleet, s, 2.0)
+  for i = 1, 18 do FleetMap.update(fleet, s, 1.0 + i * 0.1) end -- smoothing settles on the frozen targets
+  local a = FleetMap.update(fleet, s, 2.9)
   local b = FleetMap.update(fleet, s, 5.0)
-  for i, sp in ipairs(a) do assert(sp.key == b[i].key and sp.x == b[i].x and sp.y == b[i].y and sp.frame == b[i].frame, "frozen while paused: " .. sp.key) end
+  for i, sp in ipairs(a) do assert(sp.key == b[i].key and math.abs(sp.x - b[i].x) < 0.01 and math.abs(sp.y - b[i].y) < 0.01 and sp.frame == b[i].frame, ("frozen while paused: %s %s %s %s %s"):format(sp.key, sp.x, b[i].x, sp.y, b[i].y)) end
   assert(fleet.chips[1].badge.label == "MINE", "the real state is still shown")
   s.paused = false
   local c = FleetMap.update(fleet, s, 5.2)
