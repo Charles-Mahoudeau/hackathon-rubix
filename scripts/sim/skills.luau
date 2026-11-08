@@ -270,6 +270,7 @@ function Skills.assign(sim, agentId, name, params)
     if err == "unknown_skill" and sim.skills[name] then err = "wrong_agent_type" end
     return false, err, detail
   end
+  Skills.closeRun(sim, agentId, "replaced")
   agent.mode, agent.activeSkill, agent.skillParams = "skill", name, copy(params or {})
   agent.skillRun = { i = 1, loops = 0, loopStart = sim.tick }
   agent.blockReason = nil
@@ -279,9 +280,18 @@ function Skills.assign(sim, agentId, name, params)
   return true
 end
 
+-- The run_skill call that started the current skill gets its result: why the skill ended (spec §11).
+function Skills.closeRun(sim, agentId, because)
+  local agent = sim.agents[agentId]
+  if not agent or not agent.skillHistId then return end
+  sim:setResult(agentId, agent.skillHistId, { skill_ended_because = because })
+  agent.skillHistId = nil
+end
+
 function Skills.stop(sim, agentId)
   local agent = sim.agents[agentId]
   if not agent then return false, "unknown agent" end
+  Skills.closeRun(sim, agentId, "stopped")
   agent.mode, agent.activeSkill, agent.skillParams, agent.skillRun = "ai", nil, nil, nil
   if agent.state == "acting" then agent.state = "idle" end
   return true
@@ -298,6 +308,7 @@ end
 -- directive and Compute the agent goes back to AI mode with the reason in its inbox; otherwise (and always offline) it idles.
 local function stop(sim, agentId, agent, reason, completed)
   local name = agent.activeSkill
+  Skills.closeRun(sim, agentId, completed and "completed" or reason)
   local text = completed and ("skill '%s' completed"):format(name) or ("skill '%s' aborted: %s"):format(name, reason)
   sim:log(completed and "INFO" or "WARN", agentId .. ": " .. text)
   Feed.error(sim, agentId, text)

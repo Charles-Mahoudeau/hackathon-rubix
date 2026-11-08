@@ -8,6 +8,26 @@ local function str(desc, extra)
 end
 
 return {
+  -- `recent` rows in the agent context (spec §9.2.2/§11): argument aliases and the order args and result fields appear in.
+  argAlias = { stop_at_hold_pct = "pct" },
+  argOrder = {
+    mine = { "vein", "stop_at_hold_pct" }, ["return"] = { "to" }, sell = { "buyer", "planet", "resource", "qty" },
+    store = { "resource", "qty" }, ship = { "resource", "qty", "destination" }, set_order = { "agent", "text" },
+    assign_skill = { "agent", "skill", "params" }, run_skill = { "name", "params" }, report = { "to", "message" },
+  },
+  resultOrder = {
+    mine = { "mined", "hold_pct", "vein_reserve_pct", "duration_s", "stopped_because", "crowded_by" },
+    ["return"] = { "docked_at", "hold", "sold", "unit_price", "total" },
+    sell = { "sold", "unit_price", "total" },
+    store = { "stored", "partial", "warehouse_free" },
+    scan = { "veins" },
+    report = { "delivered" },
+    run_skill = { "skill_ended_because" },
+    ship = { "freighter_id", "eta_s" },
+    set_order = { "order_set" },
+    assign_skill = { "assigned" },
+    resume_agent = { "previous_error" },
+  },
   order = { "mine", "return", "sell", "store", "scan", "report", "wait", "run_skill", "ship", "set_order", "assign_skill", "pause_agent", "resume_agent" },
   schemas = {
     mine = { description = "Fly to a vein, mine it, stop at the target hold %.",

@@ -16,6 +16,8 @@ return {
     { id = "market", label = "Market", unlockTier = 3 },
     { id = "fleet", label = "Fleet", unlockTier = 4 },
     { id = "alerts", label = "Alerts", unlockTier = 5 },
+    -- Debug panel (spec §16.4): listed only while config/debug.luau `enabled` (debug builds and demo mode), never in release.
+    { id = "debug", label = "Debug", unlockTier = 1, debugOnly = true },
   },
   defaultScreen = "map",
 
@@ -31,6 +33,7 @@ return {
     station = { title = "No station", hint = "Build the warehouse (tier 3) to store ore and wait for better prices." },
     market = { title = "No market data", hint = "The warehouse lights the markets and shows who buys what." },
     fleet = { title = "No fleet", hint = "The logistics hub (tier 4) brings freighters and their routes." },
+    debug = { title = "Debug", hint = "Debug tools are not available in this build." },
     alerts = { title = "No alerts", hint = "The command center (tier 5) watches your team and raises alerts." },
   },
 
@@ -108,6 +111,10 @@ return {
   fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
 
+  -- Station screen (GR5-73): a tab per station, the stock bars on the left, docked ships / freighters / Logisticians on the right.
+  station = { tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
+    rowBarY = 14, rowBarWidth = 200, rowBarX = 150, rowQtyX = 360, listX = 520, lineHeight = 20, sectionGap = 14 },
+
   -- Team screen (GR5-28): one row per agent.
   team = { rowY = 48, rowHeight = 26, nameX = 0, assetX = 130, modeX = 270, stateX = 380, computeX = 500, netX = 590, errorsX = 690, alertX = 760,
     headerY = 28 },
@@ -130,6 +137,11 @@ return {
 
   -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
   branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
+
+  -- Debug screen (spec §16.4, GR5-72): one row per action group, then the status line, the result line and the last prompt.
+  -- Layout polish is GR5-69.
+  debug = { rowY = 40, rowHeight = 40, labelWidth = 110, buttonWidth = 128, buttonGap = 8, statusGap = 12, toastGap = 22, promptGap = 34,
+    promptLines = 14, promptChars = 120, promptLineHeight = 15 },
 
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
