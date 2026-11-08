@@ -26,7 +26,7 @@ assert(sim.resources.credits > credits0, "credits rise: " .. credits0 .. " -> " 
 
 local mined, sold = false, false
 for _, e in ipairs(sim.feed) do
-  if e.kind == "call" and e.text:find("^mine%(K1, 90%%%) → %+%d+ titanium") then mined = true end
+  if e.kind == "call" and e.text:find("^mine%(K1, 90%%%) %-> %+%d+ titanium") then mined = true end
   if e.kind == "info" and e.text:find("sold", 1, true) then sold = true end
 end
 assert(mined, "feed has a mine(K1, 90%) line (the call covers the return trip)")
@@ -35,7 +35,8 @@ assert(sold, "feed lists the sale")
 -- without the decider (the old client path) nothing happens
 local Sim = require("@scripts/sim/sim")
 local bare = Sim.new()
+local feed0 = #bare.feed
 bare:setDirective(id, "mine titanium at K1, return at 90%")
 bare:run(600)
-assert(#bare.feed == 0 and bare.resources.credits == credits0, "a sim with no decider stays idle")
+assert(#bare.feed == feed0 and bare.resources.credits == credits0, "a sim with no decider stays idle")
 print("test_client_sim ok")

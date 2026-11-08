@@ -39,12 +39,16 @@ do
   local sold = false
   for _, e in ipairs(s.feed) do
     if e.kind == "call" and e.status ~= "running" then
-      assert(e.text:find(" → ", 1, true), "result on every finished call: " .. e.text)
+      assert(e.text:find(" -> ", 1, true), "result on every finished call: " .. e.text)
+      assert(not e.text:find("[\128-\255]"), "feed text is ASCII, the UI font has no other glyphs: " .. e.text)
     end
     if e.kind == "info" and e.text:find("sold", 1, true) then sold = true end
   end
-  assert(calls[1].text:find("^mine%(K3, 100%%%) → %+%d+ cobalt %(%d+ s%)$"), "mine line: " .. calls[1].text)
+  assert(calls[1].text:find("^mine%(K3, 100%%%) %-> %+%d+ cobalt %(%d+ s%)$"), "mine line: " .. calls[1].text)
   assert(sold, "the sale is listed")
+  local Model = require("@scripts/ui/shell_model")
+  s.feed[#s.feed + 1] = { text = "old save \226\134\146 line", status = "ok" }
+  assert(Model.feed(s)[#Model.feed(s)].text == "old save -> line", "an arrow from an old save is shown as ASCII")
   -- the feed has one line per decision: decisions == calls
   assert(#s.compute.spend >= #calls and #s.compute.spend <= #calls + 1, "one feed call per decision")
 end
@@ -57,11 +61,11 @@ do
   local miner = s.agents.miner
   assert(miner.state == "no_compute" and miner.blockReason, "badge: " .. tostring(miner.state))
   local msgs = 0
-  for _, e in ipairs(s.feed) do if e.text:find("no_compute", 1, true) then msgs += 1 end end
+  for _, e in ipairs(s.feed) do if e.text == require("@scripts/config/copy").notEnoughCompute then msgs += 1 end end
   assert(msgs == 1, "one feed message, got " .. msgs)
   s:run(100)
   msgs = 0
-  for _, e in ipairs(s.feed) do if e.text:find("no_compute", 1, true) then msgs += 1 end end
+  for _, e in ipairs(s.feed) do if e.text == require("@scripts/config/copy").notEnoughCompute then msgs += 1 end end
   assert(msgs == 1, "still one message")
   local cr, cp = s.resources.credits, s.resources.compute
   assert(s:buyCompute(1))
@@ -127,7 +131,7 @@ do
   assert(#feedCalls(s) >= 1, "plays again after resume")
 
   s = pausedAfter(function() return { name = "mine", args = { vein = "K99" } } end, { errorRules = { invalidResponses = 99, providerErrors = 3, sameFailingCall = 2 } })
-  assert(s.agents.miner.state == "paused_error" and s.agents.miner.blockReason:find("same call"), "same failing call twice")
+  assert(s.agents.miner.state == "paused_error" and s.agents.miner.blockReason == require("@scripts/config/copy").pause.same, "same failing call twice")
 
   local p = Sim.new()
   p:noteFailure("miner", "provider"); p:noteFailure("miner", "provider")

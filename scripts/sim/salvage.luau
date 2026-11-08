@@ -354,10 +354,10 @@ end
 
 -- Mission V2 ---------------------------------------------------------------------------------------------------------
 
--- -> { id, name, goal, hint, status = locked|active|complete|claimed, reward }
+-- -> { id, name, brief, hint, status = locked|active|complete|claimed, reward }
 function Salvage.mission(sim)
   local d = Cfg.mission
-  return { id = d.id, name = d.name, goal = d.goal, hint = d.hint, status = sim.salvage.mission.status, reward = "1 blueprint" }
+  return { id = d.id, name = d.name, brief = d.brief, hint = d.hint, status = sim.salvage.mission.status, reward = "1 blueprint" }
 end
 
 function Salvage.claimMission(sim)

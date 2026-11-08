@@ -45,7 +45,10 @@ end
 -- The biggest scale (<= def.scale) at which the station's whole extent fits def.fit (px), if it has one.
 local function fitScale(id: string, upgrades, def, maxHeight: number?)
 	local e, k = Stations.extent(id, upgrades, 1), def.scale
-	if def.fit then k = math.min(k, def.fit.w / (e.right - e.left), def.fit.h / (e.bottom - e.top)) end
+	if def.fit then
+		local grow = (def.fit.perStage or 0) * #Stations.stagesReached(id, upgrades)
+		k = math.min(k, (def.fit.w + grow) / (e.right - e.left), (def.fit.h + grow) / (e.bottom - e.top))
+	end
 	if maxHeight then k = math.min(k, maxHeight / (e.bottom - e.top)) end
 	return k
 end

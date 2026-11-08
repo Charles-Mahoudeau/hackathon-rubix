@@ -34,6 +34,7 @@ local MapLife = require("@scripts/client/map_life")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
+local Cues = require("@scripts/render/vfx/cues")
 local DebugConfig = require("@scripts/config/debug")
 local QaTour = require("@scripts/client/qa_tour")
 
@@ -43,11 +44,13 @@ engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "
 local state = {
 	fleet = FleetMap.new(), sim = nil, tour = DebugConfig.qaTour and QaTour.new(DebugConfig.qaTour) or nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
+	examples = { open = false }, -- directive examples dropdown: open, selected id, pending replace confirmation (GR5-106)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), music = {}, lowComputeCheck = 0, -- sound cues and the ambient loop (GR5-23, GR5-99)
+	cueUi = nil, cueSim = nil, -- one-shot pixel cues: the UI layer that draws them, and the sim they last watched (GR5-100)
 	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
 	-- Save / load (GR5-77): the engine's rtype.Persistence plugin behind the Persistence module, driven by client/save.luau.
 	storage = Storage.engine(), save = nil,
@@ -132,11 +135,41 @@ local function mapLifeOpts()
 	return { chips = fleet.chips, aggregates = fleet.aggregates, hidden = fleet.hiddenCount or 0, away = fleet.away, reveal = cue, reduced = fleet.reduced }
 end
 
+-- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits and the planets, then draw the live quads in their own
+-- small UI layer so a burst never forces a redraw of the whole shell. Turret shots come from client/station_fx.
+local function observeCues(state, now)
+	local cues, sim = Cues.shared, state.sim
+	if state.cueSim ~= sim then
+		Cues.reset(cues) -- a new or loaded game: record the baselines, fire nothing
+		state.cueSim = sim
+	end
+	local credits = sim.resources.credits
+	if cues.lastCredits ~= credits then
+		Cues.observeCredits(cues, credits, now, Shell.creditsAnchor(Model.topBar(sim).creditsText))
+	end
+	local lit = {}
+	for _, p in ipairs(Model.map(sim).planets) do lit[p.id] = p.lit end
+	Cues.observePlanets(cues, lit, Shell.planetPositions(), Screens.map.planetRadius, now)
+	Cues.update(cues, now)
+end
+
+local function syncCues(commands, now)
+	local hide = state.shell.screen ~= Screens.defaultScreen and { planetUnlock = true, turretFire = true } or nil
+	local spec = Cues.spec(Cues.shared, now, Theme.layout.view, hide)
+	if spec then
+		retire(state.cueUi)
+		state.cueUi = engine.ui.spawn(commands, spec)
+	elseif state.cueUi then
+		retire(state.cueUi)
+		state.cueUi = nil
+	end
+end
+
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
 	local onMap = state.shell.screen == Screens.defaultScreen
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, examples = state.examples, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, qaLabel = state.tour and state.tour.label or nil, mapStations = onMap and SystemMap.stationLabels(state.sim) or nil, mapLife = onMap and mapLifeOpts() or nil })
 	state.shell.screen = shown
 end
 
@@ -168,6 +201,23 @@ local function editorClick(action)
 		state.toast, state.inputsDirty = nil, true
 	elseif action:sub(1, 11) == "editor.tab." then
 		state.tab, state.toast, state.inputsDirty = action:sub(12), nil, true
+		state.examples = { open = false }
+	elseif action == "editor.examples.toggle" then
+		state.examples = { open = not state.examples.open, selected = state.examples.selected }
+	elseif action:sub(1, 20) == "editor.example.pick." then
+		state.examples = { open = true, selected = action:sub(21) }
+	elseif action:sub(1, 19) == "editor.example.use." then
+		local exId = action:sub(20)
+		local ok, why = Editor.applyExample(state.sim, id, state.draft, exId, state.examples.confirm == exId)
+		if ok then
+			state.examples = { open = false, selected = exId }
+			state.toast, state.inputsDirty = "Example loaded: check needs, then Save", true
+		elseif why == "confirm_replace" then
+			state.examples = { open = true, selected = exId, confirm = exId }
+		else
+			state.examples = { open = true, selected = state.examples.selected }
+			state.toast = why == "too_long" and "That example is over the directive limit." or nil
+		end
 	elseif action:sub(1, 14) == "editor.preset." then
 		Editor.applyPreset(state.sim, state.draft, action:sub(15))
 		state.toast, state.inputsDirty = nil, true
@@ -220,13 +270,21 @@ local function dispatch(action, now, utc)
 	local teamHandled, teamAgent = TeamView.act(state.sim, action)
 	if teamHandled and teamAgent then
 		Screens.editor.agent = teamAgent
+		state.examples = { open = false }
 		action = "nav.agents"
 		state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
+	end
+	local picked = type(action) == "string" and action:match("^pick%.agent%.(.+)$")
+	if picked and state.sim.agents[picked] then
+		Screens.editor.agent = picked
+		state.examples = { open = false }
+		state.draft, state.toast, state.inputsDirty, changed = Editor.newDraft(state.sim, picked), nil, true, true
 	end
 	local screen = Shell.parseAction(action, state.sim.tier)
 	if screen and screen ~= state.shell.screen then
 		state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
 		if screen == "agents" then
+			state.examples = { open = false }
 			state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, Screens.editor.agent), nil, true
 		end
 	end
@@ -276,6 +334,7 @@ engine.ecs.system("game.Shell", {
 			Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
 		end
 		local glitchFrame = Shell.update(state.shell, dt)
+		observeCues(state, now)
 
 		state.draft = state.draft or Editor.newDraft(state.sim, Screens.editor.agent)
 		-- The typed text is in the input's UiText; the input's `action` says which field it is.
@@ -325,8 +384,8 @@ engine.ecs.system("game.Shell", {
 			local settings = {}
 			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
 			table.sort(settings)
-			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
-				table.concat(rates, ","), table.concat(settings, ",") }, "|")
+			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", tostring(state.examples.open), state.examples.selected or "", state.examples.confirm or "", m.totalTokens,
+				table.concat(rates, ","), table.concat(settings, ","), Screens.editor.agent, TeamView.signature(state.sim), tostring(state.sim.feedSeq) }, "|")
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
@@ -350,6 +409,7 @@ engine.ecs.system("game.Shell", {
 			rebuildUi(ctx.commands, glitchFrame)
 		end
 		syncInputs(ctx.commands)
+		syncCues(ctx.commands, now)
 		flushRetired(ctx.commands)
 	end,
 })

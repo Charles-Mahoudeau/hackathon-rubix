@@ -107,11 +107,15 @@ return {
 		wave_scale = 1.3,
 		explosion = { fps = 14, scale = 1.0 },
 		layers = { shield = 11, projectile = 12, explosion = 13, wave = 14, trail = 8 },
-		-- The depot: the player's dock next to Kessa (the station of GR5-52 sits here). Ships of the home planet leave from and
-		-- return to this point, offset from the planet centre in view pixels; parked ships circle it at `ring`.
-		depot = { dx = 74, dy = -46, ring = 34 },
+		-- The depot: the player's dock next to Kessa. Ships of the home planet leave from and return to the depot station (its
+		-- position is config/stations map.home); parked ships circle it at `ring` px.
+		depot = { ring = 30 },
 		-- Engine trail: pixel squares (assets/textures/white.png, 4 px) behind a moving ship, drawn in the corporation's neon.
 		trail = { sheet = "textures/white.png", px = 4, count = 7, length = 46, rate = 1.8, size = 0.8, spread = 5, rear = 17, steps = { 0.15, 0.3, 2.0 } },
+		-- A cosmetic loop until the first real trip is seen (client only, never touches the sim): a miner parked by Kessa and a
+		-- hauler shuttling between the home planet and the depot, so the map is not empty at game start. The hauler goes on
+		-- while the player has fewer than `minShips` ships on the map.
+		demo = { travel = 3.5, dwell = 2.0, minShips = 2 },
 		-- GR5-104: the choreography of GR5-103. Pixels are view pixels, times are seconds.
 		life = {
 			hull_art = 28, -- px of art inside a 64 px frame; times map_scale it is the hull's box for spacing

@@ -1,7 +1,8 @@
--- Agent feed (spec §12): one line per tool call and its result, e.g. `mine(K3, 100%) → +100 cobalt (80 s)`.
+-- Agent feed (spec §12): one line per tool call and its result, e.g. `mine(K3, 100%) -> +100 cobalt (80 s)`.
 -- Sim-side data plus events only; the UI reads `sim.feed` and listens to `feed_event`.
 local Ai = require("@scripts/config/ai")
 local DecisionLog = require("@scripts/sim/decision_log")
+local Copy = require("@scripts/sim/copy")
 
 local Feed = {}
 
@@ -63,7 +64,7 @@ end
 function Feed.finish(sim, entry, resultText, ok, result)
   if not entry or entry.status ~= "running" then return end
   entry.status = ok == false and "failed" or "ok"
-  entry.text = entry.text .. " → " .. resultText
+  entry.text = entry.text .. " -> " .. resultText
   if entry.histId then
     sim:setResult(entry.agent, entry.histId, result or (ok == false and { error = resultText }) or { result = resultText }, ok)
   end
@@ -75,7 +76,7 @@ end
 function Feed.refused(sim, agentId, call, err)
   local name = type(call) == "table" and call.name or "?"
   return push(sim, { agent = agentId, kind = "error", status = "failed", tool = name,
-    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. " → ERROR " .. tostring(err) })
+    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. (" -> ERROR %s (%s)"):format(Copy.error(err), tostring(err)) })
 end
 
 function Feed.info(sim, agentId, text, source) return push(sim, { agent = agentId, kind = "info", text = text, source = source }) end

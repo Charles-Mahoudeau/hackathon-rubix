@@ -142,17 +142,22 @@ for _, st in ipairs(SystemMap.stations(sim)) do
     assert(not covered, st.id .. " covers the planet " .. pid)
   end
 end
--- the depot is readable at 1280x720: a hub of 80+ px and turrets of 40+ px, also once every stage is built, clear of Kessa
+-- the depot stays small on the 1280x720 map: 64-80 px wide at the start, a bigger box once every stage is built, clear of Kessa
 local function depotOf(s) return SystemMap.stations(s)[1] end
 local base = Sim.new()
 local d0 = depotOf(base)
-assert(Stations.parts("hmc_depot", nil).modules[1].w * d0.scale >= 80, "the base depot hub is at least 80 px")
-assert(config.turrets.frame * config.turrets.boost * d0.scale >= 40, "an animated turret is at least 40 px")
+local e0 = Stations.extent("hmc_depot", nil, d0.scale)
+assert(e0.right - e0.left >= 64 and e0.right - e0.left <= 80.5, "the base depot is 64-80 px wide: " .. (e0.right - e0.left))
+assert(e0.bottom - e0.top <= 80.5, "the base depot is at most 80 px tall")
+assert(config.turrets.frame * config.turrets.boost * d0.scale >= 20, "an animated turret is at least 20 px")
+local off = { x = d0.at.x - kessa.x, y = d0.at.y - kessa.y }
+assert(off.x > 40 and off.x < 90 and off.y < -40 and off.y > -90, "the depot hangs about 60 px up-right of Kessa")
 local full = Sim.new()
 for _, up in ipairs({ "warehouse", "tradingPost", "hub", "commandCenter" }) do full.upgrades[up] = true end
 local d1 = depotOf(full)
-assert(d1.scale < d0.scale and inside(d1), "the full depot shrinks to fit the panel")
-assert(Stations.parts("hmc_depot", nil).modules[1].w * d1.scale >= 60, "the full depot hub is still at least 60 px")
+local e1 = Stations.extent("hmc_depot", full.upgrades, d1.scale)
+assert(inside(d1) and e1.right - e1.left <= 160 and e1.bottom - e1.top <= 160, "the full depot grows but stays within 160 px and the panel")
+assert(Stations.parts("hmc_depot", nil).modules[1].w * d1.scale >= 30, "the full depot hub is still at least 30 px")
 for _, d in ipairs({ d0, d1 }) do
   local dx, dy = d.at.x - kessa.x, d.at.y - kessa.y
   assert(math.sqrt(dx * dx + dy * dy) > Screens.map.planetRadius, "the depot hub is off Kessa's disc")

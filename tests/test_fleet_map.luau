@@ -8,6 +8,7 @@ local Market = require("@scripts/sim/market")
 local Remap = require("@scripts/client/remap")
 local Ship = require("@scripts/client/ship")
 local FleetMap = require("@scripts/client/fleet_map")
+local StationsConfig = require("@scripts/config/stations")
 
 local materials = {}
 local stub = {
@@ -57,7 +58,9 @@ local function checkSprite(sp)
   assert(sp.x == sp.x and sp.y == sp.y and sp.rot == sp.rot, "no NaN pose " .. sp.key)
 end
 
-local function depotOf(points) return { x = points.kessa.x + FX.depot.dx, y = points.kessa.y + FX.depot.dy } end
+local function depotOf(points) local d = StationsConfig.map.home
+  return { x = points.kessa.x + d.dx, y = points.kessa.y + d.dy }
+end
 
 -- 1. T1: a docked miner is drawn next to Kessa with an animated engine.
 do
@@ -84,14 +87,34 @@ do
   assert(n == 1, "a parked engine does not animate (" .. n .. " frames)")
 end
 
--- 1b. GR5-104: nothing is invented. At game start the map shows only the real miner (no demo loop), big enough to see.
+-- 1b. GR5-104: only cosmetic demo ships (no badge) beside the real miner at game start, big enough to see.
 do
   local s, fleet = Sim.new(), FleetMap.new()
-  local sprites = play(fleet, s, 0, 1.0, {})
-  for _, sp in ipairs(sprites) do assert(not sp.key:match("^demo:"), "no cosmetic actor: " .. sp.key) end
-  local hull = find(sprites, "ship:s1:hull")
-  assert(hull.scale * 28 >= 40 and hull.corp == "player", "hulls are 40+ px (28 px of art in the frame) in the player's colour")
-  assert(#fleet.chips == 1 and fleet.chips[1].badge.label == "DOCK" and fleet.chips[1].badge.tone == "dim", "a docked miner wears a dim DOCK badge")
+  local sprites, t = play(fleet, s, 0, 1.0, {})
+  local miner, hauler = find(sprites, "demo:miner:hull"), find(sprites, "demo:hauler:hull")
+  assert(miner and hauler, "cosmetic demo ships at game start (two ships on the map)")
+  for _, h in ipairs({ miner, hauler, find(sprites, "ship:s1:hull") }) do
+    assert(h.scale * 28 >= 40 and h.corp == "player", "hulls are 40+ px (28 px of art in the frame) in the player's colour")
+  end
+  assert(#fleet.chips == 1 and fleet.chips[1].badge.label == "DOCK" and fleet.chips[1].badge.tone == "dim", "a docked miner wears a dim DOCK badge; the demo ships wear none")
+  -- The hauler really crosses between Kessa and the depot over the loop.
+  local minX, maxX = math.huge, -math.huge
+  for i = 0, 200 do
+    local h = find(FleetMap.update(fleet, s, t + i * 0.1), "demo:hauler:hull")
+    minX, maxX = math.min(minX, h.x), math.max(maxX, h.x)
+  end
+  local p = FleetMap.points()
+  assert(maxX - minX > math.abs(p.kessa.x - depotOf(p).x) * 0.5, "the hauler travels between Kessa and the depot")
+  -- The first real activity ends the demo miner for good, but at least two ships stay on the map while the fleet has one ship.
+  s.ships.s1.state = "mining"
+  local sp = FleetMap.update(fleet, s, t + 30)
+  assert(not find(sp, "demo:miner:hull"), "demo miner gone when a real miner works")
+  assert(find(sp, "ship:s1:hull") and find(sp, "demo:hauler:hull"), "two ships visible with one real miner")
+  s.ships.s1.state = "idle"
+  assert(not find(FleetMap.update(fleet, s, t + 31), "demo:miner:hull"), "and the demo miner does not come back")
+  -- Two real ships replace the demo hauler.
+  s.shipOrder[2], s.ships.s2 = "s2", { id = "s2", state = "idle", at = s.home }
+  assert(not find(FleetMap.update(fleet, s, t + 32), "demo:hauler:hull"), "no demo hauler once the player owns two ships")
 end
 
 -- 2. A travelling miner flies from Kessa towards the vein, nose first, and the flame speeds up.
