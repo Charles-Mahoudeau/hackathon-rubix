@@ -3,7 +3,7 @@
 -- header stats match a hand calculation, filters and paging work, records are capped and survive a save.
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Persistence = require("@scripts/sim/persistence")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Shell = require("@scripts/ui/shell")

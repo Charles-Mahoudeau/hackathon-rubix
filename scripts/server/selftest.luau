@@ -2,10 +2,10 @@
 -- Runs the sim checks inside the real engine, so a module the sandbox refuses to load fails here and not at demo time.
 -- Exit code 0 = every check passed; 1 = a check failed (the reason is printed).
 local Balance = require("@scripts/config/balance")
+local Host = require("@scripts/sim/host")
 local World = require("@scripts/config/world")
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
-local Json = require("@scripts/sim/json")
 local Persistence = require("@scripts/sim/persistence")
 local Save = require("@scripts/client/save")
 local Storage = require("@scripts/client/storage")
@@ -27,7 +27,21 @@ local function check(ctx)
 	local storage = Persistence.memoryStorage()
 	assert(Persistence.save(a, storage, "save.json", 1700000000), "save failed")
 	local loaded = assert(Persistence.load(storage, "save.json"))
-	assert(Json.encode(Persistence.serialize(loaded, 1700000000)) == storage.files["save.json"], "save round trip differs")
+	assert(Host.json.encode(Persistence.serialize(loaded, 1700000000)) == storage.files["save.json"], "save round trip differs")
+
+	-- GR5-60: the engine's rtype.Json plugin keeps the contract the sim relies on (ordered maps, sorted objects, tryDecode, JSON renderer).
+	local json = Host.json
+	assert(json.encode(json.map({ { "z", 1 }, { "a", { 2, 3 } } })) == '{"z":1,"a":[2,3]}', "json: map keeps entry order")
+	assert(json.encode({ b = 1, a = 2 }) == '{"a":2,"b":1}' and json.encode({}) == "[]", "json: sorted keys, empty table is an array")
+	local decoded, decodeErr = json.tryDecode('{"x":[1,null,2]}')
+	assert(decodeErr == nil and #decoded.x == 2 and decoded.x[2] == 2, "json: null array elements are dropped")
+	local badValue, badErr = json.tryDecode("{nope")
+	assert(badValue == nil and type(badErr) == "string", "json: tryDecode reports bad text without raising")
+	local nullValue, nullErr = json.tryDecode("null")
+	assert(nullValue == nil and nullErr == nil, "json: a null text is nil with no message")
+	local Renderer = require("@scripts/sim/context_renderer")
+	local rendered = Renderer.json({ { key = "stock", kind = "map", map = Renderer.map({ { "iron", 3 }, { "list", Renderer.map({ { 1, "miner" } }) } }) } })
+	assert(rendered == '{"stock":{"iron":3,"list":{"1":"miner"}}}', "json: renderer output: " .. rendered)
 
 	-- GR5-77: the same save path as the client, on the engine's rtype.Persistence (a throwaway folder, see project.luau).
 	local engineStorage = Storage.engine()

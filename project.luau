@@ -7,7 +7,8 @@
 engine.settings.network.port = engine.args.port or 4242
 engine.settings.scripts.server = "server/main"
 
-local plugins = {}
+-- rtype.Json: the JSON codec the sim, the saves and the Axis requests use (engine.json). Needed on every side, windowed or not.
+local plugins = { "rtype.Json" }
 
 -- `--selftest`: boot the engine, run the sim checks of scripts/server/selftest.luau, exit 0 (pass) or 1 (fail). No network call.
 local selftest = engine.args.selftest
@@ -53,6 +54,4 @@ if engine.isClient then
 	end
 end
 
-if #plugins > 0 then
-	engine.settings.plugins = plugins
-end
+engine.settings.plugins = plugins

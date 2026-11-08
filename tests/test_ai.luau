@@ -1,6 +1,6 @@
 -- Run from repo root: luau tests/test_ai.luau   (the `@scripts` alias comes from .luaurc)
 -- GR5-15: Axis provider. A fake Axis/Relais server stands in for the network; nothing here touches the internet.
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Validator = require("@scripts/ai/validator")
 local Compute = require("@scripts/sim/compute")
 local Tools = require("@scripts/config/tools").schemas
