@@ -3,6 +3,7 @@
 local DecisionLog = require("@scripts/sim/decision_log")
 local Registry = require("@scripts/sim/branches/registry")
 local BranchesConfig = require("@scripts/config/branches")
+local Words = require("@scripts/config/copy")
 
 local View = {}
 
@@ -33,15 +34,15 @@ local function row(sim, def)
   local r = { id = def.id, name = def.name, agents = names, creditsPerHour = math.floor(credits + 0.5), computePerHour = round1(compute) }
   local cost = def.unlock and def.unlock.cost or 0
   if Registry.isOpen(sim, def.id) then
-    r.state = BranchesConfig.states.open
+    r.state, r.label = BranchesConfig.states.open, Words.states.open
     return r
   end
   local lock = Registry.lockReason(sim, def)
   if lock then
-    r.state, r.note = BranchesConfig.states.locked, reasonText(sim, lock)
+    r.state, r.label, r.note = BranchesConfig.states.locked, Words.states.locked, reasonText(sim, lock)
     return r
   end
-  r.state, r.cost = BranchesConfig.states.available, cost
+  r.state, r.label, r.cost = BranchesConfig.states.available, Words.states.available, cost
   if Registry.blocker(sim, def.id) then
     r.note = reasonText(sim, "not_enough_credits")
   else
@@ -53,7 +54,12 @@ end
 function View.model(sim)
   local rows = {}
   for _, def in ipairs(sim.registry.list) do rows[#rows + 1] = row(sim, def) end
-  return { rows = rows, used = #sim.agentOrder, capacity = sim:commandCapacity() }
+  local opened = 0
+  for _, r in ipairs(rows) do
+    if r.state == BranchesConfig.states.open then opened += 1 end
+  end
+  -- The hint only shows while mining is the one open branch.
+  return { rows = rows, used = #sim.agentOrder, capacity = sim:commandCapacity(), hint = opened <= 1 and Words.branches.hint or nil }
 end
 
 function View.signature(sim)

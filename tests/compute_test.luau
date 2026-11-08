@@ -151,7 +151,7 @@ local n = Sim.new()
 n:setDecider(AiStub.decide)
 n.resources.compute = 0
 n:run(50)
-assert(n.agents.miner.state == "no_compute" and n.agents.miner.blockReason == "not enough Compute")
+assert(n.agents.miner.state == "no_compute" and n.agents.miner.blockReason == require("@scripts/config/copy").notEnoughCompute)
 local warns = 0
 for _, l in ipairs(n.logs) do if l.level == "WARN" then warns = warns + 1 end end
 assert(warns == 1, "exactly one feed message, got " .. warns)

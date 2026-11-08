@@ -6,6 +6,7 @@
 -- the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
+local Words = require("@scripts/config/copy")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
@@ -551,7 +552,7 @@ local function editorScreen(font, r, m, opts)
   for _, n in ipairs(tabs(font, "editor", 300, 6)) do k[#k + 1] = n end
   local note, noteColor
   if opts.toast then note, noteColor = opts.toast, "green"
-  elseif not m.canSave then note, noteColor = "ERROR: over the limit, cannot be saved.", Theme.semantic.warning
+  elseif not m.canSave then note, noteColor = "ERROR: " .. (m.limitNote or Words.editor.directiveOver), Theme.semantic.warning
   elseif m.dirty then note, noteColor = "Unsaved changes.", Theme.semantic.warning end
   if note then k[#k + 1] = at(dw - 300 - L.pad, 4, text(font, note, T.small, noteColor), 300, 16) end
   if m.orderSource then k[#k + 1] = at(dw - 300 - L.pad, 22, text(font, "order set by the " .. m.orderSource, T.small, "cyan"), 300, 16) end
@@ -1072,22 +1073,23 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
--- Alerts (GR5-29, spec §8.7): the Monitor's hire button and settings, then the alert log newest first.
+-- Monitor (GR5-29, spec §8.7; copy GR5-92): its state, hire button and settings, the alert log newest first, then what it did.
 local function alertsScreen(font, r, m)
   local c = Screens.alerts
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "ALERTS  Monitor: " .. (m.hired and "hired" or "not hired"), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  %s"):format(Words.monitor.title, m.state), T.small, "dim"))
   local x = L.pad
   if m.hire then
     nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
   elseif m.hireNote then
     nodeAt(x, c.controlsY + 6, text(font, m.hireNote, T.small, Theme.semantic.warning))
   end
+  local y = c.typesY
   if m.hired then
-    nodeAt(x, c.controlsY, button(font, "Scope: " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+    nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
     x += c.buttonWidth + c.gap
-    nodeAt(x, c.controlsY + 6, text(font, "Heartbeat " .. m.heartbeatText, T.small, "text"))
+    nodeAt(x, c.controlsY + 6, text(font, Words.monitor.heartbeat .. " " .. m.heartbeatText, T.small, "text"))
     x += 140
     nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))
     nodeAt(x + c.smallWidth + c.gap, c.controlsY, button(font, "+", m.heartbeatActions.up, "cyan", c.smallWidth))
@@ -1095,17 +1097,25 @@ local function alertsScreen(font, r, m)
     for i, t in ipairs(m.types) do
       local col, row = (i - 1) % c.typesPerRow, math.floor((i - 1) / c.typesPerRow)
       nodeAt(L.pad + col * (c.typeWidth + c.gap), c.typesY + row * c.typeRowHeight,
-        button(font, (t.on and "[x] " or "[ ] ") .. t.type, t.action, t.on and "cyan" or "dim", c.typeWidth))
+        button(font, (t.on and "[x] " or "[ ] ") .. t.label, t.action, t.on and "cyan" or "dim", c.typeWidth))
     end
+    y += math.ceil(#m.types / c.typesPerRow) * c.typeRowHeight
   end
-  if #m.rows == 0 then
-    nodeAt(L.pad, c.listY, text(font, Screens.empty.alerts.title .. ": " .. Screens.empty.alerts.hint, T.small, "dim"))
-  end
+  nodeAt(L.pad, y, text(font, Words.monitor.alerts, T.small, "dim"))
+  y += c.headingGap
+  if m.emptyAlerts then nodeAt(L.pad, y, text(font, m.emptyAlerts, T.small, "dim")) end
   for i, row in ipairs(m.rows) do
     if i > c.maxRows then break end
-    local line = ("%5ds ago  %-14s %-12s %-10s %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason)
+    local line = ("%5ds ago  %-22s %-12s %-10s %s"):format(row.ageS, row.label, row.agent or "-", row.status, row.reason)
     local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
-    nodeAt(L.pad, c.listY + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, line, T.small, color))
+  end
+  y += math.max(1, math.min(#m.rows, c.maxRows)) * c.rowHeight + c.sectionGap
+  nodeAt(L.pad, y, text(font, Words.monitor.history, T.small, "dim"))
+  y += c.headingGap
+  if m.emptyHistory then nodeAt(L.pad, y, text(font, m.emptyHistory, T.small, "dim")) end
+  for i, h in ipairs(m.history) do
+    nodeAt(L.pad, y + (i - 1) * c.rowHeight, text(font, h.ok and h.text or (h.text .. "  " .. h.error), T.small, h.ok and "green" or Theme.semantic.warning))
   end
   return withChildren(panel(r, nil), kids)
 end
@@ -1115,7 +1125,9 @@ local function branchesScreen(font, r, m, time)
   local c = Screens.branches
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, ("BRANCHES  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  command %d / %d"):format(Words.branches.title, m.used, m.capacity), T.small, "dim"))
+  nodeAt(c.agentsX, c.headerY, text(font, Words.branches.agents, T.small, "dim"))
+  nodeAt(c.moneyX, c.headerY, text(font, Words.branches.creditsPerHour .. " / " .. Words.branches.computePerHour, T.small, "dim"))
   for i, row in ipairs(m.rows) do
     local y = c.rowY + (i - 1) * c.rowHeight
     local color = row.state == "open" and "green" or (row.state == "available" and "cyan" or "dim")
@@ -1125,15 +1137,18 @@ local function branchesScreen(font, r, m, time)
       for _, n in ipairs(Glow.light({ x = L.pad + c.stateX + 72, y = y + 8 }, "acting", time)) do kids[#kids + 1] = n end
     end
     nodeAt(L.pad, y, text(font, row.name, T.body, color))
-    nodeAt(L.pad + c.stateX, y, text(font, row.state, T.small, color))
-    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or "no agents", T.small, "text"))
-    if row.state == "open" then
+    nodeAt(L.pad + c.stateX, y, text(font, row.label, T.small, color))
+    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or Words.branches.noAgents, T.small, "text"))
+    if row.state == "open" and #row.agents == 0 then
+      nodeAt(c.moneyX, y, text(font, Words.branches.noData, T.small, "dim"))
+    elseif row.state == "open" then
       nodeAt(c.moneyX, y, text(font, ("%d cr/h   %.1f Compute/h"):format(row.creditsPerHour, row.computePerHour), T.small, "text"))
     elseif row.action then
       nodeAt(c.moneyX, y, button(font, ("Open %d cr"):format(row.cost), row.action, "green", c.buttonWidth))
     end
     if row.note then nodeAt(L.pad, y + c.noteGap, text(font, row.note, T.small, Theme.semantic.warning)) end
   end
+  if m.hint then nodeAt(L.pad, r.h - 28, text(font, m.hint, T.small, "dim")) end
   return withChildren(panel(r, nil), kids)
 end
 

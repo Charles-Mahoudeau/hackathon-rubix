@@ -9,6 +9,7 @@ local DecisionLog = require("./decision_log")
 local World = require("@scripts/config/world")
 local Missions = require("./missions")
 local Registry = require("./branches/registry")
+local Words = require("@scripts/config/copy")
 local Monitor = {}
 
 local function cfg(sim) return sim.b.monitor end
@@ -161,7 +162,7 @@ function Monitor.apply(sim, agentId, call, rid)
     result, data = "running " .. args.skill, { assigned = args.skill }
   elseif n == "pause_agent" then
     target.pausedBy = "monitor"
-    sim:pauseAgent(target.id, "paused by the Monitor")
+    sim:pauseAgent(target.id, Words.pause.monitor)
     result = "paused"
   elseif n == "resume_agent" then
     data = { previous_error = target.blockReason or (target.skillRun and target.skillRun.aborted) or "none" }
