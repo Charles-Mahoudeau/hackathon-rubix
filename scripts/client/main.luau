@@ -33,6 +33,7 @@ require("@scripts/client/station_fx")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
+local Cues = require("@scripts/render/vfx/cues")
 local DebugConfig = require("@scripts/config/debug")
 local QaTour = require("@scripts/client/qa_tour")
 
@@ -46,7 +47,8 @@ local state = {
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
-	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
+	audio = Audio.new(), music = {}, lowComputeCheck = 0, -- sound cues and the ambient loop (GR5-23, GR5-99)
+	cueUi = nil, cueSim = nil, -- one-shot pixel cues: the UI layer that draws them, and the sim they last watched (GR5-100)
 	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
 	-- Save / load (GR5-77): the engine's rtype.Persistence plugin behind the Persistence module, driven by client/save.luau.
 	storage = Storage.engine(), save = nil,
@@ -94,6 +96,36 @@ local function flushRetired(commands)
 		if r.frames <= 0 then commands:despawn(r.entity) else keep[#keep + 1] = r end
 	end
 	retired = keep
+end
+
+-- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits and the planets, then draw the live quads in their own
+-- small UI layer so a burst never forces a redraw of the whole shell. Turret shots come from client/station_fx.
+local function observeCues(state, now)
+	local cues, sim = Cues.shared, state.sim
+	if state.cueSim ~= sim then
+		Cues.reset(cues) -- a new or loaded game: record the baselines, fire nothing
+		state.cueSim = sim
+	end
+	local credits = sim.resources.credits
+	if cues.lastCredits ~= credits then
+		Cues.observeCredits(cues, credits, now, Shell.creditsAnchor(Model.topBar(sim).creditsText))
+	end
+	local lit = {}
+	for _, p in ipairs(Model.map(sim).planets) do lit[p.id] = p.lit end
+	Cues.observePlanets(cues, lit, Shell.planetPositions(), Screens.map.planetRadius, now)
+	Cues.update(cues, now)
+end
+
+local function syncCues(commands, now)
+	local hide = state.shell.screen ~= Screens.defaultScreen and { planetUnlock = true, turretFire = true } or nil
+	local spec = Cues.spec(Cues.shared, now, Theme.layout.view, hide)
+	if spec then
+		retire(state.cueUi)
+		state.cueUi = engine.ui.spawn(commands, spec)
+	elseif state.cueUi then
+		retire(state.cueUi)
+		state.cueUi = nil
+	end
 end
 
 local function rebuildUi(commands, glitchFrame)
@@ -148,10 +180,18 @@ local function dispatch(action, now, utc)
 	if ComputeView.act(state.sim, Screens.editor.agent, action) then changed = true end
 	if Model.act(state.sim, action) then changed = true end
 	if LogsView.act(state.logs, action) then changed = true end
-	if ShopView.act(state.sim, action) then changed = true end
+	local shopHandled, shopOk = ShopView.act(state.sim, action)
+	if shopHandled then
+		changed = true
+		if shopOk == false then Audio.onEvent(state.audio, { name = "ui_denied" }, { speed = 1 }) end
+	end
 	if FleetView.act(state.sim, action) then changed = true end
 	if StationView.act(state.station, action) then changed = true end
-	if MissionsView.act(state.sim, action) then changed = true end
+	local missionHandled, missionOk = MissionsView.act(state.sim, action)
+	if missionHandled then
+		changed = true
+		if missionOk == false then Audio.onEvent(state.audio, { name = "ui_denied" }, { speed = 1 }) end
+	end
 	if AlertsView.act(state.sim, action) then changed = true end
 	if BranchesView.act(state.sim, action) then changed = true end
 	if ArchiveView.act(state.sim, action) then changed = true end
@@ -217,20 +257,21 @@ engine.ecs.system("game.Shell", {
 		end
 		Clock.advance(state.sim, dt)
 		local changed = false
-		if not state.musicStarted then
-			state.musicStarted = true
-			Sounds.startMusic(ctx)
-		end
+		Sounds.syncMusic(ctx, state.music, Audio.musicFor(state.sim.tier))
 		Audio.beginFrame(state.audio, now)
+		if now - state.lowComputeCheck >= 1 then -- Compute "low" costs a prompt build per agent: check once a second
+			state.lowComputeCheck = now
+			Audio.setCondition(state.audio, "low_compute", ComputeView.topBar(state.sim).level ~= "ok", { speed = 1 })
+		end
 		for _, event in ipairs(state.sim:drainEvents()) do
 			-- The AI-error sound plays only when the glitch accepted the same event, so sound and flicker stay one trigger.
 			FleetMap.onEvent(state.fleet, event)
 			local glitched = Shell.onSimEvent(state.shell, event)
 			if glitched then changed = true end
-			local play = Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
-			if play then Sounds.play(ctx, play) end
+			Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
 		end
 		local glitchFrame = Shell.update(state.shell, dt)
+		observeCues(state, now)
 
 		state.draft = state.draft or Editor.newDraft(state.sim, Screens.editor.agent)
 		-- The typed text is in the input's UiText; the input's `action` says which field it is.
@@ -243,10 +284,13 @@ engine.ecs.system("game.Shell", {
 		end
 
 		for click in ctx.events.read("rtype.UiClicked") do
-			local tick = Audio.onEvent(state.audio, { name = "ui_click" }, { speed = 1 })
-			if tick then Sounds.play(ctx, tick) end
+			Audio.onEvent(state.audio, { name = "ui_click" }, { speed = 1 })
 			if dispatch(click.action, now, utc) then changed = true end
 		end
+
+		-- This frame's cues: priority, cooldowns and the per-frame cap are applied here; the music duck follows.
+		for _, play in ipairs(Audio.flush(state.audio, Sounds.bus)) do Sounds.play(ctx, play) end
+		Audio.duck(state.audio, dt)
 
 		-- The window is closing: save before the frame ends (the engine finishes this frame, then exits).
 		for _ in ctx.events.read("rtype.Closed") do
@@ -301,6 +345,7 @@ engine.ecs.system("game.Shell", {
 			rebuildUi(ctx.commands, glitchFrame)
 		end
 		syncInputs(ctx.commands)
+		syncCues(ctx.commands, now)
 		flushRetired(ctx.commands)
 	end,
 })
@@ -315,5 +360,19 @@ engine.ecs.system("game.MapSprites", {
 		for _, mark, transform, renderer in ctx.query do
 			FleetMap.apply(state.fleet, mark.slot, transform, renderer)
 		end
+	end,
+})
+
+-- Update, after the shell: owns the bus volumes (AudioVolumes is the user's master / music / effects) and lays the music
+-- duck on the music bus. If the resource is not writable the duck is simply off.
+engine.ecs.system("game.AudioBus", {
+	phase = "Update",
+	side = "client",
+	query = {},
+	resources = { write = { "rtype.AudioVolumes" } },
+	after = { "game.Shell" },
+	run = function(ctx)
+		local volumes = ctx.resources["rtype.AudioVolumes"]
+		if volumes then Sounds.applyBus(volumes, state.audio.duckLevel) end
 	end,
 })

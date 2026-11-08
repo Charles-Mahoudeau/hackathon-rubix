@@ -38,6 +38,7 @@ local Shell = {}
 local L = Theme.layout
 local T = Theme.type
 local ICON = Theme.layout.icon -- icon sizes in px
+local TOP_BAR = { titleMargin = 16, gap = 24 } -- the heading's right margin and the row gap of the top bar (topBar below)
 
 -- Rectangles in view pixels. Absolute layout keeps the world-drawn planets and the UI labels on the same coordinates.
 function Shell.layout()
@@ -62,6 +63,17 @@ function Shell.planetPositions()
   local out = {}
   for id, p in pairs(Screens.map.planets) do out[id] = Shell.mapPoint(p.x, p.y) end
   return out
+end
+
+-- Where the credits value sits in the top bar, in view pixels: { x = centre, y = centre of the value line, w = its width }.
+-- Mirrors topBar's row: padding, the GRIDMIND heading (+ its margin), the row gap, then the Credits cell (label line, value line).
+function Shell.creditsAnchor(creditsText: string)
+  local top = Shell.layout().top
+  local x = top.x + L.pad + Fit.textWidth("GRIDMIND", T.heading) + TOP_BAR.titleMargin + TOP_BAR.gap
+  local w = Fit.textWidth(creditsText, T.heading)
+  local labelH, valueH = math.ceil(T.small * Fit.lineHeight), math.ceil(T.heading * Fit.lineHeight)
+  local cellH = labelH + 2 + valueH
+  return { x = x + w / 2, y = top.y + (top.h - cellH) / 2 + labelH + 2 + valueH / 2, w = w }
 end
 
 local function rect(r)
@@ -150,7 +162,7 @@ local function topBar(font, r, bar)
       c.action, color, { text(font, c.label, T.small, color) }, c.active)
   end
   local children = {
-    text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
+    text(font, "GRIDMIND", T.heading, "cyan", { marginRight = TOP_BAR.titleMargin }),
     cell("Credits", bar.creditsText, "text", nil, "resource.credits"),
     gauge,
     buy,
@@ -159,7 +171,7 @@ local function topBar(font, r, bar)
     speed,
   }
   if bar.budgetReached then children[#children + 1] = text(font, bar.budgetMessage, T.small, Theme.semantic.warning) end
-  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = 24, paddingX = L.pad }), children)
+  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = TOP_BAR.gap, paddingX = L.pad }), children)
 end
 
 local function nav(font, r, entries, screenId)

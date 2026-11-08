@@ -8,6 +8,7 @@
 -- the sim, the clock and the previous pose, so it runs headless in tests. Positions are view pixels, like the planets.
 local Config = require("@scripts/config/ships")
 local Screens = require("@scripts/config/screens")
+local StationsConfig = require("@scripts/config/stations")
 local Raiding = require("@scripts/sim/raiding")
 local Remap = require("@scripts/client/remap")
 local Ship = require("@scripts/client/ship")
@@ -347,27 +348,31 @@ local function realActivity(sim): boolean
 	return false
 end
 
--- The start-up loop (config demo): one miner circling the home planet and one hauler shuttling from the vein planet to the
--- depot and back, until the first real activity. Cosmetic: not in the sim, gone for good once realActivity() is true.
-local function demoActors(points, sim, t, out)
+-- The start-up loop (config demo), so the map is not empty at game start: one miner circling the home planet until the first
+-- real activity, and one hauler shuttling between the home planet and the depot while the player has fewer than minShips ships.
+-- Cosmetic: not in the sim.
+local function demoActors(points, sim, t, realSeen: boolean, out)
 	local D = FX.demo
-	local planet, from, depot = points[sim.home], points[D.from], points.depot
-	if not (planet and from and depot) then return end
+	local planet, depot = points[sim.home], points.depot
+	if not (planet and depot) then return end
 	local ring = Screens.map.planetRadius + FX.mining.pad
-	out[#out + 1] = actorOf("demo:miner", "miner", "player", orbit(planet, ring, FX.mining.speed, 1.0, t), { moving = true, tier = 1 })
+	if not realSeen then
+		out[#out + 1] = actorOf("demo:miner", "miner", "player", orbit(planet, ring, FX.mining.speed, 1.0, t), { moving = true, tier = 1 })
+	end
+	if #sim.shipOrder + #sim.freighters >= D.minShips then return end
 	local cycle = 2 * (D.travel + D.dwell)
 	local u = t % cycle
 	local pose
 	if u < D.travel then
-		local pos, rot = leg(from, depot, u / D.travel)
+		local pos, rot = leg(planet, depot, u / D.travel)
 		pose = { x = pos.x, y = pos.y, rot = rot }
 	elseif u < D.travel + D.dwell then
 		pose = orbit(depot, FX.depot.ring, FX.dock.speed * 2, 0, t)
 	elseif u < 2 * D.travel + D.dwell then
-		local pos, rot = leg(depot, from, (u - D.travel - D.dwell) / D.travel)
+		local pos, rot = leg(depot, planet, (u - D.travel - D.dwell) / D.travel)
 		pose = { x = pos.x, y = pos.y, rot = rot }
 	else
-		pose = orbit(from, ring, FX.mining.speed, 0, t)
+		pose = orbit(planet, ring, FX.mining.speed, 0, t)
 	end
 	out[#out + 1] = actorOf("demo:hauler", "miner", "player", pose, { moving = true, tier = 1 })
 end
@@ -378,11 +383,11 @@ function FleetMap.update(fleet, sim, t: number)
 	fleet.lastT = t
 	local points = FleetMap.points()
 	local home = points[sim.home] or points.kessa
-	points.depot = { x = home.x + FX.depot.dx, y = home.y + FX.depot.dy, depot = true }
+	local dock = StationsConfig.map.home
+	points.depot = { x = home.x + dock.dx, y = home.y + dock.dy, depot = true }
 	local actors, convoys = {}, nil
-	if not fleet.realSeen then
-		if realActivity(sim) then fleet.realSeen = true else demoActors(points, sim, t, actors) end
-	end
+	if not fleet.realSeen and realActivity(sim) then fleet.realSeen = true end
+	demoActors(points, sim, t, fleet.realSeen, actors)
 	minerActors(fleet, sim, points, t, actors)
 	freighterActors(fleet, sim, points, t, actors)
 	convoys = convoyActors(fleet, sim, points, t, actors)
