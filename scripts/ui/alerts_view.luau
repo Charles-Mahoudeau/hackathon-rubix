@@ -3,13 +3,31 @@
 local Alerts = require("@scripts/sim/alerts")
 local Monitor = require("@scripts/sim/monitor")
 local Registry = require("@scripts/sim/branches/registry")
+local Copy = require("@scripts/sim/copy")
+local Words = require("@scripts/config/copy")
+local Screens = require("@scripts/config/screens")
 
 local View = {}
 
 local BLOCKER = {
-  command_center_locked = "Buy the command center in the Shop first",
-  command_capacity = "No free command slot",
+  command_center_locked = Words.monitor.needsCommandCenter,
+  command_capacity = Words.monitor.noCommandSlot,
 }
+
+-- The Monitor's own tool calls, newest first: what it did to which agent, and whether the sim accepted it.
+local function history(sim, limit)
+  local out, monitor = {}, sim.agents.monitor
+  if not monitor then return out end
+  for i = #monitor.history, 1, -1 do
+    local h = monitor.history[i]
+    if h.tool ~= "wait" and h.tool ~= "report" then
+      local line = ("%s %s"):format(h.tool, tostring(h.args and h.args.agent or "-"))
+      out[#out + 1] = { text = line, ok = h.ok ~= false, error = h.ok == false and Copy.error(h.result and h.result.error) or nil }
+      if #out >= limit then break end
+    end
+  end
+  return out
+end
 
 local function nextOf(list, current)
   for i, v in ipairs(list) do
@@ -24,10 +42,10 @@ function View.model(sim)
   local hb = st.heartbeat
   local types = {}
   for _, t in ipairs(sim.registry.alertTypes) do
-    types[#types + 1] = { type = t, on = st.alertTypes[t] == true, action = "alerts.type." .. t }
+    types[#types + 1] = { type = t, label = Copy.alert(t), on = st.alertTypes[t] == true, action = "alerts.type." .. t }
   end
   local blocker = Monitor.hireBlocker(sim)
-  local agents, history = {}, {}
+  local agents = {}
   for _, id in ipairs(sim.agentOrder) do
     local a = sim.agents[id]
     local scope = sim.registry:scopeOfAgentType(a.type)
@@ -35,22 +53,23 @@ function View.model(sim)
       agents[#agents + 1] = { id = id, state = a.state, task = a.activeSkill or a.mode, locked = a.monitorLock == true }
     end
   end
-  local records = sim.records.monitor or {}
-  for i = #records, 1, -1 do
-    local rec = records[i]
-    history[#history + 1] = { time = rec.t_game, tool = rec.tool_call and rec.tool_call.tool or "waiting",
-      status = rec.validation, result = rec.result and rec.result.result }
-  end
+  local rows = Alerts.rows(sim)
+  for _, r in ipairs(rows) do r.label = Copy.alert(r.type) end
+  local acts = history(sim, sim.agents.monitor and #sim.agents.monitor.history or 0)
   return {
     hired = hired,
+    state = hired and Words.states.open or (blocker and Words.states.locked or Words.states.available),
+    history = acts,
+    emptyAlerts = #rows == 0 and Words.monitor.noAlerts or nil,
+    emptyHistory = #acts == 0 and (hired and Words.monitor.noActions or Words.monitor.noMonitor) or nil,
     hire = (not hired and not blocker) and "alerts.hire" or nil,
     hireNote = (not hired and blocker) and (BLOCKER[blocker] or blocker) or nil,
     scope = st.scope, scopeAction = "alerts.scope",
     heartbeatText = hb and ("%d s"):format(hb) or "off",
     heartbeatActions = { down = "alerts.heartbeat.down", up = "alerts.heartbeat.up", off = "alerts.heartbeat.off" },
     types = types,
-    rows = Alerts.rows(sim),
-    agents = agents, history = history,
+    rows = rows,
+    agents = agents,
   }
 end
 
@@ -59,6 +78,8 @@ function View.signature(sim)
   for _, id in ipairs(sim.agentOrder) do local a = sim.agents[id]; parts[#parts + 1] = id .. a.state .. tostring(a.monitorLock) .. tostring(a.activeSkill) end
   for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(sim.monitorSettings.alertTypes[t]) end
   for _, r in ipairs(Alerts.rows(sim)) do parts[#parts + 1] = r.id .. r.status end
+  local monitor = sim.agents.monitor
+  parts[#parts + 1] = tostring(monitor and #monitor.history or 0) .. tostring(monitor and monitor.histSeq or 0)
   return table.concat(parts, ",")
 end
 

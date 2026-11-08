@@ -6,6 +6,7 @@
 -- the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
+local Words = require("@scripts/config/copy")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
@@ -236,6 +237,99 @@ local function focusArea(center, size: number, id: string, colorName: string)
     button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
 end
 
+-- GR5-104: the badges of the ships and stations on the map. A badge is a tone (palette role), a shape and a short label, so the
+-- state reads without colour: circle moving, square working, ring waiting / docked, bar warning / combat, cross AI failure.
+local function glyph(center, shape: string, size: number, colorName: string)
+  local x, y = center.x - size / 2, center.y - size / 2
+  local abs = { position = "absolute", ignorePointer = true }
+  if shape == "circle" then return { dot(center, size, colorName) } end
+  if shape == "ring" then
+    return { { style = { abs, { left = x, top = y, width = size, height = size } },
+      background = { color = UiTheme.color(colorName, 0), radius = size / 2, borderColor = UiTheme.color(colorName), borderWidth = 1.5 } } }
+  end
+  if shape == "bar" then
+    return { { style = { abs, { left = x, top = center.y - size * 0.2, width = size, height = size * 0.4 } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+  end
+  if shape == "cross" then
+    return {
+      { style = { abs, { left = x, top = center.y - 1.5, width = size, height = 3 } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+      { style = { abs, { left = center.x - 1.5, top = y, width = 3, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } },
+    }
+  end
+  return { { style = { abs, { left = x, top = y, width = size, height = size } }, background = { color = UiTheme.color(colorName), radius = 1 } } }
+end
+
+local function hitArea(r, id: string, colorName: string)
+  return { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h },
+    background = { color = UiTheme.color(colorName, 0), radius = 3 },
+    button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
+end
+
+-- One badge at rectangle `r` (x, y, w, h): the shape alone when the box is small, shape and label when it is wide.
+local function badgeChip(font, r, badge, id: string?)
+  local out = {}
+  local small = r.w <= Screens.map.badgeShapeOnly
+  out[#out + 1] = { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = small and r.w / 2 or 3, borderColor = UiTheme.color(badge.tone, 0.8), borderWidth = 1 } }
+  if small then
+    for _, n in ipairs(glyph({ x = r.x + r.w / 2, y = r.y + r.h / 2 }, badge.shape, r.w - 4, badge.tone)) do out[#out + 1] = n end
+  else
+    for _, n in ipairs(glyph({ x = r.x + 8, y = r.y + r.h / 2 }, badge.shape, 8, badge.tone)) do out[#out + 1] = n end
+    out[#out + 1] = { style = { position = "absolute", left = r.x + 16, top = r.y, width = r.w - 18, height = r.h, justify = "center", ignorePointer = true },
+      children = { text(font, badge.label, T.small, badge.tone) } }
+  end
+  if id then out[#out + 1] = hitArea(r, id, badge.tone) end
+  return out
+end
+
+local function plainChip(font, r, str: string, colorName: string)
+  return { { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h, justify = "center", alignItems = "center", ignorePointer = true },
+    background = { color = UiTheme.color("bg", 0.85), radius = 3, borderColor = UiTheme.color(colorName, 0.8), borderWidth = 1 },
+    children = { text(font, str, T.small, colorName) } } }
+end
+
+-- The choreography layer of the map (opts.mapLife, from client/fleet_map): ship badges and their selection halo, the `+N` of
+-- hidden hulls, the legend of numbered markers, ships working off the map, and the motion switch.
+local function mapLifeNodes(font, r, life, points, planetNames, t)
+  local nodes = {}
+  local function add(list) for _, n in ipairs(list) do nodes[#nodes + 1] = n end end
+  local legend = {}
+  for _, chip in ipairs(life.chips) do
+    local hull = chip.hull
+    if chip.selected then
+      for _, n in ipairs(Glow.halo({ x = hull.x + hull.w / 2, y = hull.y + hull.h / 2 }, hull.w / 2 + 4, "selected", t, false)) do nodes[#nodes + 1] = n end
+    end
+    if chip.clickable then nodes[#nodes + 1] = hitArea(hull, chip.focusId, chip.badge.tone) end
+    if chip.number then
+      add(plainChip(font, chip, tostring(chip.number), chip.badge.tone))
+      legend[#legend + 1] = { str = ("%d  %s  %s"):format(chip.number, chip.badge.label, (chip.key:match(":(.+)$") or chip.key)), tone = chip.badge.tone }
+    else
+      add(badgeChip(font, chip, chip.badge, chip.clickable and chip.focusId or nil))
+    end
+  end
+  for _, g in ipairs(life.aggregates) do add(plainChip(font, g, "+" .. g.count, "dim")) end
+  if life.hidden > 0 then legend[#legend + 1] = { str = ("+%d more ships not drawn (map is crowded)"):format(life.hidden), tone = "dim" } end
+  if #legend > 0 then
+    local y = r.y + r.h - L.gap - #legend * 14
+    for i, line in ipairs(legend) do
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = y + (i - 1) * 14, ignorePointer = true }, children = { text(font, line.str, T.small, line.tone) } }
+    end
+  end
+  if #life.away > 0 then
+    nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap, top = r.y + L.gap, ignorePointer = true }, children = { text(font, "OFF MAP", T.small, "dim") } }
+    for i, a in ipairs(life.away) do
+      add(badgeChip(font, { x = r.x + L.gap, y = r.y + L.gap + 6 + i * 20, w = Screens.map.badgeAwayW, h = 16 }, a.badge))
+      nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap + Screens.map.badgeAwayW + 6, top = r.y + L.gap + 8 + i * 20, ignorePointer = true },
+        children = { text(font, a.where, T.small, "dim") } }
+    end
+  end
+  local mw = Screens.map.motionButtonW
+  nodes[#nodes + 1] = buttonNode({ position = "absolute", left = r.x + r.w - mw - L.gap, top = r.y + r.h - 24 - L.gap, width = mw, height = 22,
+    justify = "center", alignItems = "center" }, "map.motion", life.reduced and "amber" or "dim",
+    { text(font, life.reduced and "MOTION: REDUCED" or "MOTION: FULL", T.small, life.reduced and "amber" or "dim") }, life.reduced)
+  return nodes
+end
+
 -- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
 local function mapOverlay(font, r, map, opts)
   local cfg = Screens.map
@@ -268,17 +362,29 @@ local function mapOverlay(font, r, map, opts)
   end
   -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
-  local function label(center, name, sub, colorName, subColor, below)
+  -- `alpha` (a reveal fading a label in or out) tints the text; `backing` puts a panel behind it so it stays readable over the world.
+  local function label(center, name, sub, colorName, subColor, below, alpha: number?, backing: number?)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
     title.text.align = "center"
     if line then line.text.align = "center" end
+    if alpha then
+      title.text.color = UiTheme.color(colorName, alpha)
+      if line then line.text.color = UiTheme.color(subColor or "dim", alpha) end
+    end
     local left = math.max(r.x + L.gap, math.min(center.x - 90, r.x + r.w - 180 - L.gap))
+    if backing and backing > 0 then
+      local h = math.ceil(T.body * Fit.lineHeight) + 2 * math.ceil(T.small * Fit.lineHeight) + 8
+      nodes[#nodes + 1] = { style = { position = "absolute", left = left - 4, top = center.y + below - 3, width = 188, height = h, ignorePointer = true },
+        background = { color = UiTheme.color("panel", backing), radius = 3 } }
+    end
     return { style = { position = "absolute", left = left, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
       children = { title, line } }
   end
+  local reveal = opts.reveal
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
     local sub = p.lit and table.concat(p.ores, ", ") or ("Locked: " .. p.condition)
+    local revealing = p.lit and reveal ~= nil and reveal.id == p.id
     if p.lit then
       local look = Planets.planets[p.id]
       local neon = look.rim and look.rim[1] or "cyan"
@@ -288,7 +394,27 @@ local function mapOverlay(font, r, map, opts)
       end
       nodes[#nodes + 1] = focusArea(c, cfg.planetRadius * 2, p.id, neon)
     end
-    nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    if revealing then
+      local rv = Vfx.reveal
+      if reveal.dim > 0 then nodes[#nodes + 1] = dot(c, cfg.planetRadius * 2, rv.dim.color, reveal.dim) end
+      local ring = reveal.ring
+      if reveal.outline then ring = { grow = 0, alpha = 1, stroke = rv.ring.stroke } end
+      if ring then
+        local rr = cfg.planetRadius + ring.grow
+        nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - rr, top = c.y - rr, width = rr * 2, height = rr * 2, ignorePointer = true },
+          background = { color = UiTheme.color(rv.ring.color, 0), radius = rr, borderColor = UiTheme.color(rv.ring.color, ring.alpha), borderWidth = ring.stroke } }
+      end
+      -- Locked reason fades out over the first half of the label span, the real name and available state fade in over the second (never both at once: two overlapping lines are unreadable), over one panel backing.
+      if reveal.labelMix < 1 then
+        local locked = "Locked: " .. Model.unlockCondition(p.id)
+        nodes[#nodes + 1] = label(c, p.name, locked, "dim", Theme.semantic.warning, cfg.planetRadius + 8, math.max(0, 1 - 2 * reveal.labelMix), reveal.backing)
+      end
+      if reveal.labelMix > 0 then
+        nodes[#nodes + 1] = label(c, p.name, sub, "text", "dim", cfg.planetRadius + 8, math.max(0, 2 * reveal.labelMix - 1), reveal.labelMix < 1 and 0 or reveal.backing)
+      end
+    else
+      nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    end
   end
   for _, m in ipairs(map.markets) do
     local c = points[m.id]
@@ -307,6 +433,20 @@ local function mapOverlay(font, r, map, opts)
     title.text.align = "center"
     nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
       children = { title } }
+    -- Its state badge and the roles it hosts (LOG / MON / REF): roles live on stations, never on ships (GR5-103).
+    if st.status then
+      local chipRect = { x = st.at.x - Screens.map.badgeAwayW / 2, y = st.at.y + T.small + 6, w = Screens.map.badgeAwayW, h = 16 }
+      for _, n in ipairs(badgeChip(font, chipRect, st.status, nil)) do nodes[#nodes + 1] = n end
+      for i, tag in ipairs(st.tags or {}) do
+        nodes[#nodes + 1] = { style = { position = "absolute", left = chipRect.x + chipRect.w + 4 + (i - 1) * 34, top = chipRect.y, ignorePointer = true },
+          children = { text(font, tag.label, T.small, tag.tone) } }
+      end
+    end
+  end
+  if opts.mapLife then
+    local names = {}
+    for _, p in ipairs(map.planets) do names[p.id] = p.name end
+    for _, n in ipairs(mapLifeNodes(font, r, opts.mapLife, points, names, t)) do nodes[#nodes + 1] = n end
   end
   return nodes
 end
@@ -519,7 +659,7 @@ local function editorScreen(font, r, m, opts)
   for _, n in ipairs(tabs(font, "editor", 300, 6)) do k[#k + 1] = n end
   local note, noteColor
   if opts.toast then note, noteColor = opts.toast, "green"
-  elseif not m.canSave then note, noteColor = "ERROR: over the limit, cannot be saved.", Theme.semantic.warning
+  elseif not m.canSave then note, noteColor = "ERROR: " .. (m.limitNote or Words.editor.directiveOver), Theme.semantic.warning
   elseif m.dirty then note, noteColor = "Unsaved changes.", Theme.semantic.warning end
   if note then k[#k + 1] = at(dw - 300 - L.pad, 4, text(font, note, T.small, noteColor), 300, 16) end
   if m.orderSource then k[#k + 1] = at(dw - 300 - L.pad, 22, text(font, "order set by the " .. m.orderSource, T.small, "cyan"), 300, 16) end
@@ -1040,22 +1180,23 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
--- Alerts (GR5-29, spec §8.7): the Monitor's hire button and settings, then the alert log newest first.
+-- Monitor (GR5-29, spec §8.7; copy GR5-92): its state, hire button and settings, the alert log newest first, then what it did.
 local function alertsScreen(font, r, m)
   local c = Screens.alerts
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, "ALERTS  Monitor: " .. (m.hired and "hired" or "not hired"), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  %s"):format(Words.monitor.title, m.state), T.small, "dim"))
   local x = L.pad
   if m.hire then
     nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
   elseif m.hireNote then
     nodeAt(x, c.controlsY + 6, text(font, m.hireNote, T.small, Theme.semantic.warning))
   end
+  local y = c.typesY
   if m.hired then
-    nodeAt(x, c.controlsY, button(font, "Scope: " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+    nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
     x += c.buttonWidth + c.gap
-    nodeAt(x, c.controlsY + 6, text(font, "Heartbeat " .. m.heartbeatText, T.small, "text"))
+    nodeAt(x, c.controlsY + 6, text(font, Words.monitor.heartbeat .. " " .. m.heartbeatText, T.small, "text"))
     x += 140
     nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))
     nodeAt(x + c.smallWidth + c.gap, c.controlsY, button(font, "+", m.heartbeatActions.up, "cyan", c.smallWidth))
@@ -1063,10 +1204,11 @@ local function alertsScreen(font, r, m)
     for i, t in ipairs(m.types) do
       local col, row = (i - 1) % c.typesPerRow, math.floor((i - 1) / c.typesPerRow)
       nodeAt(L.pad + col * (c.typeWidth + c.gap), c.typesY + row * c.typeRowHeight,
-        button(font, (t.on and "[x] " or "[ ] ") .. t.type, t.action, t.on and "cyan" or "dim", c.typeWidth))
+        button(font, (t.on and "[x] " or "[ ] ") .. t.label, t.action, t.on and "cyan" or "dim", c.typeWidth))
     end
+    y += math.ceil(#m.types / c.typesPerRow) * c.typeRowHeight
   end
-  local top = c.listY
+  local top = y + c.sectionGap
   local leftW = math.floor((r.w - 3 * L.pad) * 0.32)
   local rightX, rightW = L.pad + leftW + L.pad, r.w - 3 * L.pad - leftW
   local height = r.h - top - L.pad
@@ -1076,16 +1218,16 @@ local function alertsScreen(font, r, m)
     agents[#agents + 1] = text(font, a.id .. "  " .. a.state, T.small, "text")
     agents[#agents + 1] = text(font, tostring(a.task) .. (a.locked and "  PLAYER LOCK" or ""), T.small, a.locked and Theme.semantic.warning or "dim")
   end
-  local alerts = { text(font, "ALERTS", T.small, "cyan") }
-  if #m.rows == 0 then alerts[#alerts + 1] = text(font, "No alerts", T.small, "dim") end
+  local alerts = { text(font, Words.monitor.alerts, T.small, "cyan") }
+  if #m.rows == 0 then alerts[#alerts + 1] = text(font, m.emptyAlerts, T.small, "dim") end
   for _, row in ipairs(m.rows) do
     local color = row.status == "queued" and Theme.semantic.warning or (row.status == "handled" and "green" or "dim")
-    alerts[#alerts + 1] = text(font, ("%ds ago  %s  %s  %s: %s"):format(row.ageS, row.type, row.agent or "-", row.status, row.reason), T.small, color)
+    alerts[#alerts + 1] = text(font, ("%ds ago  %s  %s  %s: %s"):format(row.ageS, row.label, row.agent or "-", row.status, row.reason), T.small, color)
   end
-  local history = { text(font, "MONITOR RESPONSE HISTORY", T.small, "cyan") }
-  if #m.history == 0 then history[#history + 1] = text(font, "No responses", T.small, "dim") end
+  local history = { text(font, Words.monitor.history, T.small, "cyan") }
+  if #m.history == 0 then history[#history + 1] = text(font, m.emptyHistory, T.small, "dim") end
   for _, rec in ipairs(m.history) do
-    history[#history + 1] = text(font, ("%ss  %s  %s  %s"):format(tostring(rec.time), rec.tool, tostring(rec.status), tostring(rec.result or "")), T.small, "text")
+    history[#history + 1] = text(font, rec.ok and rec.text or (rec.text .. "  " .. rec.error), T.small, rec.ok and "green" or Theme.semantic.warning)
   end
   nodeAt(L.pad, top, scrollBox(0, 0, leftW, height, agents, 4))
   nodeAt(rightX, top, scrollBox(0, 0, rightW, math.floor(height / 2), alerts, 4))
@@ -1098,7 +1240,9 @@ local function branchesScreen(font, r, m, time)
   local c = Screens.branches
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  nodeAt(L.pad, L.pad, text(font, ("BRANCHES  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
+  nodeAt(L.pad, L.pad, text(font, ("%s  command %d / %d"):format(Words.branches.title, m.used, m.capacity), T.small, "dim"))
+  nodeAt(c.agentsX, c.headerY, text(font, Words.branches.agents, T.small, "dim"))
+  nodeAt(c.moneyX, c.headerY, text(font, Words.branches.creditsPerHour .. " / " .. Words.branches.computePerHour, T.small, "dim"))
   for i, row in ipairs(m.rows) do
     local y = c.rowY + (i - 1) * c.rowHeight
     local color = row.state == "open" and "green" or (row.state == "available" and "cyan" or "dim")
@@ -1108,15 +1252,18 @@ local function branchesScreen(font, r, m, time)
       for _, n in ipairs(Glow.light({ x = L.pad + c.stateX + 72, y = y + 8 }, "acting", time)) do kids[#kids + 1] = n end
     end
     nodeAt(L.pad, y, text(font, row.name, T.body, color))
-    nodeAt(L.pad + c.stateX, y, text(font, row.state, T.small, color))
-    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or "no agents", T.small, "text"))
-    if row.state == "open" then
+    nodeAt(L.pad + c.stateX, y, text(font, row.label, T.small, color))
+    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or Words.branches.noAgents, T.small, "text"))
+    if row.state == "open" and #row.agents == 0 then
+      nodeAt(c.moneyX, y, text(font, Words.branches.noData, T.small, "dim"))
+    elseif row.state == "open" then
       nodeAt(c.moneyX, y, text(font, ("%d cr/h   %.1f Compute/h"):format(row.creditsPerHour, row.computePerHour), T.small, "text"))
     elseif row.action then
       nodeAt(c.moneyX, y, button(font, ("Open %d cr"):format(row.cost), row.action, "green", c.buttonWidth))
     end
     if row.note then nodeAt(L.pad, y + c.noteGap, text(font, row.note, T.small, Theme.semantic.warning)) end
   end
+  if m.hint then nodeAt(L.pad, r.h - 28, text(font, m.hint, T.small, "dim")) end
   return withChildren(panel(r, nil), kids)
 end
 
@@ -1471,6 +1618,10 @@ function Shell.new() return { screen = Screens.defaultScreen, glitch = Glitch.ne
 -- Map hover / select: "map.focus.<id>" focuses a planet or market (its routes glow); the same click again clears it.
 function Shell.act(state, action): boolean
   if type(action) ~= "string" then return false end
+  if action == "map.motion" then
+    state.reduced = not state.reduced
+    return true
+  end
   local id = action:match("^map%.focus%.([%w_]+)$")
   if not id then return false end
   state.focus = (state.focus ~= id) and id or nil

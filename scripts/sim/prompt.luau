@@ -1,10 +1,10 @@
 -- PromptBuilder (spec §9.1): assembles the exact prompt an agent is billed for, and its token weight per section.
 -- The panel, the editor and the ledger all call Prompt.build, so what the player sees is what is billed.
 local Ai = require("@scripts/config/ai")
+local Host = require("./host")
 local Compute = require("./compute")
 local ContextBuilder = require("./context_builder")
 local Renderer = require("./context_renderer")
-local Json = require("./json")
 
 local Prompt = {}
 
@@ -40,7 +40,7 @@ local function toolsText(sim, agentId)
     if sch then
       local args = {}
       for k, v in pairs(sch.args) do args[k] = argText(v) end
-      out[#out + 1] = Json.encode({ name = name, description = sch.description, args = args })
+      out[#out + 1] = Host.json.encode({ name = name, description = sch.description, args = args })
     end
   end
   return table.concat(out, "\n")
@@ -58,7 +58,7 @@ function Prompt.toolWeights(sim, agentId)
     local sch = sim.registry.schemas[name]
     local args = {}
     for k, v in pairs(sch.args) do args[k] = argText(v) end
-    out[#out + 1] = { name = name, tokens = Compute.estimateTokens(Ai, Json.encode({ name = name, description = sch.description, args = args })) }
+    out[#out + 1] = { name = name, tokens = Compute.estimateTokens(Ai, Host.json.encode({ name = name, description = sch.description, args = args })) }
   end
   return out
 end
@@ -104,7 +104,7 @@ end
 
 -- Tokens billed for the model's reply (the JSON tool call). `reasoning` may be nil.
 function Prompt.outputTokens(call, reasoning)
-  local reply = Json.encode(Json.map({ { "reasoning", reasoning or "" }, { "tool", call and call.name or "" },
+  local reply = Host.json.encode(Host.json.map({ { "reasoning", reasoning or "" }, { "tool", call and call.name or "" },
     { "args", call and call.args or {} } }))
   return Compute.estimateTokens(Ai, reply)
 end

@@ -22,10 +22,16 @@ assert(#bad == 2, table.concat(bad, "\n"))
 local fixed = Fit.apply({ style = { width = 100 }, children = { { text = { text = "two words and more words", size = 12 } } } }, view.w)
 assert(fixed.children[1].text.wrap and #Fit.check(fixed, view) == 0, "apply wraps and bounds a flow text")
 
+-- Glyph lint: the UI font only has U+0020-007E and U+00A0-00FF; anything else would draw as "?"
+assert(#Fit.missingGlyphs("mine(K1, 10%) -> +10 titanium (20 s) \194\176 caf\195\169") == 0, "ASCII and Latin-1 are in the font")
+assert(Fit.missingGlyphs("a \226\134\146 b")[1] == 0x2192, "the arrow glyph is not in the font")
+assert(#Fit.check({ style = { width = 100 }, children = { { text = { text = "a \226\134\146 b", size = 12, wrap = true } } } }, view) == 1, "the lint reports a missing glyph")
+
 local long = string.rep("a very long feed line that keeps going ", 8)
 local function stress(sim)
   sim.feed = sim.feed or {}
   for i = 1, 8 do sim.feed[#sim.feed + 1] = { text = long .. i, status = (i % 3 == 0) and "failed" or "ok", agent = "miner_with_a_long_name" } end
+  sim.feed[#sim.feed + 1] = { text = "mine(K1, 10%) \226\134\146 +10 titanium (20 s)", status = "ok", agent = "miner" } -- an old save
   sim.resources.credits = 987654321
 end
 

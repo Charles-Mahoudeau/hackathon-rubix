@@ -13,7 +13,13 @@ Provider.__index = Provider
 function Provider.new(cfg, deps)
   local self = setmetatable({}, Provider)
   self.cfg, self.now, self.run = cfg, deps.now, deps.run or "main"
-  self.axis = Axis.new(cfg, deps.transport)
+  self.budget = nil -- the sim's AiQueue, set by Sim:setProvider: the one budget authority
+  self.axis = Axis.new(cfg, deps.transport, { reserve = function(turn, tokens)
+    local req = self.active[turn.id]
+    if req then req.estimated = tokens end
+    if not (self.budget and req and req.queue_id) then return true end
+    return self.budget:reserve(req.queue_id, tokens)
+  end })
   self.nextId = 1
   self.active = {} -- active[turnId] = request
   self.out, self.records = {}, {}
@@ -35,7 +41,7 @@ local function respond(self, req, fields)
     output_tokens = res.output_tokens, kind = res.kind, validation = res.ok and "ok" or res.error, seconds = res.seconds })
 end
 
--- req: { agent_id, prompt = Prompt.forProvider(...) result, max_output_tokens? } -> request id. Starts the turn at once.
+-- req: { agent_id, prompt = Prompt.forProvider(...) result, max_output_tokens?, queue_id? (AiQueue id) } -> request id. Starts the turn at once.
 function Provider:request(req)
   local now = self.now()
   local p = req.prompt

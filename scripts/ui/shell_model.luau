@@ -4,8 +4,10 @@ local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local Screens = require("@scripts/config/screens")
 local DebugConfig = require("@scripts/config/debug")
+local Words = require("@scripts/config/copy")
 local ComputeView = require("@scripts/ui/compute_view")
 local Clock = require("@scripts/sim/clock")
+local Feed = require("@scripts/sim/feed")
 local Raiding = require("@scripts/sim/raiding")
 local Salvage = require("@scripts/sim/salvage")
 
@@ -54,8 +56,8 @@ function Model.notification(sim)
   local offer = sim.offer
   if not offer then return nil end
   local grant = offer.compute or sim.b.bailout.grantCompute
-  return { kind = offer.kind, text = ("HMC: out of Compute and credits. +%d free Compute."):format(grant),
-    button = "Claim", action = "notice.claim", compute = grant }
+  return { kind = offer.kind, text = Words.notice.emergency, button = ("%s +%d"):format(Words.notice.claim, grant),
+    action = "notice.claim", compute = grant }
 end
 
 -- A click on the notification -> handled, ok, err. Only the sim decides whether the claim is still allowed.
@@ -167,8 +169,7 @@ function Model.feed(sim)
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
     local who = e.agent and sim.agents and sim.agents[e.agent]
-    -- the UI font is ASCII only: saves written before the feed switched to "->" still hold the arrow glyph
-    out[#out + 1] = { text = (e.text:gsub("\226\134\146", "->")), status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
+    out[#out + 1] = { text = Feed.display(e.text), status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
       tool = e.tool, agentType = who and who.type or nil }
   end
   return out

@@ -325,6 +325,33 @@ function Salvage.mapSites(sim)
   return out
 end
 
+-- The Scavengers as the map draws them (read-only): { id, owner, state, planet = the site's planet or nil, phase = "travel" | "work" | nil,
+-- progress = 0..1 of the trip when travelling, hull, hull_max }. A survey or salvage job is one timer that covers the leg to the
+-- site and then the work, so the phase is read from how much of the timer is left.
+function Salvage.mapShips(sim)
+  local out = {}
+  if not sim.salvage or not open(sim) then return out end
+  local c = Cfg.ship
+  for _, id in ipairs(sim.salvageOrder) do
+    local ship = sim.salvageShips[id]
+    local row = { id = id, owner = ship.owner, state = ship.state, at = ship.at, timer = ship.timer or 0, hull = ship.hull, hull_max = ship.hullMax }
+    local site = ship.job and findSite(sim, ship.job.site)
+    if site and (ship.state == "surveying" or ship.state == "salvaging") then
+      row.planet = site.planet
+      local leg = legSeconds(sim, ship.at, site.planet)
+      local work = ship.state == "surveying" and c.surveySeconds or c.salvageSecondsPerLayer * (ship.job.layer or 1)
+      local left = ship.timer * sim.b.tickSeconds
+      if left > work and leg > 0 then
+        row.phase, row.progress = "travel", math.max(0, math.min(1, 1 - (left - work) / leg))
+      else
+        row.phase = "work"
+      end
+    end
+    out[#out + 1] = row
+  end
+  return out
+end
+
 -- Mission V2 ---------------------------------------------------------------------------------------------------------
 
 -- -> { id, name, brief, hint, status = locked|active|complete|claimed, reward }

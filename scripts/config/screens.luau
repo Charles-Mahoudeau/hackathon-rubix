@@ -15,7 +15,7 @@ return {
     { id = "station", label = "Station", unlockTier = 3 },
     { id = "market", label = "Market", unlockTier = 3 },
     { id = "fleet", label = "Fleet", unlockTier = 4 },
-    { id = "alerts", label = "Alerts", unlockTier = 5 },
+    { id = "alerts", label = "Monitor", unlockTier = 5 },
     -- Debug panel (spec §16.4): listed only while config/debug.luau `enabled` (debug builds and demo mode), never in release.
     { id = "debug", label = "Debug", unlockTier = 1, debugOnly = true },
   },
@@ -34,7 +34,7 @@ return {
     market = { title = "No market data", hint = "The warehouse lights the markets and shows who buys what." },
     fleet = { title = "No fleet", hint = "The logistics hub (tier 4) brings freighters and their routes." },
     debug = { title = "Debug", hint = "Debug tools are not available in this build." },
-    alerts = { title = "No alerts", hint = "The command center (tier 5) watches your team and raises alerts." },
+    alerts = { title = "No alerts yet.", hint = "Buy the command center first." },
   },
 
   -- System map: positions as fractions of the main panel (0..1). Planets are drawn in the world, labels in the UI.
@@ -62,6 +62,9 @@ return {
     routeThickness = 2,
     riskValue = { low = 0.2, medium = 0.6 }, -- the cosmetic risk fed to render/vfx/route for a route's colour
     animSeconds = 0.15, -- the map redraws this often (planet pulse, moving dashes); other screens use refreshSeconds
+    badgeShapeOnly = 16, -- a badge box this wide or less shows the shape alone, wider ones add the label
+    badgeAwayW = 80, -- the station and off-map badge boxes (shape + label)
+    motionButtonW = 150,
     routeSpacing = 14, -- view pixels between two dashes of a route line
   },
 
@@ -142,11 +145,11 @@ return {
     buttonWidth = 140, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 96, optionalLine = 16, optionalProgressX = 270, optionalIndent = 24, rewardX = 260, optionalButtonX = 330 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
-  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
-    listY = 220, rowHeight = 20, maxRows = 14, noteX = 190 },
+  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 200, typesPerRow = 5, typeRowHeight = 34,
+    rowHeight = 20, maxRows = 8, headingGap = 22, sectionGap = 12, historyRows = 4 },
 
   -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
-  branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
+  branches = { headerY = 24, rowY = 44, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
 
   -- Debug screen (spec §16.4, GR5-72): one row per action group, then the status line, the result line and the last prompt.
   -- Layout polish is GR5-69.

@@ -1,5 +1,6 @@
 -- Server-side simulation core. Pure Luau, no engine deps, headless-runnable.
 local Balance = require("@scripts/config/balance")
+local Host = require("@scripts/sim/host")
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
 local AiQueue = require("@scripts/sim/ai_queue")
@@ -9,7 +10,6 @@ local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Versions = require("@scripts/sim/versions")
-local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 local Missions = require("@scripts/sim/missions")
 local Market = require("@scripts/sim/market")
@@ -23,6 +23,7 @@ local Raiding = require("@scripts/sim/raiding")
 local Refining = require("@scripts/sim/refining")
 local Salvage = require("@scripts/sim/salvage")
 local Registry = require("@scripts/sim/branches/registry")
+local Words = require("@scripts/config/copy")
 local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
 
@@ -91,6 +92,7 @@ function Sim.new(opts)
   for _, def in ipairs(self.registry.list) do
     if def.unlock and def.unlock.startsOpen then Registry.open(self, def.id, true) end
   end
+  Feed.info(self, nil, Words.unlocks.tier[1])
   self.skills = {}
   self.market = Market.new(self.rng, b.tickSeconds, function(kind, text)
     self:emit("market_notice", { kind = kind, text = text })
@@ -290,6 +292,7 @@ function Sim:enterTier(t)
   self.tier = t
   for _, agent in pairs(self.agents) do agent.tier = t end
   self:log("INFO", ("tier %d reached"):format(t))
+  Feed.info(self, nil, Words.unlocks.tier[t])
   self:emit("tier_up", { tier = t })
 end
 
@@ -841,7 +844,7 @@ function Sim:pauseAgent(agentId, why)
   if agent.state == "paused_error" then return end
   agent.state, agent.blockReason = "paused_error", why
   self:log("ERROR", ("%s: paused (%s)"):format(agentId, why))
-  Feed.error(self, agentId, "paused: " .. why .. ". Fix the directive, then resume.")
+  Feed.error(self, agentId, why)
   self:emit("agent_paused_error", { agent = agentId, reason = why })
 end
 
@@ -854,11 +857,11 @@ function Sim:noteFailure(agentId, kind, key)
     e.lastKey = key
   end
   if e.provider >= rules.providerErrors then
-    self:pauseAgent(agentId, ("%d provider errors in a row"):format(e.provider))
+    self:pauseAgent(agentId, Words.pause.provider)
   elseif e.invalid >= rules.invalidResponses then
-    self:pauseAgent(agentId, ("%d invalid responses in a row"):format(e.invalid))
+    self:pauseAgent(agentId, Words.pause.invalid)
   elseif key and e.same >= rules.sameFailingCall then
-    self:pauseAgent(agentId, "the same call failed twice")
+    self:pauseAgent(agentId, Words.pause.same)
   end
 end
 
@@ -930,7 +933,7 @@ function Sim:resolveDecision(agentId, call, ctx, opts)
   if ok then
     if not (opts and opts.fallback) then self:noteSuccess(agentId) end
   else
-    self:noteFailure(agentId, "invalid", Json.encode(Json.map({ { "n", type(call) == "table" and call.name or "?" },
+    self:noteFailure(agentId, "invalid", Host.json.encode(Host.json.map({ { "n", type(call) == "table" and call.name or "?" },
       { "a", type(call) == "table" and call.args or {} } })))
   end
   return ok, err
@@ -1021,20 +1024,41 @@ local function setAgentState(self, agent, state, why)
   if state == "no_compute" then
     agent.blockReason = why
     self:log("WARN", ("%s: no_compute (%s)"):format(agent.id, why))
-    Feed.error(self, agent.id, "no_compute: " .. why)
+    Feed.error(self, agent.id, why)
     self:emit("agent_no_compute", { agent = agent.id, reason = why })
   else
     agent.blockReason = nil
   end
 end
 
+-- The hourly window closed on a request that was still queued: refund it and park the agent on the budget message.
+local function refuseQueued(self, reqId)
+  local r = self.reqs[reqId]
+  self.reqs[reqId] = nil
+  if not r then return end
+  for _, agent in pairs(self.agents) do
+    if agent.pending == r then
+      agent.pending = nil
+      local rec = DecisionLog.find(self, r.rec)
+      DecisionLog.answered(self, rec, { cost = self.compute:settle(r.charge, 0, 0) })
+      DecisionLog.failed(self, rec, "dropped: " .. self.aiConfig.budgetMessage)
+      setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
+      return
+    end
+  end
+end
+
 local function finishRequest(self, reqId, tokens)
-  for _, startedId in ipairs(self.aiQueue:complete(reqId, tokens)) do
+  local started, refused = self.aiQueue:complete(reqId, tokens)
+  for _, startedId in ipairs(started) do
     local r = self.reqs[startedId]
     if r then r.started = true end
   end
+  for _, refusedId in ipairs(refused) do refuseQueued(self, refusedId) end
   self.reqs[reqId] = nil
 end
+
+local function validCount(n) return type(n) == "number" and n == n and n >= 0 and n < math.huge end
 
 -- Async AI provider (ai/provider.luau): the decision goes out as a request once the AiQueue lets it start, and comes back
 -- through onAiResponse. nil = the sync decider only. A decision still in flight when the provider changes is refunded
@@ -1055,6 +1079,7 @@ function Sim:setProvider(provider)
     end
   end
   self.provider = provider
+  if provider then provider.budget = self.aiQueue end
 end
 
 -- A provider answer for the decision `resp.id`. Failures (error, timeout, invalid) are logged and the sync decider (the
@@ -1068,10 +1093,10 @@ function Sim:onAiResponse(resp)
   if not agent then return end
   local pend = agent.pending
   agent.pending = nil
-  local realIn, realOut = resp.input_tokens or 0, resp.output_tokens or 0
+  local realIn, realOut = resp.input_tokens, resp.output_tokens
   local rec, info = DecisionLog.find(self, pend.rec), {}
-  -- Usage is billed whenever the provider reports it, also on an invalid reply: the model spent those tokens.
-  if realIn + realOut > 0 then
+  -- Billing follows the provider's counters whenever they are valid, even if the reply is refused as invalid.
+  if validCount(realIn) and validCount(realOut) then
     local est = resp.estimated_tokens or 0
     local real = realIn + realOut
     local pct = est > 0 and math.floor((real - est) / est * 100 + 0.5) or 0
@@ -1094,7 +1119,8 @@ function Sim:onAiResponse(resp)
     return
   end
   self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
-  Feed.error(self, agentId, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
+  local shown = resp.kind == "invalid" and Words.provider.invalid or (resp.error == "timeout" and Words.provider.timeout or Words.provider.failed)
+  Feed.error(self, agentId, ("%s (%s)"):format(shown, tostring(resp.error)))
   DecisionLog.failed(self, rec, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
   self:noteFailure(agentId, resp.kind == "invalid" and "invalid" or "provider")
   if agent.state == "paused_error" then return end
@@ -1113,7 +1139,7 @@ function Sim:stepAgent(id, agent)
   local pend = agent.pending
   if pend and pend.provider then
     if pend.started and not pend.pid then
-      pend.pid = self.provider:request({ agent_id = id, prompt = pend.prompt, max_output_tokens = self.aiConfig.maxOutputTokens })
+      pend.pid = self.provider:request({ agent_id = id, prompt = pend.prompt, max_output_tokens = self.aiConfig.maxOutputTokens, queue_id = pend.reqId })
     end
     return
   end
@@ -1144,7 +1170,7 @@ function Sim:stepAgent(id, agent)
   local prompt = Prompt.build(self, id)
   local canSend, reason = self.compute:canSend(prompt.input, id)
   if not canSend then
-    setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or "not enough Compute")
+    setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or Words.notEnoughCompute)
     return
   end
   setAgentState(self, agent, "idle")
@@ -1164,7 +1190,7 @@ function Sim:stepAgent(id, agent)
     if not ok then self:log("ERROR", "decide failed: " .. tostring(res)); return end
     call = res
   end
-  local reqId, status = self.aiQueue:submit({ agentId = id, monitor = agent.type == "monitor" })
+  local reqId, status = self.aiQueue:submit({ agentId = id, monitor = agent.type == "monitor", estimate = prompt.input + self.aiConfig.maxOutputTokens })
   if not reqId then
     setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
     return

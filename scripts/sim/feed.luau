@@ -2,6 +2,7 @@
 -- Sim-side data plus events only; the UI reads `sim.feed` and listens to `feed_event`.
 local Ai = require("@scripts/config/ai")
 local DecisionLog = require("@scripts/sim/decision_log")
+local Copy = require("@scripts/sim/copy")
 
 local Feed = {}
 
@@ -33,6 +34,12 @@ local function fmtArgs(tool, a)
 end
 
 function Feed.formatCall(tool, args) return ("%s(%s)"):format(tool, fmtArgs(tool, args or {})) end
+
+-- A feed line as the UI font can draw it: the UI font is ASCII (+ Latin-1) only, and saves written before the feed switched to
+-- "->" still hold the arrow glyph (U+2192), which would draw as "?". Every screen that shows feed text goes through this.
+function Feed.display(text: string): string
+  return (text:gsub("\226\134\146", "->"))
+end
 
 function Feed.init(sim) sim.feed, sim.feedSeq = {}, 0 end
 
@@ -75,7 +82,7 @@ end
 function Feed.refused(sim, agentId, call, err)
   local name = type(call) == "table" and call.name or "?"
   return push(sim, { agent = agentId, kind = "error", status = "failed", tool = name,
-    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. " -> ERROR " .. tostring(err) })
+    text = Feed.formatCall(name, type(call) == "table" and call.args or {}) .. (" -> ERROR %s (%s)"):format(Copy.error(err), tostring(err)) })
 end
 
 function Feed.info(sim, agentId, text, source) return push(sim, { agent = agentId, kind = "info", text = text, source = source }) end

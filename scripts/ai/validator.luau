@@ -1,5 +1,5 @@
 -- Validation of an AI reply, in the order of spec §10.3. Never throws; the first failure is the error returned.
-local Json = require("@scripts/sim/json")
+local Host = require("@scripts/sim/host")
 
 local Validator = {}
 
@@ -38,7 +38,7 @@ function Validator.parse(text, equipped, cfg)
   if type(text) ~= "string" or text:match("^%s*$") then return false, nil, "empty reply" end
   local body = extractObject(text)
   if not body then return false, nil, "no JSON object in reply" end
-  local obj, err = Json.tryDecode(body)
+  local obj, err = Host.json.tryDecode(body)
   if type(obj) ~= "table" then return false, nil, "bad JSON: " .. tostring(err or "not an object") end
   if type(obj.tool) ~= "string" then return false, nil, "missing 'tool'" end
   local schema = equipped[obj.tool]
