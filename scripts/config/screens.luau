@@ -83,6 +83,14 @@ return {
     values = { ["true"] = "on", ["false"] = "off" }, -- everything else is shown as its own text
   },
 
+  -- Logs screen (GR5-8, spec §12.2): the list on the left (newest first), the clicked record on the right.
+  logs = {
+    listWidth = 640, rowHeight = 22, rows = 11, rowChars = 86, statRowHeight = 18, buttonHeight = 26,
+    sources = { { id = "all", label = "All" }, { id = "ai", label = "AI" }, { id = "skill", label = "Skills" } },
+    agentButtonWidth = 96, sourceButtonWidth = 64, errorsButtonWidth = 120,
+    hint = "Click a record to see its tokens, reasoning, call and result.",
+  },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed

@@ -1,6 +1,7 @@
 -- Agent feed (spec §12): one line per tool call and its result, e.g. `mine(K3, 100%) → +100 cobalt (80 s)`.
 -- Sim-side data plus events only; the UI reads `sim.feed` and listens to `feed_event`.
 local Ai = require("@scripts/config/ai")
+local DecisionLog = require("@scripts/sim/decision_log")
 
 local Feed = {}
 
@@ -29,15 +30,16 @@ local function push(sim, entry)
 end
 
 -- A call accepted by the sim. It stays "running" until `Feed.finish` gives it a result.
-function Feed.begin(sim, agentId, call, reasoning)
+function Feed.begin(sim, agentId, call, reasoning, recordId)
   return push(sim, { agent = agentId, kind = "call", status = "running", tool = call.name, args = call.args or {},
-    reasoning = reasoning, text = Feed.formatCall(call.name, call.args) })
+    reasoning = reasoning, recordId = recordId, text = Feed.formatCall(call.name, call.args) })
 end
 
 function Feed.finish(sim, entry, resultText, ok)
   if not entry or entry.status ~= "running" then return end
   entry.status = ok == false and "failed" or "ok"
   entry.text = entry.text .. " → " .. resultText
+  if entry.recordId then DecisionLog.finished(sim, entry.recordId, resultText, ok) end
   sim:emit("feed_event", { entry = entry, update = true })
 end
 
