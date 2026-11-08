@@ -377,6 +377,18 @@ function Studio.act(sim, st, action)
     st.mode, st.message = "form", nil
     return formAct(sim, st, action) ~= false, nil
   end
+  local open = action:match("^studio%.rec%.open%.(.+)$")
+  if open then
+    if not sim.agents[open] then return false end
+    st.mode, st.agent, st.first, st.last, st.message, st.assign, st.suggestion = "record", open, nil, nil, nil, nil, nil
+    return true, "archive"
+  end
+  local pick1 = action:match("^studio%.select%.(.+)$")
+  if pick1 then
+    if not sim.skills[pick1] then return false end
+    st.selected, st.mode, st.assign, st.message = pick1, "list", nil, nil
+    return true
+  end
   local agent = action:match("^studio%.rec%.agent%.(.+)$")
   if agent then
     if not sim.agents[agent] then return false end
@@ -537,13 +549,13 @@ function Studio.model(sim, st)
   elseif st.mode == "record" then rows = recordRows(sim, st)
   elseif st.mode == "form" then rows = formRows(sim, st) end
   if st.mode == "list" and not st.assign then rows = suggestionRows(st); if #rows == 0 then rows = nil end end
-  return { mode = st.mode, tabs = tabs, rows = rows, assign = st.assign, message = st.message, hasSuggestion = st.suggestion ~= nil }
+  return { mode = st.mode, selected = st.selected, tabs = tabs, rows = rows, assign = st.assign, message = st.message, hasSuggestion = st.suggestion ~= nil }
 end
 
 -- One string that changes when what the studio shows changes.
 function Studio.signature(sim, st)
   local parts = { st.mode, tostring(st.agent), tostring(st.first), tostring(st.last), tostring(#sim.feed), tostring(sim.feedSeq),
-    st.message and st.message.text or "", tostring(st.suggestion ~= nil) }
+    st.message and st.message.text or "", tostring(st.suggestion ~= nil), tostring(st.selected) }
   if st.draft then
     for _, step in ipairs(st.draft.steps) do parts[#parts + 1] = step.tool .. argsText(step.args) .. tostring(step.guard and step.guard.min_unit_price) end
     parts[#parts + 1] = st.draft.agent_type .. tostring(st.draft.loop)

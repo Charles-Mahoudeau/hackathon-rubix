@@ -6,6 +6,7 @@ local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
 local Skills = require("@scripts/sim/skills")
+local Screens = require("@scripts/config/screens")
 
 local Editor = {}
 
@@ -28,6 +29,53 @@ function Editor.canSave(sim, draft)
   local e = sim.compute.cfg.editor
   return Compute.estimateTokens(sim.compute.cfg, draft.directive) <= e.directiveMaxTokens
     and Compute.estimateTokens(sim.compute.cfg, draft.order) <= e.orderMaxTokens
+end
+
+-- Tools the agent owns but cannot use yet, each with the actual requirement.
+function Editor.lockedTools(sim, agentId)
+  local agent = sim.agents[agentId]
+  local out = {}
+  for _, name in ipairs(sim.registry.toolOrder) do
+    if agent.tools[name] and not sim:hasTool(agentId, name) then
+      local tier = sim.registry.toolTier[name]
+      local reason = (name == "scan" and not sim.upgrades.scanner) and "buy the Scanner in the shop"
+        or (tier and tier > agent.tier and ("unlocks at T%d"):format(tier)) or "not available"
+      out[#out + 1] = { name = name, reason = reason }
+    end
+  end
+  return out
+end
+
+-- The agent list (left column): one row per agent, the selected one marked, a Monitor-locked one flagged.
+function Editor.list(sim, selectedId)
+  local rows = {}
+  for _, id in ipairs(sim.agentOrder) do
+    local a = sim.agents[id]
+    rows[#rows + 1] = { id = id, type = a.type, state = a.state, selected = id == selectedId, locked = a.monitorLock == true,
+      action = "team.open." .. id, status = a.monitorLock and (a.state .. ", locked") or a.state }
+  end
+  return rows
+end
+
+-- Newest calls of one agent (the Agents screen feed), and whether a run of 2-8 successful calls can be saved as a skill.
+function Editor.feed(sim, agentId)
+  local out, list = {}, sim.feed or {}
+  for i = #list, 1, -1 do
+    local e = list[i]
+    if e.agent == agentId then
+      out[#out + 1] = { text = e.text, status = e.status or "ok", source = e.source, tool = e.tool }
+      if #out >= Screens.editor.feedLines then break end
+    end
+  end
+  local ok = 0
+  for i = #list, 1, -1 do
+    local e = list[i]
+    if e.agent == agentId and e.kind == "call" then
+      if e.status ~= "ok" then break end
+      ok += 1
+    end
+  end
+  return { entries = out, canSave = ok >= 2, saveAction = "studio.rec.open." .. agentId }
 end
 
 -- The whole editor for one agent.
@@ -65,6 +113,9 @@ function Editor.model(sim, agentId, draft)
     formats = formats,
     format = p.format,
     tools = Prompt.toolWeights(sim, agentId),
+    lockedTools = Editor.lockedTools(sim, agentId),
+    toolSlots = (function() local used, max = sim:toolSlots(agentId) return { used = used, max = max } end)(),
+    type = agent.type, state = agent.state, mode = agent.mode == "skill" and (agent.activeSkill or "skill") or "AI",
     skills = { slots = sim:skillSlots(agentId), used = Skills.count(sim), active = agent.activeSkill, params = agent.skillParams },
   }
 end

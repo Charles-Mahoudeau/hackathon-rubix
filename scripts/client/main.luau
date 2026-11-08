@@ -224,6 +224,11 @@ engine.ecs.system("game.Shell", {
 				click = { action = "nav.agents" }
 				state.draft, state.toast, state.inputsDirty = Editor.newDraft(state.sim, teamAgent), nil, true
 			end
+			local picked = type(click.action) == "string" and click.action:match("^pick%.agent%.(.+)$")
+			if picked and state.sim.agents[picked] then
+				Screens.editor.agent = picked
+				state.draft, state.toast, state.inputsDirty, changed = Editor.newDraft(state.sim, picked), nil, true, true
+			end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
@@ -262,7 +267,7 @@ engine.ecs.system("game.Shell", {
 			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
 			table.sort(settings)
 			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
-				table.concat(rates, ","), table.concat(settings, ",") }, "|")
+				table.concat(rates, ","), table.concat(settings, ","), Screens.editor.agent, TeamView.signature(state.sim), tostring(state.sim.feedSeq) }, "|")
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
