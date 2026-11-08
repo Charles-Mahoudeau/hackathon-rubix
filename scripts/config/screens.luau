@@ -137,9 +137,9 @@ return {
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
-  -- The current mission is the left column (text wraps at textWidth); the mission list is the right column from listX.
-  missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, textWidth = 540, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 44, optionalIndent = 24, rewardX = 230, optionalButtonOffset = 150 },
+  -- The current mission is the left column (one line per brief string); the mission list is the right column from listX.
+  missions = { nameY = 30, goalY = 66, briefLine = 18, hintY = 126, hintLine = 16, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
+    buttonWidth = 140, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 96, optionalLine = 16, optionalProgressX = 270, optionalIndent = 24, rewardX = 260, optionalButtonX = 330 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 200, typesPerRow = 5, typeRowHeight = 34,
