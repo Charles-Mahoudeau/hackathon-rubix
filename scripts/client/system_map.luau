@@ -92,7 +92,7 @@ function SystemMap.stations(sim)
 			if pos.side == "left" or pos.side == "right" then
 				k = fitScale(pos.station, nil, pos, panel.h - 2 * cfg.edge)
 				local x = pos.side == "left" and p.x - cfg.marketGap - e.right * k or p.x + cfg.marketGap - e.left * k
-				at = { x = x, y = p.y - (e.top + e.bottom) / 2 * k }
+				at = { x = x, y = p.y + cfg.labelClear - e.bottom * k }
 			else
 				k = fitScale(pos.station, nil, pos, p.y - cfg.marketGap - panel.y - cfg.edge)
 				at = { x = p.x, y = p.y - cfg.marketGap - e.bottom * k }
