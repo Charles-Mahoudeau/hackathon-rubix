@@ -6,6 +6,7 @@ local Registry = require("@scripts/sim/branches/registry")
 local Branches = require("@scripts/sim/branches/index")
 local Mining = require("@scripts/sim/branches/mining")
 local RaidingBranch = require("@scripts/sim/branches/raiding")
+local RefiningBranch = require("@scripts/sim/branches/refining")
 local Persistence = require("@scripts/sim/persistence")
 local BranchesView = require("@scripts/ui/branches_view")
 local AlertsView = require("@scripts/ui/alerts_view")
@@ -20,7 +21,7 @@ end
 do
   local s = Sim.new()
   local r = s.registry
-  assert(#Branches.all == 2 and Branches.all[1] == Mining and Branches.all[2] == RaidingBranch and r.byId.mining and r.byId.raiding)
+  assert(#Branches.all == 3 and Branches.all[1] == Mining and Branches.all[2] == RaidingBranch and Branches.all[3] == RefiningBranch and r.byId.mining and r.byId.raiding and r.byId.refining)
   assert(Registry.isOpen(s, "mining") and s.agents.miner and s.ships.s1 and s.ships.s1.owner == "miner")
   local miner = r.agentTypes.miner
   eq(miner.tools, { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" })
@@ -39,7 +40,7 @@ end
 do
   local s = Sim.new()
   local m = BranchesView.model(s)
-  assert(#m.rows == 2 and m.rows[2].id == "raiding" and m.rows[2].state == "locked")
+  assert(#m.rows == 3 and m.rows[2].id == "raiding" and m.rows[2].state == "locked" and m.rows[3].id == "refining" and m.rows[3].state == "locked")
   assert(m.rows[1].id == "mining" and m.rows[1].state == "open" and #m.rows[1].agents == 1 and m.rows[1].agents[1] == "miner")
   assert(m.used == 1 and m.capacity == s:commandCapacity())
   assert(s:openBranch("mining") == false and select(2, s:openBranch("mining")) == "already_open")

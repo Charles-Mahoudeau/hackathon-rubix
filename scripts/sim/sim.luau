@@ -20,6 +20,7 @@ local Alerts = require("@scripts/sim/alerts")
 local Monitor = require("@scripts/sim/monitor")
 local Clock = require("@scripts/sim/clock")
 local Raiding = require("@scripts/sim/raiding")
+local Refining = require("@scripts/sim/refining")
 local Registry = require("@scripts/sim/branches/registry")
 local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
@@ -81,6 +82,7 @@ function Sim.new(opts)
   self.registry = Registry.new(opts.branches or Branches.all, b)
   self.branchesOpen = {}
   Raiding.init(self)
+  Refining.init(self)
   Logistics.init(self)
   Alerts.init(self)
   Monitor.init(self)
@@ -343,6 +345,7 @@ function Sim:validate(agentId, call)
   if not tierHasTool(self, agent, call.name) then return false, "tool not equipped: " .. call.name end
   local n = call.name
   if agent.type == "privateer" and n ~= "run_skill" then return Raiding.validate(self, agent, n, args) end
+  if agent.type == "refiner" and n ~= "run_skill" then return Refining.validate(self, agent, n, args) end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.validate then return branchTool.validate(self, agent, args) end
   local isMiner = agent.type == "miner"
@@ -358,16 +361,19 @@ function Sim:validate(agentId, call)
     if args.buyer ~= nil and args.buyer ~= "hmc" and not (args.buyer == "orbis" and st.kind == "main" and self:marketUnlocked("orbis")) then
       return false, "buyer_locked"
     end
+    -- refined goods are not bought by the HMC depot: Orbis only, from the main station
+    if Refining.isGood(args.resource) and (args.buyer ~= "orbis" or not Market.has(self.market, "orbis", args.resource)) then
+      return false, "not_bought_here"
+    end
     local q, qerr = stockQty(st.stock, args)
     if not q then return false, qerr end
     if st.stock[args.resource] < q then return false, "not_enough_stock" end
     return true
   elseif agent.type == "logistician" and n == "ship" then
     local st = self.stations[agent.station]
-    local market = World.markets[args.destination or ""]
-    if not market then return false, "bad destination" end
+    if not World.markets[args.destination or ""] then return false, "bad destination" end
     if not self:marketUnlocked(args.destination) then return false, "market_locked" end
-    if not market.demand[args.resource or ""] then return false, "not_bought_here" end
+    if not Market.has(self.market, args.destination, args.resource or "") then return false, "not_bought_here" end
     local q, qerr = stockQty(st.stock, args)
     if not q then return false, qerr end
     if q > self.b.freighter.cargo then return false, "bad qty" end
@@ -475,6 +481,9 @@ function Sim:apply(agentId, call, opts)
     Raiding.apply(self, agentId, call, { record = rid, auto = opts and opts.auto })
     return true
   end
+  if agent.type == "refiner" and n ~= "run_skill" then
+    return Refining.apply(self, agentId, call, { record = rid, auto = opts and opts.auto })
+  end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.apply then
     local entry = Feed.begin(self, agentId, call, self:takeReasoning(), rid)
@@ -501,7 +510,10 @@ function Sim:apply(agentId, call, opts)
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
     Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
     self:credit(agentId, rid, gain)
-    if orbisUnit then Missions.onOrbisSale(self, args.resource, q, orbisUnit) end
+    if orbisUnit then
+      if Refining.isGood(args.resource) then Refining.onSale(self, args.resource, q, orbisUnit)
+      else Missions.onOrbisSale(self, args.resource, q, orbisUnit) end
+    end
     return true, { sold = q, total = gain }
   elseif agent.type == "logistician" and n == "ship" then
     -- stock is taken at call time, so a second Logistician on the same stock or freighter gets the error (spec §8.6)
@@ -856,6 +868,7 @@ function Sim:stepFreighters()
           if f.owner then self:deliver(f.owner, text) end
           Feed.info(self, f.owner, text)
           Missions.onDelivery(self, f.owner)
+          if Refining.isGood(l.resource) then Refining.onSale(self, l.resource, l.qty, unit) end
           self:emit("freighter_delivered", { freighter = f.id, station = f.station, destination = l.destination, resource = l.resource, qty = l.qty, credits = gain })
           f.state, f.load = "back", nil
           f.timer = self:ticks(World.freighterRoutes[f.station][l.destination])
@@ -1038,7 +1051,7 @@ function Sim:stepAgent(id, agent)
   end
   if not self.decide then return end
   if not self:needsDecision(id) then
-    if (agent.type == "miner" or agent.type == "logistician" or agent.type == "privateer") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
+    if (agent.type == "miner" or agent.type == "logistician" or agent.type == "privateer" or agent.type == "refiner") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
     return
   end
   if not self:paceAllowed(agent) then return end
@@ -1111,6 +1124,7 @@ function Sim:step()
   self:updateTier()
   Upgrades.claimShips(self)
   Raiding.step(self)
+  Refining.step(self)
   for _, id in ipairs(self.agentOrder) do
     local agent = self.agents[id]
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
@@ -1127,6 +1141,7 @@ function Sim:needsDecision(agentId)
   if agent.type == "logistician" then return self.tick >= (agent.waitUntil or 0) end
   if agent.type == "monitor" then return Monitor.needsDecision(self, agent) end
   if agent.type == "privateer" then return Raiding.needsDecision(self, agent) end
+  if agent.type == "refiner" then return Refining.needsDecision(self, agent) end
   return false
 end
 
@@ -1145,6 +1160,7 @@ function Sim:context(agentId)
   local agent = self.agents[agentId]
   if agent.type == "monitor" then return Monitor.context(self) end
   if agent.type == "privateer" then return Raiding.context(self, agent) end
+  if agent.type == "refiner" then return Refining.context(self, agent) end
   if agent.type == "logistician" then
     local st = self.stations[agent.station]
     local markets = {}

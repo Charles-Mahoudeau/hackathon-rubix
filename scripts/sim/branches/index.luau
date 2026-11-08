@@ -2,7 +2,8 @@
 -- in config/branches.luau; nothing outside branches/ and config/ changes (spec B-0).
 local Mining = require("./mining")
 local Raiding = require("./raiding")
+local Refining = require("./refining")
 
 return {
-  all = { Mining, Raiding },
+  all = { Mining, Raiding, Refining },
 }

@@ -8,6 +8,7 @@ local Skills = require("@scripts/sim/skills")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
 local World = require("@scripts/config/world")
+local Refining = require("@scripts/config/branches").refining
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
 
@@ -20,7 +21,7 @@ local FORM_ARGS = {
   mine = { "vein", "stop_at_hold_pct" }, ["return"] = { "to" }, sell = { "buyer", "resource", "qty" },
   store = { "resource", "qty" }, ship = { "resource", "qty", "destination" }, scan = { "planet" }, wait = { "seconds" },
 }
-local FORM_TOOLS = { "mine", "return", "sell", "store", "ship", "scan", "wait" }
+local FORM_TOOLS = { "mine", "return", "sell", "store", "ship", "scan", "refine", "wait" }
 
 local ERRORS = {
   bad_name = "The name must be 1 to 24 characters.",
@@ -88,6 +89,7 @@ local function argOptions(sim, arg)
     for _, m in ipairs(World.marketOrder) do out[#out + 1] = m end
     return out
   elseif arg == "resource" then return World.oreOrder
+  elseif arg == "recipe" then return Refining.recipeOrder
   elseif arg == "qty" then return f.qtyOptions
   elseif arg == "destination" then return World.marketOrder
   elseif arg == "planet" or arg == "station" then return World.planetOrder
@@ -212,6 +214,7 @@ local function defaultArgs(sim, agentType, tool)
   elseif tool == "store" then return { resource = ore, qty = "all" }
   elseif tool == "ship" then return { resource = ore, qty = "all", destination = World.marketOrder[1] }
   elseif tool == "scan" then return { planet = World.homePlanet }
+  elseif tool == "refine" then return { recipe = Refining.recipeOrder[1], qty = Refining.qtyMax }
   elseif tool == "wait" then return { seconds = sim.b.skills.form.waitOptions[2] } end
   return {}
 end

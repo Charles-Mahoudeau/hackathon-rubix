@@ -23,6 +23,7 @@ return {
       miner = "mining pilot: you fly one mining ship, mine veins and sell the ore",
       logistician = "logistician: you run one station's stock and its freighters",
       monitor = "supervisor: you watch the other agents and act on them",
+      refiner = "refiner: you run one refinery, turning the ores in your station stock into refined goods for the markets",
       privateer = "privateer: you fly one armed interceptor, scan trade routes and raid rival convoys for their cargo",
     },
     act = "You act only by calling exactly one tool from the TOOLS list.",
@@ -43,6 +44,7 @@ return {
     prices_halcyon = false,
     prices_meridian = false,
     price_trends = false,
+    margins = false, -- Refiner only (spec §15b.6): the per-recipe margins table
     format = "compact",
     recent_results = 3,
     veins = "planet",

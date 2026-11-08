@@ -89,4 +89,46 @@ return {
     stub = { waitSeconds = 30, repairBelow = 40, scanReuseSeconds = 90 },
     streams = { convoy = 53, combat = 59 }, -- rng stream i = seed x this + 7
   },
+
+  -- Refining (spec §15b.2, B-b): a refinery per station turns raw ore into refined goods the markets pay far more for. The first
+  -- refinery needs the warehouse (main station) and opens the branch; each further one costs `extraCost`; Mk2 doubles the speed.
+  -- recipes: inputs per output unit, seconds per output unit, output base price. `demand` = baseline per market (HMC buys none).
+  refining = {
+    name = "Refining",
+    scope = "refining",
+    agentType = "refiner",
+    assetType = "refinery",
+    assetLabel = "refinery",
+    startTier = 3,
+    toolSlots = 4,
+    unlock = { tier = 3, cost = 18000, needs = "warehouse" },
+    extraCost = 12000,
+    mk2 = { cost = 15000, speed = 2 },
+    maxPerStation = 1,
+    toolTiers = { refine = 3 },
+    agentTools = { "refine", "report", "wait", "run_skill" },
+    alertKinds = {},
+    paramKinds = { "recipe" },
+    recipeOrder = { "plate", "superalloy", "catalyst", "processor" },
+    recipes = {
+      plate      = { name = "Plate",      inputs = { titanium = 3 },             time = 3,  price = 45 },
+      superalloy = { name = "Superalloy", inputs = { cobalt = 2, titanium = 2 }, time = 6,  price = 120 },
+      catalyst   = { name = "Catalyst",   inputs = { iridium = 2 },              time = 9,  price = 190 },
+      processor  = { name = "Processor",  inputs = { crystal = 1, iridium = 1 }, time = 12, price = 340 },
+    },
+    demand = {
+      orbis    = { plate = 0.6, superalloy = 0.6 },
+      halcyon  = { plate = 1.3, superalloy = 1.4 },
+      meridian = { superalloy = 0.8, catalyst = 1.3, processor = 1.5 },
+    },
+    depth = 3000,
+    qtyMin = 1, qtyMax = 50,
+    -- Mission V1 "Value added" (spec §15b.5). Optional, outside the linear tutorial.
+    mission = { id = "V1", name = "Value added", units = 50, margin = 1.5, reward = 3000,
+      goal = "Sell 50 refined units for at least 1.5 x the base value of their inputs.",
+      hint = "Refining only pays if someone wants the result. Give your Refiner the prices." },
+    -- Stub Refiner (spec §15b.6): a quantity the text does not name is random between randQtyMin and randQtyMax.
+    -- A Logistician stub ships a refined good once the station holds shipMinStock of it.
+    stub = { waitSeconds = 30, randQtyMin = 5, randQtyMax = 50, shipMinStock = 40 },
+  },
 }

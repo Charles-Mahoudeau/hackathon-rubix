@@ -3,6 +3,7 @@
 local Missions = require("@scripts/sim/missions")
 local Config = require("@scripts/config/missions")
 local Raiding = require("@scripts/sim/raiding")
+local Refining = require("@scripts/sim/refining")
 
 local View = {}
 
@@ -34,6 +35,14 @@ function View.model(sim)
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil,
       retry = (v.status == "active" and v.failed) and ("missions.retry." .. v.id) or nil }
   end
+  -- The refining branch's mission (spec §15b.5, V1): optional, listed once the refinery stands.
+  if Refining.isOpen(sim) then
+    local v = Refining.mission(sim)
+    local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
+    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }),
+      goal = v.goal, progressText = ("%d / %d units"):format(math.min(v.units, v.target), v.target), hint = v.hint,
+      claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
+  end
   if not cur then return out end
   local p = Missions.progress(sim, cur)
   out.current = {
@@ -58,6 +67,10 @@ function View.signature(sim)
     local v = Raiding.mission(sim)
     parts[#parts + 1] = v.id .. v.status .. v.wins .. tostring(v.failed)
   end
+  if Refining.isOpen(sim) then
+    local v = Refining.mission(sim)
+    parts[#parts + 1] = v.id .. v.status .. v.units
+  end
   return table.concat(parts, ",")
 end
 
@@ -65,6 +78,10 @@ end
 function View.act(sim, action)
   if type(action) ~= "string" then return false end
   local rverb, rid = action:match("^missions%.(%a+)%.(V%d+)$")
+  if rid == Refining.mission(sim).id then
+    if rverb == "claim" then return true, Refining.claimMission(sim) end
+    return false
+  end
   if rid == Raiding.mission(sim).id then
     if rverb == "claim" then return true, Raiding.claimMission(sim) end
     if rverb == "retry" then return true, Raiding.retryMission(sim) end
