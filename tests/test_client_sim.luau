@@ -5,8 +5,14 @@ local SimHost = require("@scripts/client/sim_host")
 local Editor = require("@scripts/ui/agent_editor")
 local Screens = require("@scripts/config/screens")
 
-local sim = SimHost.new()
-assert(sim.decide, "the client sim has a decider")
+local Save = require("@scripts/client/save")
+local Persistence = require("@scripts/sim/persistence")
+
+-- the client boots through Save.boot (load or new game) and attaches the decider, as client/main does
+local save = Save.new(Persistence.memoryStorage())
+local sim = SimHost.attach((Save.boot(save, 0, 1000)))
+assert(sim.decide, "the booted client sim has a decider")
+assert(SimHost.new().decide, "SimHost.new has a decider")
 
 local id = Screens.editor.agent
 local draft = Editor.newDraft(sim, id)

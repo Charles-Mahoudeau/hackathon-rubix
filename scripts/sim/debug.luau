@@ -29,6 +29,16 @@ function actions.addCompute(sim, args)
   return true, sim.resources.compute
 end
 
+-- Puts the sim into the §8.5 anti-softlock state (Compute and credits low, holds empty) so the HMC offer can be tried.
+function actions.setStuck(sim)
+  local c = sim.b.bailout
+  sim.resources.compute = math.min(sim.resources.compute, c.computeBelow - 1)
+  sim.resources.credits = math.min(sim.resources.credits, c.creditsBelow - 1)
+  for _, ship in pairs(sim.ships) do ship.cargo, ship.cargoF = 0, 0 end
+  sim:log("WARN", "debug: stuck state (low Compute and credits, empty holds)")
+  return true, sim:bailoutConditions()
+end
+
 function actions.setTier(sim, args)
   local tier = args.tier
   if type(tier) ~= "number" or tier ~= math.floor(tier) or tier < 1 or tier > DebugConfig.maxTier then
