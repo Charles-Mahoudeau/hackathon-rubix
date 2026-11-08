@@ -174,6 +174,15 @@ local _, fallback = Shell.spec(Sim.new(), "fleet", {})
 assert(fallback == Screens.defaultScreen, "a hidden screen falls back to the map")
 assert(nodes > 100, "the shell builds")
 
+-- panels: a skin makes them nine-patch images tinted by the theme; without one they stay hairline nodes; the map stays see-through
+local skin = { texture = "fake-texture", slice = Theme.panelSkin.slice, color = UiTheme.color(Theme.panelSkin.tint, Theme.alpha.panelFill) }
+local skinned = Shell.spec(Sim.new(), "map", { skin = skin })
+local function countWhere(spec, pred) local n = pred(spec) and 1 or 0 for _, c in ipairs(spec.children or {}) do n += countWhere(c, pred) end return n end
+assert(countWhere(skinned, function(n) return n.image ~= nil end) == 3, "top bar, nav and feed use the skin")
+assert(countWhere(skinned, function(n) return n.image and n.background end) == 0, "an image panel has no background")
+assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image ~= nil end) == 0, "no skin, no image")
+assert(#Theme.panelSkin.slice == 4 and Theme.palette[Theme.panelSkin.tint], "panel skin config")
+
 -- route dashes skip the planet discs and stay on the line
 local dashes = Shell.dashes({ x = 0, y = 0 }, { x = 400, y = 0 }, 50, 14, 14)
 assert(#dashes > 20 and dashes[1].x > 50 and dashes[#dashes].x < 386 and dashes[1].y == 0, "dashes")
