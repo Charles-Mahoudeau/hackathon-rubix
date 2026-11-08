@@ -4,13 +4,16 @@
 local Screens = require("@scripts/config/screens")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Feed = require("@scripts/sim/feed")
+local Versions = require("@scripts/sim/versions")
+local Model = require("@scripts/ui/shell_model")
 
 local View = {}
 
 local function round(x) return math.floor(x + 0.5) end
 
 -- Filter state of the screen. agent: "all" | an agent id; source: "all" | "ai" | "skill".
-function View.new() return { agent = "all", source = "all", errorsOnly = false, selected = nil, page = 0 } end
+-- compare: the prompt-version comparison is open (spec §12.3); cmpAgent / cmpA / cmpB are its picks (nil = default).
+function View.new() return { agent = "all", source = "all", errorsOnly = false, selected = nil, page = 0, compare = false } end
 
 local function clock(t)
   local s = math.floor(t)
@@ -83,6 +86,126 @@ local function detail(rec)
   }
 end
 
+-- Prompt-version comparison (GR5-13, spec §12.3) ---------------------------------------------------------------------
+
+-- Segments of { text, changed } -> lines of { text, changed } words, wrapped at maxChars and at the text's own newlines.
+local function wrapSegments(segments, maxChars)
+  local lines, line, len = {}, {}, 0
+  local function flush()
+    lines[#lines + 1] = line
+    line, len = {}, 0
+  end
+  for _, seg in ipairs(segments) do
+    for lead, w, trail in seg.text:gmatch("(%s*)(%S+)(%s*)") do
+      if lead:find("\n", 1, true) and #line > 0 then flush() end
+      if len > 0 and len + 1 + #w > maxChars then flush() end
+      line[#line + 1] = { text = w, changed = seg.changed }
+      len += #w + (len > 0 and 1 or 0)
+      if trail:find("\n", 1, true) then flush() end
+    end
+  end
+  if #line > 0 or #lines == 0 then flush() end
+  return lines
+end
+
+-- "key: a -> b" for every context setting that differs between the two versions.
+local function settingsDiff(sa, sb)
+  local keys, seen = {}, {}
+  for _, t in ipairs({ sa, sb }) do
+    for k in pairs(t) do if not seen[k] then seen[k] = true; keys[#keys + 1] = k end end
+  end
+  table.sort(keys)
+  local out = {}
+  for _, k in ipairs(keys) do
+    if sa[k] ~= sb[k] then out[#out + 1] = ("%s: %s -> %s"):format(k, tostring(sa[k]), tostring(sb[k])) end
+  end
+  return out
+end
+
+-- At most `max` lines, and how many were left out.
+local function capLines(lines, max)
+  if #lines <= max then return lines, 0 end
+  local out = {}
+  for i = 1, max do out[i] = lines[i] end
+  return out, #lines - max
+end
+
+-- Which side wins a row: higher credits is better, lower Compute and errors is better. nil when equal.
+local function better(a, b, higherIsBetter)
+  if math.abs(a - b) < 1e-9 then return nil end
+  if (a > b) == higherIsBetter then return "a" end
+  return "b"
+end
+
+local function sideHeader(m, minSeconds)
+  return {
+    title = ("v%d  %s"):format(m.number, m.id),
+    detail = ("active %s, %d decisions, skills %s"):format(clock(m.seconds), m.decisions, clock(m.skillSeconds)),
+    enoughData = m.enoughData,
+    note = not m.enoughData and ("not enough data (under %s of activity)"):format(clock(minSeconds)) or nil,
+  }
+end
+
+local function compareModel(sim, view)
+  local cfg = Screens.logs.compare
+  local ids = agentIds(sim)
+  local agentId = sim.agents[view.cmpAgent] and view.cmpAgent or nil
+  if not agentId then
+    -- the first agent that has something to compare, else the first one
+    agentId = ids[1]
+    for _, id in ipairs(ids) do
+      if #(sim.versions[id] or {}) >= 2 then agentId = id; break end
+    end
+  end
+  local agents = {}
+  for _, id in ipairs(ids) do
+    agents[#agents + 1] = { id = id, label = id, active = id == agentId, action = "logs.cmpagent." .. id }
+  end
+  local list = agentId and sim.versions[agentId] or {}
+  local first = math.max(1, #list - cfg.maxVersions + 1)
+  local effB = Versions.find(sim, agentId, view.cmpB) and view.cmpB or (list[#list] and list[#list].id)
+  local effA = Versions.find(sim, agentId, view.cmpA) and view.cmpA or (list[#list - 1] or list[#list] or {}).id
+  local function buttons(kind, selected)
+    local out = {}
+    for i = first, #list do
+      local v = list[i]
+      out[#out + 1] = { id = v.id, label = ("v%d %s"):format(v.number, v.id), active = v.id == selected, action = ("logs.%s.%s"):format(kind, v.id) }
+    end
+    return out
+  end
+  local model = { agents = agents, pickA = buttons("cmpa", effA), pickB = buttons("cmpb", effB), agent = agentId,
+    versionCount = #list, hint = cfg.hint, back = { label = "Back to the list", action = "logs.compare" } }
+  local cmp = effA and effB and Versions.compare(sim, agentId, effA, effB)
+  if not cmp then return model end
+  local a, b = cmp.a, cmp.b
+  local function fmt(m, key, decimals)
+    local v = m[key]
+    return decimals and ("%.1f"):format(v) or (v < 0 and "-" or "") .. Model.thousands(math.abs(v))
+  end
+  local both = a.enoughData and b.enoughData
+  local function row(label, key, decimals, higherIsBetter)
+    return { label = label, a = fmt(a, key, decimals), b = fmt(b, key, decimals), raw = { a = a[key], b = b[key] },
+      better = both and better(a[key], b[key], higherIsBetter) or nil }
+  end
+  local minSeconds = sim.aiConfig.versions.minSeconds
+  model.a, model.b = sideHeader(a, minSeconds), sideHeader(b, minSeconds)
+  model.notEnoughData = not both
+  model.rows = {
+    row("Credits / h", "creditsPerHour", false, true),
+    row("Compute / h", "computePerHour", true, false),
+    row("Net credits / h", "netPerHour", false, true),
+    row("Errors / h", "errorsPerHour", true, false),
+  }
+  model.directiveA, model.moreA = capLines(wrapSegments(cmp.directiveA, cfg.lineChars), cfg.maxLines)
+  model.directiveB, model.moreB = capLines(wrapSegments(cmp.directiveB, cfg.lineChars), cfg.maxLines)
+  local toolsA, toolsB = table.concat(cmp.va.tools, ", "), table.concat(cmp.vb.tools, ", ")
+  model.tools = { a = toolsA, b = toolsB, changed = toolsA ~= toolsB }
+  local diff = settingsDiff(cmp.va.settings, cmp.vb.settings)
+  model.settings = { changed = #diff > 0, text = #diff > 0 and table.concat(diff, ";  ") or "same context settings" }
+  model.sameVersion = effA == effB
+  return model
+end
+
 -- The whole screen. `view` is the filter state of View.new().
 function View.model(sim, view)
   local cfg = Screens.logs
@@ -119,6 +242,8 @@ function View.model(sim, view)
     header = header, agents = agents, sources = sources, errorsOnly = view.errorsOnly,
     rows = rows, shown = #list, total = View.total(sim), page = page, pages = pages,
     detail = selected and detail(selected) or nil, hint = cfg.hint,
+    compareButton = { label = "Compare versions", action = "logs.compare", active = view.compare },
+    compare = view.compare and compareModel(sim, view) or nil,
   }
 end
 
@@ -132,6 +257,10 @@ function View.act(view, action)
   elseif kind == "select" then
     local id = tonumber(arg)
     view.selected = view.selected ~= id and id or nil
+  elseif kind == "compare" then view.compare = not view.compare
+  elseif kind == "cmpagent" then view.cmpAgent, view.cmpA, view.cmpB = arg, nil, nil
+  elseif kind == "cmpa" then view.cmpA = arg
+  elseif kind == "cmpb" then view.cmpB = arg
   elseif kind == "page" then view.page = math.max(0, view.page + (tonumber(arg) or 0))
   else return false end
   return true
@@ -139,7 +268,15 @@ end
 
 -- Changes whenever something the screen shows changes (a record opens or is filled, a filter moves, the header ticks).
 function View.signature(sim, view)
-  local parts = { sim.recordSeq, sim.recordRev, view.agent, view.source, tostring(view.errorsOnly), tostring(view.selected), view.page }
+  local parts = { sim.recordSeq, sim.recordRev, view.agent, view.source, tostring(view.errorsOnly), tostring(view.selected), view.page,
+    tostring(view.compare), tostring(view.cmpAgent), tostring(view.cmpA), tostring(view.cmpB) }
+  if view.compare then
+    -- version totals move with game time while the comparison is open
+    for _, id in ipairs(agentIds(sim)) do
+      local l = sim.versions[id] or {}
+      parts[#parts + 1] = #l .. "/" .. (l[#l] and l[#l].ticks // 50 or 0)
+    end
+  end
   for _, id in ipairs(agentIds(sim)) do
     local s = DecisionLog.stats(sim, id)
     parts[#parts + 1] = ("%d/%.1f"):format(round(s.credits_per_hour), s.compute_per_hour)

@@ -383,6 +383,7 @@ local function logsScreen(font, r, m)
     x += c.sourceButtonWidth + 6
   end
   nodeAt(x + 10, y, button(font, "Errors only", "logs.errors", m.errorsOnly and Theme.semantic.warning or "dim", c.errorsButtonWidth), c.errorsButtonWidth, c.buttonHeight)
+  nodeAt(x + 10 + c.errorsButtonWidth + 6, y, button(font, m.compareButton.label, m.compareButton.action, "cyan", c.compareButtonWidth), c.compareButtonWidth, c.buttonHeight)
   y += c.buttonHeight + 10
   local rowW = c.listWidth - 2 * L.pad
   for _, row in ipairs(m.rows) do
@@ -432,6 +433,89 @@ local function logsScreen(font, r, m)
   local rightPanel = panel({ x = r.x + c.listWidth + L.gap, y = r.y, w = r.w - c.listWidth - L.gap, h = r.h },
     { direction = "column", gap = 3, padding = L.pad, overflow = "hidden" })
   return leftPanel, withChildren(rightPanel, rows)
+end
+
+-- Prompt-version comparison (GR5-13, spec §12.3): pick an agent and two of its versions, then the rates side by side
+-- (the better one green) and the two directives with the words that differ highlighted.
+local function compareScreen(font, r, m)
+  local c = Screens.logs.compare
+  local kids = {}
+  local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
+  local colW = (r.w - 3 * L.pad) // 2
+  local colB = L.pad + colW + L.pad
+  nodeAt(L.pad, L.pad, text(font, "COMPARE PROMPT VERSIONS", T.small, "dim"))
+  nodeAt(r.w - L.pad - 150, L.pad - 6, button(font, m.back.label, m.back.action, "cyan", 150), 150, 28)
+  local y = L.pad + 22
+  local x = L.pad
+  for _, a in ipairs(m.agents) do
+    nodeAt(x, y, button(font, a.label, a.action, a.active and "cyan" or "dim", 96), 96, 28)
+    x += 102
+  end
+  y += 34
+  for _, pick in ipairs({ { "A", m.pickA }, { "B", m.pickB } }) do
+    nodeAt(L.pad, y + 8, text(font, pick[1], T.small, "dim"))
+    x = L.pad + 24
+    for _, v in ipairs(pick[2]) do
+      nodeAt(x, y, button(font, v.label, v.action, v.active and "cyan" or "dim", c.versionButtonWidth), c.versionButtonWidth, 28)
+      x += c.versionButtonWidth + 6
+    end
+    y += 34
+  end
+  if not m.rows then
+    nodeAt(L.pad, y + 6, text(font, m.versionCount == 0 and "No versions yet: an agent gets one as soon as it plays." or m.hint, T.small, "dim"))
+    return withChildren(panel(r, nil), kids)
+  end
+  y += 6
+  nodeAt(L.pad, y, text(font, m.a.title, T.body, "cyan"))
+  nodeAt(L.pad + c.labelWidth + c.valueWidth, y, text(font, m.b.title, T.body, "cyan"))
+  y += 20
+  nodeAt(L.pad, y, text(font, m.a.detail, T.small, "dim"))
+  y += 16
+  nodeAt(L.pad, y, text(font, m.b.detail, T.small, "dim"))
+  y += 22
+  for _, row in ipairs(m.rows) do
+    local dimmed = m.notEnoughData and "dim" or "text"
+    nodeAt(L.pad, y, text(font, row.label, T.small, "dim"))
+    nodeAt(L.pad + c.labelWidth, y, text(font, "A  " .. row.a, T.small, row.better == "a" and "green" or dimmed))
+    nodeAt(L.pad + c.labelWidth + c.valueWidth, y, text(font, "B  " .. row.b, T.small, row.better == "b" and "green" or dimmed))
+    y += c.rowHeight
+  end
+  for _, side in ipairs({ { "A", m.a }, { "B", m.b } }) do
+    if side[2].note then
+      nodeAt(L.pad, y, text(font, ("%s: %s"):format(side[1], side[2].note), T.small, Theme.semantic.warning))
+      y += 16
+    end
+  end
+  if m.sameVersion then
+    nodeAt(L.pad, y, text(font, "A and B are the same version.", T.small, "dim"))
+    y += 16
+  end
+  y += 8
+  nodeAt(L.pad, y, text(font, "TOOLS  " .. m.tools.a, T.small, m.tools.changed and Theme.semantic.warning or "dim"))
+  nodeAt(colB, y, text(font, "TOOLS  " .. m.tools.b, T.small, m.tools.changed and Theme.semantic.warning or "dim"))
+  y += 16
+  nodeAt(L.pad, y, text(font, "CONTEXT  " .. m.settings.text, T.small, m.settings.changed and Theme.semantic.warning or "dim"))
+  y += 22
+  nodeAt(L.pad, y, text(font, "DIRECTIVE A", T.small, "dim"))
+  nodeAt(colB, y, text(font, "DIRECTIVE B", T.small, "dim"))
+  y += 18
+  for i, lines in ipairs({ m.directiveA, m.directiveB }) do
+    local lx = i == 1 and L.pad or colB
+    local ly = y
+    for _, line in ipairs(lines) do
+      local words = {}
+      for _, w in ipairs(line) do
+        local node = text(font, w.text, T.small, w.changed and Theme.semantic.warning or "text")
+        if w.changed then node.background = { color = UiTheme.color(Theme.semantic.warning, 0.18), radius = 2 } end
+        words[#words + 1] = node
+      end
+      nodeAt(lx, ly, { style = { direction = "row", gap = c.wordGap }, children = words })
+      ly += c.lineHeight
+    end
+    local more = i == 1 and m.moreA or m.moreB
+    if more > 0 then nodeAt(lx, ly, text(font, ("... %d more lines"):format(more), T.small, "dim")) end
+  end
+  return withChildren(panel(r, nil), kids)
 end
 
 -- Shop (GR5-7, spec §6.5): every upgrade with its cost, a Buy button when it can be bought, and why when it cannot.
@@ -614,9 +698,14 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = a
     children[#children + 1] = b
   elseif screenId == "logs" and LogsView.total(sim) > 0 then
-    local a, b = logsScreen(font, rects.main, LogsView.model(sim, opts.logs or LogsView.new()))
-    children[#children + 1] = a
-    children[#children + 1] = b
+    local m = LogsView.model(sim, opts.logs or LogsView.new())
+    if m.compare then
+      children[#children + 1] = compareScreen(font, rects.main, m.compare)
+    else
+      local a, b = logsScreen(font, rects.main, m)
+      children[#children + 1] = a
+      children[#children + 1] = b
+    end
   elseif screenId == "shop" then
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
   elseif screenId == "missions" then

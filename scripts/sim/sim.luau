@@ -9,6 +9,7 @@ local Prompt = require("@scripts/sim/prompt")
 local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
+local Versions = require("@scripts/sim/versions")
 local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 local Missions = require("@scripts/sim/missions")
@@ -1011,6 +1012,7 @@ function Sim:step()
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
   end
   if not offline then self:updateBailout() end
+  Versions.step(self)
   Missions.update(self)
 end
 
