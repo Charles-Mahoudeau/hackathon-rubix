@@ -1,5 +1,10 @@
--- Headless checks. Load order mimics the engine: scripts/**/*.luau sorted, shared globals, no require.
--- Runner must load scripts/config/vfx.luau then scripts/render/vfx/*.luau before this file.
+-- Headless checks. Run from repo root: luau tests/vfx_test.luau (needs the .luaurc `@scripts` alias).
+local Bloom = require("@scripts/render/vfx/bloom")
+local Glitch = require("@scripts/render/vfx/glitch")
+local Halo = require("@scripts/render/vfx/halo")
+local Route = require("@scripts/render/vfx/route")
+
+for _, m in { Bloom, Glitch, Halo, Route } do table.freeze(m) end -- the engine freezes returned module tables
 
 local g = Glitch.new()
 for _, src in { "idle", "hover", "select", "" } do
@@ -13,7 +18,7 @@ assert(not Glitch.isActive(g), "glitch is a short flicker")
 
 local safe, risky = Route.style(0.1, true, 0.5), Route.style(0.9, true, 0.5)
 assert(not safe.risky and risky.risky and safe.color[3] > safe.color[1] and risky.color[1] > risky.color[3])
-assert(Route.style(0.1, false, 3).dashOffset == 0 and Route.style(0.1, true, 0.5).dashOffset > 0)
+assert(Route.style(0.1, false, 3).dashOffset == 0 and Route.style(0.1, true, 0.3).dashOffset > 0)
 
 local a, b, c = Halo.style("idle", 0.1), Halo.style("pending", 0.1), Halo.style("executing", 0.1)
 assert(a.radius ~= b.radius and b.radius ~= c.radius and a.alpha ~= c.alpha)

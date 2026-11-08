@@ -1,9 +1,9 @@
 -- Look of asteroids (veins), stars and the galaxy backdrop: same shader as planets, other parameters. Art numbers only here.
--- Palette names come from GameConfig.palette (placeholder until GR5-3).
+-- Palette names come from config/planets.luau `palette` (placeholder until GR5-3).
 
-GameConfig = GameConfig or {}
+local config = {}
 
-GameConfig.asteroid = {
+config.asteroid = {
 	pixels = 24, -- chunky small rock
 	size = 4,
 	baseRadius = 10, -- world units at richness 1.0
@@ -18,7 +18,7 @@ GameConfig.asteroid = {
 	seedStep = 1.37, -- seed = veinSeed + index * seedStep
 }
 
-GameConfig.star = {
+config.star = {
 	pixels = 32,
 	size = 3,
 	layer = -95,
@@ -26,7 +26,7 @@ GameConfig.star = {
 	seed = 2.9,
 }
 
-GameConfig.galaxy = {
+config.galaxy = {
 	pixels = 40, -- low detail
 	size = 6,
 	layer = -100, -- behind everything
@@ -36,3 +36,5 @@ GameConfig.galaxy = {
 	waterLevel = 0,
 	cloudCover = 1,
 }
+
+return config
