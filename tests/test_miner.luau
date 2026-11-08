@@ -39,12 +39,16 @@ do
   local sold = false
   for _, e in ipairs(s.feed) do
     if e.kind == "call" and e.status ~= "running" then
-      assert(e.text:find(" → ", 1, true), "result on every finished call: " .. e.text)
+      assert(e.text:find(" -> ", 1, true), "result on every finished call: " .. e.text)
+      assert(not e.text:find("[\128-\255]"), "feed text is ASCII, the UI font has no other glyphs: " .. e.text)
     end
     if e.kind == "info" and e.text:find("sold", 1, true) then sold = true end
   end
-  assert(calls[1].text:find("^mine%(K3, 100%%%) → %+%d+ cobalt %(%d+ s%)$"), "mine line: " .. calls[1].text)
+  assert(calls[1].text:find("^mine%(K3, 100%%%) %-> %+%d+ cobalt %(%d+ s%)$"), "mine line: " .. calls[1].text)
   assert(sold, "the sale is listed")
+  local Model = require("@scripts/ui/shell_model")
+  s.feed[#s.feed + 1] = { text = "old save \226\134\146 line", status = "ok" }
+  assert(Model.feed(s)[#Model.feed(s)].text == "old save -> line", "an arrow from an old save is shown as ASCII")
   -- the feed has one line per decision: decisions == calls
   assert(#s.compute.spend >= #calls and #s.compute.spend <= #calls + 1, "one feed call per decision")
 end
