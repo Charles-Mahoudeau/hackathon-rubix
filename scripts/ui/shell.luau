@@ -1,8 +1,8 @@
 -- The UI shell (GR5-3): top bar, left nav, main panel, bottom agent feed, and the system map drawn over the main panel.
 -- Everything here is a pure description (engine.ui specs) built from ui/shell_model.luau, so it can be tested headless;
 -- only Shell.spawn touches the engine. Colours come from config/theme.luau through ui/theme.luau, nothing else.
--- Panels are a Pixel Holo UI nine-patch image tinted by the theme (opts.skin, from UiTheme.panelSkin). Without a skin
--- (headless tests) they fall back to a translucent node with a hairline border. Neither bakes a glow: the only bloom is
+-- Panels, buttons and gauges are Pixel Holo UI nine-patch images tinted by the theme (opts.skin, from UiTheme.panelSkin).
+-- Without a skin (headless tests) they fall back to translucent nodes with a hairline border. Neither bakes a glow: the only bloom is
 -- the neon of a lit thing (spec art rule), never a panel (see DECISIONS.md, Pixel Holo UI).
 local Theme = require("@scripts/config/theme")
 local Screens = require("@scripts/config/screens")
@@ -75,6 +75,34 @@ local function panel(r, extra, plain)
   return node
 end
 
+-- A button node. `colorName` is its colour (dim idle, cyan or another neon highlighted); `selected` takes the lighter texture.
+-- Its resting colour is always spelled out: the engine paints a button with `normal`, which is white by default.
+local function buttonNode(style, action: string, colorName: string, children, selected: boolean?)
+	local node = { style = style, children = children }
+	if skin and skin.button then
+		node.image = { texture = selected and skin.button.active or skin.button.normal, slice = skin.button.slice, color = UiTheme.color(colorName) }
+		node.button = UiTheme.skinButton(action, colorName)
+	else
+		local base = selected and UiTheme.mix("panel", colorName, Theme.mix.hover) or UiTheme.color("panel")
+		node.background = { color = base, radius = L.radius, borderColor = UiTheme.color(colorName, 0.6), borderWidth = 1 }
+		node.button = UiTheme.button(action, colorName, { normal = base, base = "panel" })
+	end
+	return node
+end
+
+-- A gauge: a track with a fill of `percent` (0..100) in `colorName`. `style` carries width and height (8 px or more).
+local function gauge(style, percent: number, colorName: string)
+	local pct = ("%d%%"):format(math.floor(math.max(0, math.min(100, percent))))
+	local g = skin and skin.gauge
+	if g then
+		local fill = percent > 0 and { { style = { height = "100%", width = pct, minWidth = 6 },
+			image = { texture = g.fill, slice = g.slice, color = UiTheme.color(colorName) } } } or {}
+		return { style = style, image = { texture = g.track, slice = g.slice, color = g.trackColor }, children = fill }
+	end
+	return { style = style, background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
+		children = { { style = { height = "100%", width = pct }, background = { color = UiTheme.color(colorName), radius = 2 } } } }
+end
+
 local function text(font, str: string, size: number, colorName: string, extra)
   return { style = extra, text = { text = str, font = font, size = size, color = UiTheme.color(colorName) } }
 end
@@ -97,23 +125,17 @@ local function topBar(font, r, bar)
   local gauge = { style = { direction = "column", gap = 4, justify = "center", width = 230 },
     children = {
       text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, bar.computeLevel == "ok" and "dim" or Theme.semantic.warning),
-      { style = { height = 8, width = "100%" }, background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-        children = { { style = { height = "100%", width = ("%d%%"):format(math.floor(bar.computeFraction * 100)) },
-          background = { color = UiTheme.color(bar.budgetReached and Theme.semantic.warning or gaugeColor), radius = 2 } } } },
+      gauge({ height = 8, width = "100%" }, bar.computeFraction * 100, bar.budgetReached and Theme.semantic.warning or gaugeColor),
     } }
   -- Always offered: the button is greyed, never hidden, when the credits do not cover the pack (it then does nothing).
   local buyColor = bar.buy.affordable and "cyan" or "dim"
-  local buy = { style = { width = 176, height = 28, justify = "center", alignItems = "center" },
-    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(buyColor, 0.6), borderWidth = 1 },
-    button = { action = bar.buy.action, hovered = UiTheme.hover(buyColor), pressed = UiTheme.pressed(buyColor) },
-    children = { text(font, bar.buy.text, T.small, buyColor) } }
+  local buy = buttonNode({ width = 176, height = 28, justify = "center", alignItems = "center" }, bar.buy.action, buyColor,
+    { text(font, bar.buy.text, T.small, buyColor) }, bar.buy.affordable)
   local speed = { style = { direction = "row", gap = 4, alignItems = "center" }, children = {} }
   for _, c in ipairs(bar.speed) do
     local color = c.active and "cyan" or "dim"
-    speed.children[#speed.children + 1] = { style = { width = 38, height = 28, justify = "center", alignItems = "center" },
-      background = { color = c.active and UiTheme.hover("cyan") or UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(color, 0.6), borderWidth = 1 },
-      button = { action = c.action, hovered = UiTheme.hover(color), pressed = UiTheme.pressed(color) },
-      children = { text(font, c.label, T.small, color) } }
+    speed.children[#speed.children + 1] = buttonNode({ width = 38, height = 28, justify = "center", alignItems = "center" },
+      c.action, color, { text(font, c.label, T.small, color) }, c.active)
   end
   local children = {
     text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
@@ -131,13 +153,8 @@ end
 local function nav(font, r, entries, screenId)
   local items = {}
   for _, e in ipairs(entries) do
-    items[#items + 1] = {
-      style = { paddingX = L.pad, paddingY = 8, direction = "row", alignItems = "center" },
-      background = { color = e.active and UiTheme.hover("cyan") or UiTheme.color("panel", 0), radius = L.radius,
-        borderColor = e.active and UiTheme.color("cyan", Theme.alpha.line) or nil, borderWidth = e.active and 1 or nil },
-      button = { action = "nav." .. e.id, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
-      children = { text(font, e.label, T.body, e.active and "cyan" or "text") },
-    }
+    items[#items + 1] = buttonNode({ paddingX = L.pad, paddingY = 8, direction = "row", alignItems = "center" },
+      "nav." .. e.id, e.active and "cyan" or "dim", { text(font, e.label, T.body, e.active and "cyan" or "text") }, e.active)
   end
   return withChildren(panel(r, { direction = "column", gap = 4, padding = L.gap }), items)
 end
@@ -154,13 +171,13 @@ local function feedStrip(font, r, lines)
   local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
   -- One line per entry, cut to the strip: a wrapped entry would push the newest ones out of the fixed-height panel.
-  local room = r.w - 2 * L.gap
+  local room = r.w - 2 * L.pad
   for _, l in ipairs(lines) do
     local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or (l.source == "monitor" and "cyan" or "text"))
     local line = Fit.truncate((l.agent and (l.agent .. "  ") or "") .. l.text, T.small, room)
     rows[#rows + 1] = text(font, line, T.small, color, { height = math.ceil(T.small * Fit.lineHeight) })
   end
-  return withChildren(panel(r, { direction = "column", padding = L.gap, overflow = "hidden" }), rows)
+  return withChildren(panel(r, { direction = "column", paddingX = L.pad, paddingY = L.gap, overflow = "hidden" }), rows)
 end
 
 -- Dash positions along a route A -> B, skipping the planet discs at both ends. Pure; spacing in view pixels. `phase` slides
@@ -188,7 +205,7 @@ end
 local function focusArea(center, size: number, id: string, colorName: string)
   return { style = { position = "absolute", left = center.x - size / 2, top = center.y - size / 2, width = size, height = size },
     background = { color = UiTheme.color(colorName, 0), radius = size / 2 },
-    button = { action = "map.focus." .. id, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) } }
+    button = UiTheme.button("map.focus." .. id, colorName, { base = colorName, alpha = 0 }) }
 end
 
 -- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
@@ -261,7 +278,7 @@ local function mapOverlay(font, r, map, opts)
     for _, n in ipairs(Glow.halo(c, glow.node, focus == m.id and "selected" or "idle", t, false)) do nodes[#nodes + 1] = n end
     nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - 9, top = c.y - 9, width = 18, height = 18 },
       background = { color = UiTheme.color("panel"), radius = 3, borderColor = UiTheme.color("cyan"), borderWidth = 1 },
-      button = { action = "map.focus." .. m.id, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") } }
+      button = UiTheme.button("map.focus." .. m.id, "cyan") }
     nodes[#nodes + 1] = label(c, m.name, ("T%d market"):format(m.tier), "text", "dim", 14)
   end
   return nodes
@@ -286,10 +303,8 @@ local function at(x: number, y: number, node, w: number?, h: number?)
 end
 
 local function button(font, label: string, action: string, colorName: string, w: number)
-  return { style = { width = w, height = 28, justify = "center", alignItems = "center" },
-    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(colorName, 0.6), borderWidth = 1 },
-    button = { action = action, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) },
-    children = { text(font, label, T.small, colorName) } }
+  return buttonNode({ width = w, height = 28, justify = "center", alignItems = "center" }, action, colorName,
+    { text(font, label, T.small, colorName) }, colorName ~= "dim")
 end
 
 local function tabButtons(font, active: string)
@@ -456,7 +471,7 @@ local function logsScreen(font, r, m)
     local color = row.isError and Theme.semantic.error or (row.pending and "dim" or "text")
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = row.selected and UiTheme.hover("cyan") or UiTheme.color("panel", 0), radius = 2 },
-      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
+      button = UiTheme.button(row.action, "cyan", row.selected and { normal = UiTheme.hover("cyan") } or { base = "panel", alpha = 0 }),
       children = { text(font, row.text, T.small, color) } }, rowW, c.rowHeight)
     y += c.rowHeight
   end
@@ -625,9 +640,7 @@ local function fleetScreen(font, r, m, time)
   local rep = m.reputation
   nodeAt(L.pad, L.pad, text(font, ("REPUTATION %d  %s  command %d / %d"):format(rep.level,
     rep.next and ("%s / %s"):format(Model.thousands(rep.revenue), Model.thousands(rep.next)) or "max", rep.used, rep.capacity), T.small, "dim"))
-  nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
-    background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-    children = { { style = { height = "100%", width = ("%d%%"):format(rep.percent) }, background = { color = UiTheme.color("cyan"), radius = 2 } } } })
+  nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, rep.percent, "cyan"))
   local hub = m.hub
   if hub then
     if hub.state == "owned" then
@@ -700,10 +713,7 @@ local function missionsScreen(font, r, m)
       nodeAt(L.pad, c.barY, text(font, cur.progressText, T.body, Theme.semantic.warning))
     else
       local barColor = cur.status == "complete" and "green" or "cyan"
-      nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
-        background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
-        children = { { style = { height = "100%", width = ("%d%%"):format(cur.percent) },
-          background = { color = UiTheme.color(barColor), radius = 2 } } } })
+      nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, cur.percent, barColor))
       nodeAt(L.pad, c.barY + c.barHeight + 6, text(font, cur.progressText, T.small, cur.retry and Theme.semantic.warning or "text"))
       for i, line in ipairs(cur.lines) do
         nodeAt(L.pad, c.barY + c.barHeight + 28 + (i - 1) * 18, text(font, (line.done and "[x] " or "[ ] ") .. line.text, T.small, line.done and "green" or "dim"))
@@ -842,7 +852,7 @@ local function teamScreen(font, r, m, time)
     for _, n in ipairs(Glow.light({ x = L.pad - 6, y = y + c.rowHeight / 2 }, row.state, time)) do kids[#kids + 1] = n end
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = UiTheme.color("panel", 0), radius = 2 },
-      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
+      button = UiTheme.button(row.action, "cyan", { base = "panel", alpha = 0 }),
       children = { text(font, line, T.small, color) } }, rowW, c.rowHeight)
     y += c.rowHeight
   end
