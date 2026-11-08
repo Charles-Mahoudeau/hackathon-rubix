@@ -178,9 +178,9 @@ assert(nodes > 100, "the shell builds")
 local skin = { texture = "fake-texture", slice = Theme.panelSkin.slice, color = UiTheme.color(Theme.panelSkin.tint, Theme.alpha.panelFill) }
 local skinned = Shell.spec(Sim.new(), "map", { skin = skin })
 local function countWhere(spec, pred) local n = pred(spec) and 1 or 0 for _, c in ipairs(spec.children or {}) do n += countWhere(c, pred) end return n end
-assert(countWhere(skinned, function(n) return n.image ~= nil end) == 3, "top bar, nav and feed use the skin")
+assert(countWhere(skinned, function(n) return n.image and n.image.slice ~= nil end) == 3, "top bar, nav and feed use the skin")
 assert(countWhere(skinned, function(n) return n.image and n.background end) == 0, "an image panel has no background")
-assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image ~= nil end) == 0, "no skin, no image")
+assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image and n.image.slice ~= nil end) == 0, "no skin, no nine-patch")
 assert(#Theme.panelSkin.slice == 4 and Theme.palette[Theme.panelSkin.tint], "panel skin config")
 
 -- route dashes skip the planet discs and stay on the line

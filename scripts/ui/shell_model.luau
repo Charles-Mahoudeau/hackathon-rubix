@@ -142,12 +142,14 @@ end
 -- What the main panel says when a screen has nothing yet; nil for the screens that always have content (map).
 function Model.emptyState(screenId: string) return Screens.empty[screenId] end
 
--- The latest feed lines (newest last), each { text, status, agent }.
+-- The latest feed lines (newest last), each { text, status, agent, tool, agentType }.
 function Model.feed(sim)
   local out, list = {}, sim.feed or {}
   for i = math.max(1, #list - Screens.feedLines + 1), #list do
     local e = list[i]
-    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source }
+    local who = e.agent and sim.agents and sim.agents[e.agent]
+    out[#out + 1] = { text = e.text, status = e.status or "ok", agent = e.agent, kind = e.kind, source = e.source,
+      tool = e.tool, agentType = who and who.type or nil }
   end
   return out
 end
