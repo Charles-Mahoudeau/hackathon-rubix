@@ -3,7 +3,7 @@
 local Sim = require("@scripts/sim/sim")
 local Market = require("@scripts/sim/market")
 local Persistence = require("@scripts/sim/persistence")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local World = require("@scripts/config/world")
 
 local function near(a, b, eps) return math.abs(a - b) <= (eps or 1e-9) end

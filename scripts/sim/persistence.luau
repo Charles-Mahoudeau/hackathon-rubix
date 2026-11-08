@@ -2,7 +2,7 @@
 -- `storage` ({ read(path) -> text | nil | nil + code, write(path, text) -> ok, err? }): the client backs it with rtype.Persistence
 -- (client/storage.luau), tests with memoryStorage. A read that fails on an existing file returns nil + a code (never a silent new game).
 -- Only mutable state is saved; planets, ore data and balance come from config, so a rebalance applies to old saves.
-local Json = require("./json")
+local Host = require("./host")
 local Sim = require("./sim")
 local Upgrades = require("./upgrades")
 local Market = require("./market")
@@ -219,12 +219,12 @@ function Persistence.restore(data, opts)
   return sim
 end
 
-function Persistence.encode(data) return Json.encode(data) end
-function Persistence.decode(text) return Json.decode(text) end
+function Persistence.encode(data) return Host.json.encode(data) end
+function Persistence.decode(text) return Host.json.decode(text) end
 
 -- Parses and checks a save. Returns data, or nil + error { code = "corrupt" | "unknown_schema" }.
 local function parse(text)
-  local ok, data = pcall(Json.decode, text)
+  local ok, data = pcall(Host.json.decode, text)
   if not ok or type(data) ~= "table" then return nil, err("corrupt", "save is not valid JSON: " .. tostring(data)) end
   if data.schema_version ~= Persistence.SCHEMA_VERSION then
     return nil, err("unknown_schema", ("save has schema_version %s, this build reads %d"):format(

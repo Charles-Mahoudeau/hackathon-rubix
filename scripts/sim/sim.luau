@@ -1,5 +1,6 @@
 -- Server-side simulation core. Pure Luau, no engine deps, headless-runnable.
 local Balance = require("@scripts/config/balance")
+local Host = require("@scripts/sim/host")
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
 local AiQueue = require("@scripts/sim/ai_queue")
@@ -9,7 +10,6 @@ local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Versions = require("@scripts/sim/versions")
-local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 local Missions = require("@scripts/sim/missions")
 local Market = require("@scripts/sim/market")
@@ -924,7 +924,7 @@ function Sim:resolveDecision(agentId, call, ctx, opts)
   if ok then
     if not (opts and opts.fallback) then self:noteSuccess(agentId) end
   else
-    self:noteFailure(agentId, "invalid", Json.encode(Json.map({ { "n", type(call) == "table" and call.name or "?" },
+    self:noteFailure(agentId, "invalid", Host.json.encode(Host.json.map({ { "n", type(call) == "table" and call.name or "?" },
       { "a", type(call) == "table" and call.args or {} } })))
   end
   return ok, err

@@ -5,7 +5,7 @@ local Skills = require("@scripts/sim/skills")
 local Offline = require("@scripts/sim/offline")
 local Debug = require("@scripts/sim/debug")
 local Persistence = require("@scripts/sim/persistence")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 
 local function loop(name, vein)
   return { name = name, agent_type = "miner", params = { vein = { kind = "vein" } }, loop = true,

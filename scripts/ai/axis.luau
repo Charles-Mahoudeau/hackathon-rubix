@@ -4,7 +4,7 @@
 --   transport.send({ method, url, headers = {name=value}, body, timeout }) -> id
 --   transport.poll() -> { { id, ok, status, body, error }, ... }     (the engine's rtype.HttpResponse, mapped)
 -- Keys are never here: headers name them as `{{env:NAME}}` and the engine fills them in when it sends.
-local Json = require("@scripts/sim/json")
+local Host = require("@scripts/sim/host")
 
 local Axis = {}
 Axis.__index = Axis
@@ -38,7 +38,7 @@ local TAIL_TIMEOUT = 10 -- memory write and observe outlive the turn's deadline
 local function platformRequest(self, turn, kind, method, path, body, now)
   local tail = kind == "record_assistant" or kind == "observe"
   return send(self, turn, kind, { method = method, url = self.axis.platformUrl .. path, headers = platformHeaders(self),
-    body = body and Json.encode(body) or nil, timeout = tail and TAIL_TIMEOUT or nil }, now)
+    body = body and Host.json.encode(body) or nil, timeout = tail and TAIL_TIMEOUT or nil }, now)
 end
 
 local function recordTurn(self, turn, kind, role, content, now)
@@ -73,13 +73,13 @@ local function callModel(self, turn, block, now)
     method = "POST", url = self.axis.relaisUrl,
     headers = { Authorization = "Bearer {{env:" .. self.axis.secrets.relais .. "}}", ["Content-Type"] = "application/json",
       ["anthropic-version"] = self.axis.anthropicVersion },
-    body = Json.encode({ model = self.axis.model, max_tokens = turn.maxTokens, system = system,
+    body = Host.json.encode({ model = self.axis.model, max_tokens = turn.maxTokens, system = system,
       messages = { { role = "user", content = turn.user } } }),
   }, now)
 end
 
 local function onModel(self, turn, res, now)
-  local data = Json.tryDecode(res.body or "")
+  local data = Host.json.tryDecode(res.body or "")
   if type(data) ~= "table" or type(data.content) ~= "table" then return fail(self, turn, "model_bad_response") end
   local parts = {}
   for _, block in ipairs(data.content) do
@@ -112,7 +112,7 @@ local function advance(self, turn, kind, res, now)
     return fail(self, turn, kind .. "_http_" .. tostring(res.status))
   end
   if kind == "agent_config" then
-    local data = Json.tryDecode(res.body or "")
+    local data = Host.json.tryDecode(res.body or "")
     if type(data) ~= "table" or type(data.system_prompt) ~= "string" then return fail(self, turn, "agent_config_bad_response") end
     turn.agentPrompt = data.system_prompt
     self.promptCache = { text = data.system_prompt, fetchedAt = now }
@@ -120,7 +120,7 @@ local function advance(self, turn, kind, res, now)
   elseif kind == "record_user" then
     turn.prep -= 1
   elseif kind == "session" then
-    local data = Json.tryDecode(res.body or "")
+    local data = Host.json.tryDecode(res.body or "")
     if type(data) ~= "table" then return fail(self, turn, "session_bad_response") end
     return callModel(self, turn, type(data.block) == "string" and data.block or "", now)
   elseif kind == "model" then
