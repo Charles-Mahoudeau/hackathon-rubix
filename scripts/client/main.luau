@@ -29,6 +29,7 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
+require("@scripts/client/station_fx")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
@@ -37,7 +38,7 @@ local Sounds = require("@scripts/client/sounds")
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
 
 local state = {
-	fleet = FleetMap.new(), sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, stationLayer = {}, stationSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	station = StationView.new(), -- Station screen: the station tab (GR5-73)
@@ -66,6 +67,15 @@ local function rebuildWorld(commands)
 	end
 end
 
+-- The stations are their own layer so a station growing or going active never respawns the background (GR5-52).
+local function rebuildStations(commands)
+	despawnAll(commands, state.stationLayer)
+	state.stationLayer = {}
+	if state.shell.screen == Screens.defaultScreen then
+		for _, desc in ipairs(SystemMap.stationEntities(state.sim)) do state.stationLayer[#state.stationLayer + 1] = commands:spawn(desc) end
+	end
+end
+
 -- A UI tree spawned this frame has no computed layout until the next one and is not drawn before then, so despawning the
 -- old tree in the same frame leaves a blank frame (the flicker). Old trees live on for a few frames, then go.
 local RETIRE_FRAMES = 2
@@ -87,7 +97,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
 	state.shell.screen = shown
 end
 
@@ -233,6 +243,12 @@ engine.ecs.system("game.Shell", {
 		if worldSig ~= state.worldSig then
 			state.worldSig = worldSig
 			rebuildWorld(ctx.commands)
+		end
+
+		local stationSig = state.shell.screen .. "|" .. SystemMap.stationSignature(state.sim)
+		if stationSig ~= state.stationSig then
+			state.stationSig = stationSig
+			rebuildStations(ctx.commands)
 		end
 
 		FleetMap.sync(state.fleet, state.sim, now, ctx.commands, state.shell.screen == Screens.defaultScreen)
