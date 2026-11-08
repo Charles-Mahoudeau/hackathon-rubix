@@ -111,6 +111,10 @@ return {
   fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
 
+  -- Station screen (GR5-73): a tab per station, the stock bars on the left, docked ships / freighters / Logisticians on the right.
+  station = { tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
+    rowBarY = 14, rowBarWidth = 200, rowBarX = 150, rowQtyX = 360, listX = 520, lineHeight = 20, sectionGap = 14 },
+
   -- Team screen (GR5-28): one row per agent.
   team = { rowY = 48, rowHeight = 26, nameX = 0, assetX = 130, modeX = 270, stateX = 380, computeX = 500, netX = 590, errorsX = 690, alertX = 760,
     headerY = 28 },
