@@ -4,8 +4,7 @@ return {
   tickSeconds = 0.1,  -- spec §3: 10 Hz fixed step
   startCredits = 500, -- spec §6.1
   startCompute = 10,  -- spec §6.1
-  startReputation = 0,
-  resources = { "credits", "titanium", "cobalt", "iridium", "crystal", "compute", "reputation" },
+  resources = { "credits", "titanium", "cobalt", "iridium", "crystal", "compute" }, -- Reputation is not a stock: it is derived from lifetime revenue (reputationLevels)
   ores = { "titanium", "cobalt", "iridium", "crystal" },
   -- Base mining ship (spec §5.1): drill units/s at richness 1.0, hold in units, engine travel multiplier.
   ship = { drillRate = 2, cargoCap = 100, engineMult = 1.0, engineMark = 1, scanSeconds = 10 },
@@ -18,6 +17,10 @@ return {
   commandCapacity = { 2, 5, 8, 12, 16 },
   -- Agents of a branch that is open from the start come from config/branches.luau; the others (Logistician, ...) are hired once their building stands.
   inboxKeep = 20, -- messages an agent's inbox keeps (its context shows the last Ai.inboxMax)
+  historyKeep = 20, -- calls an agent's history keeps (its context shows the last Ai.recentMax)
+  eventQueueMax = 500, -- sim events waiting for the host to drain them; the oldest go first
+  holdPct = { min = 10, max = 100 }, -- bounds of the `stop_at_hold_pct` argument of `mine` (spec §11)
+  monitorErrorWindowSeconds = 600, -- the Monitor's per-agent error count looks back this many game seconds (spec §9.2.4)
   -- Shop (spec §6.5, D22): costs in cr. `mark` upgrades are bought in order and apply to every mining ship.
   -- stat: drill (units/s at richness 1), hold (units), engine (travel multiplier; the mark sets range), scanner, archive, ship.
   -- `tier` on an item overrides the shop's; `needs` is another item that must be owned; `rep` a Reputation level.

@@ -9,6 +9,7 @@ local Studio = require("@scripts/ui/skill_studio")
 local ArchiveView = require("@scripts/ui/archive_view")
 local LogsView = require("@scripts/ui/logs_view")
 local Shell = require("@scripts/ui/shell")
+local Screens = require("@scripts/config/screens")
 
 local function rich()
   local s = Sim.new()
@@ -65,6 +66,35 @@ do
   assert(not st.message.bad and st.mode == "list", st.message.text)
   assert(s.skills["Mine K1"] and s.skills["Mine K1"].created_from == "recording" and #s.skills["Mine K1"].steps == 2)
   assert(Studio.model(s, st).message.text:find("Saved 'Mine K1'"))
+end
+
+-- 1b. more successful calls than one page: Older / Newer turn the pages and a range can span them
+do
+  local s, st = rich(), Studio.new()
+  local per = Screens.studio.calls
+  for i = 1, per * 2 + 3 do
+    s.feedSeq = (s.feedSeq or 0) + 1
+    s.feed[#s.feed + 1] = { id = 9000 + i, kind = "call", agent = "miner", status = "ok", tool = "mine", args = { vein = "K1", stop_at_hold_pct = 90 }, text = "x" }
+  end
+  click(s, st, "studio.mode.record")
+  local function picks()
+    local out = {}
+    for _, c in ipairs(rows(s, st)) do if c.action and c.action:match("^studio%.rec%.pick%.") then out[#out + 1] = tonumber(c.action:match("(%d+)$")) end end
+    return out
+  end
+  assert(#picks() == per and picks()[per] == 9000 + per * 2 + 3 and has(s, st, "Page 3 / 3"), "newest page first")
+  assert(has(s, st, "Newer").color == "dim" and has(s, st, "Older").color == "cyan")
+  click(s, st, "studio.rec.page.older")
+  assert(picks()[per] == 9000 + per * 2 + 3 - per and has(s, st, "Page 2 / 3"), "older page")
+  click(s, st, "studio.rec.page.older")
+  click(s, st, "studio.rec.page.older")
+  assert(has(s, st, "Page 1 / 3") and #picks() == 3 and has(s, st, "Older").color == "dim", "oldest page, clamped")
+  click(s, st, "studio.rec.pick." .. picks()[3])
+  click(s, st, "studio.rec.page.newer")
+  click(s, st, "studio.rec.pick." .. picks()[1])
+  assert(has(s, st, "Selected: 2 calls"), "a range spans two pages")
+  click(s, st, "studio.rec.agent.miner")
+  assert(has(s, st, "Page 3 / 3"), "switching agent goes back to the newest page")
 end
 
 -- 2. the same routine for another vein: the suggestion offers a parameter; accepting converts the first skill

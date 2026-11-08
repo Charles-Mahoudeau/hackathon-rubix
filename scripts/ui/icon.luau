@@ -6,12 +6,14 @@ local UiTheme = require("@scripts/ui/theme")
 local Icon = {}
 
 -- The engine's texture loader (set by Shell.spawn on the client). Without one (headless tests) the texture is the file path.
-Icon.loader = nil
+-- A local, not a field: the engine freezes loaded module tables, so Icon.loader = x would fail at runtime.
+local loader = nil
+function Icon.useLoader(fn) loader = loader or fn end
 
 local textures = {}
 function Icon.texture(file: string)
-	if not Icon.loader then return file end
-	textures[file] = textures[file] or Icon.loader(file)
+	if not loader then return file end
+	textures[file] = textures[file] or loader(file)
 	return textures[file]
 end
 
