@@ -1,0 +1,47 @@
+name: Engine smoke test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Catches a new rtype nightly breaking the game even with no game-side change.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  launch-game:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download latest engine nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p engine
+          gh release download nightly --repo Charles-Mahoudeau/rtype --pattern "*linux-x86_64.zip" -O engine.zip
+          unzip -q engine.zip -d engine
+          chmod +x engine/*/runtime/aylo-runtime
+
+      - name: Boot the game headless and watch for a crash
+        run: |
+          runtime_bin=$(echo engine/*/runtime/aylo-runtime)
+          set +e
+          timeout 15s "$runtime_bin" "$GITHUB_WORKSPACE" --server --port 14242 > engine-run.log 2>&1
+          code=$?
+          set -e
+          cat engine-run.log
+          # 124 = timeout killed a still-running, non-crashed server: that's a pass.
+          if [ "$code" -ne 124 ] && [ "$code" -ne 0 ]; then
+            echo "::error::Engine exited with code $code while booting the game — see log above."
+            exit 1
+          fi
+          echo "Game booted cleanly on engine nightly for 15s with no crash."
+
+      - name: Upload boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-boot-log
+          path: engine-run.log
