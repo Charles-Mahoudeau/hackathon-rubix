@@ -22,6 +22,8 @@ local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
 local StationView = require("@scripts/ui/station_view")
 local DebugPanel = require("@scripts/ui/debug")
+local SaveView = require("@scripts/ui/save_view")
+local SaveConfig = require("@scripts/config/save")
 local Glitch = require("@scripts/render/vfx/glitch")
 local Route = require("@scripts/render/vfx/route")
 local Vfx = require("@scripts/config/vfx")
@@ -1028,6 +1030,27 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
+-- Modal over the whole view (save error at boot, "While you were away" after a load): a dim backdrop and a centred box.
+local function modalOverlay(font, m)
+  local c = SaveConfig.modal
+  local inner = c.width - 2 * c.padding
+  local rows = { text(font, m.title:upper(), T.heading, m.kind == "error" and Theme.semantic.error or "green") }
+  local height = 2 * c.padding + math.ceil(T.heading * Fit.lineHeight)
+  for _, line in ipairs(m.lines) do
+    rows[#rows + 1] = text(font, line, T.small, "text")
+    height += c.gap + Fit.lineCount(line, T.small, inner) * math.ceil(T.small * Fit.lineHeight)
+  end
+  local buttons = {}
+  for _, b in ipairs(m.buttons) do buttons[#buttons + 1] = button(font, b.label, b.action, b.color, c.buttonWidth) end
+  rows[#rows + 1] = { style = { direction = "row", gap = c.gap, marginTop = c.gap }, children = buttons }
+  height += 2 * c.gap + 28
+  -- The rows sit in a column with no fixed height so the texts wrap instead of being cut to a single line.
+  local box = panel({ x = (L.view.w - c.width) / 2, y = (L.view.h - height) / 2, w = c.width, h = height })
+  box.children = { { style = { direction = "column", gap = c.gap, padding = c.padding }, children = rows } }
+  return { style = rect({ x = 0, y = 0, w = L.view.w, h = L.view.h }),
+    background = { color = UiTheme.color("bg", 0.7) }, children = { box } }
+end
+
 -- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", logs = LogsView.new() state, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
@@ -1092,6 +1115,10 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = empty(font, rects.main, screenId)
   end
   for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
+  if opts.save then
+    local modal = SaveView.model(opts.save, sim)
+    if modal then children[#children + 1] = modalOverlay(font, modal) end
+  end
   local shift = opts.glitch and opts.glitch.slices[1] and opts.glitch.slices[1].shift or 0
   return Fit.apply({
     style = { position = "absolute", left = shift, top = 0, width = L.view.w, height = L.view.h },
