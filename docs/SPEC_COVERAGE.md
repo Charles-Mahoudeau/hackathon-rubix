@@ -95,7 +95,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 12.2 Logs screen | DONE | `Log.stats` window 600 s, `docs/qa/logs-rates-filters.png`, `logs-list.png` | |
 | 12.3 prompt versions, compare | DONE | `versions.luau`, `test_versions.luau` | Compare UI verified, `docs/qa/logs-compare.png` |
 | 13.1-13.4 skills | DONE | `skills.luau`, `checkParams`, `Skills.record`, wake-AI on abort | |
-| 13.5 studio UI | PARTIAL | `test_studio.luau`, `docs/qa/studio-*.png` | Record list not paged and clipped (GR5-101) |
+| 13.5 studio UI | DONE | `test_studio.luau`, `docs/qa/studio-*.png` | Record list paging fixed in GR5-101 (#72); screenshots predate the fix |
 | 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Now run at launch from `client/save.luau`, summary shown as a modal over any screen (GR5-77) |
 | 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M4 counts a skill saved before the mission opened (accepted, DECISIONS.md GR5-80) |
 | 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | |
@@ -119,7 +119,7 @@ Driven in `aylo-runtime` on a prepared T5 company (`qaTour = true` in `scripts/c
 | Context settings, token weight of each option, cost of one decision (§9.3) | verified | `context-settings.png` |
 | Logs: per-agent credits/h, Compute/h, net/h; agent, source and errors filters; paging (§12.2) | verified | `logs-rates-filters.png`, `logs-list.png` |
 | Compare versions: A/B pickers, rates, "not enough data", tools, context change, directive side by side (§12.3) | verified | `logs-compare.png` |
-| Studio, record from the feed (§13.5) | verified, list clipped | `studio-record.png`, GR5-101 |
+| Studio, record from the feed (§13.5) | verified (list clipping fixed in GR5-101, #72; screenshot predates the fix) | `studio-record.png`, GR5-101 |
 | Studio, manual form with `$` parameter buttons and price guard | verified | `studio-form.png` |
 | Studio, "make it a parameter" proposal for a near-duplicate skill (§13.2b) | verified | `studio-suggestion.png` |
 | Archive: agents running each skill, Stop, assign with parameter values | verified | `studio-running.png` |
@@ -128,7 +128,7 @@ Driven in `aylo-runtime` on a prepared T5 company (`qaTour = true` in `scripts/c
 | Cyan Monitor tag in the feed (§8.7) | verified | `alerts-monitor-tag.png` (feed strip) |
 | Branches panel: open and available states, agents, money per hour (§15b.1) | verified; the locked state needs a T1-T4 save, covered by `test_branches.luau` only | `branches.png` |
 | Offline summary "While you were away" and Dismiss (§14) | verified | `offline-summary.png` |
-| Missions, Station, Market, Fleet, Map | seen; Missions bottom row and Station title are clipped or blank | GR5-101 |
+| Missions, Station, Market, Fleet, Map | seen; Missions bottom row and Station title fixed in GR5-101 (#72), screenshots predate the fix | GR5-101 |
 
 Not repeated here: look and feel (GR5-54) and the demo run (GR5-65).
 
