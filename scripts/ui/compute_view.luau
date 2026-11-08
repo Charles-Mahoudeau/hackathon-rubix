@@ -111,6 +111,8 @@ function View.contextPanel(sim, agentId)
     formats = formats,
     formatList = formatList,
     sections = current.sections,
+    contextText = current.contextText,
+    format = current.format,
     inputTokens = current.input,
     outputTokens = Ai.estimatedOutputTokens,
     totalTokens = estimateTokens,

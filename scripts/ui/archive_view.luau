@@ -33,9 +33,13 @@ function View.model(sim)
   local skills = {}
   for _, name in ipairs(Skills.names(sim)) do
     local s = sim.skills[name]
-    local paramNames = {}
+    local paramNames, paramDecls = {}, {}
     for p in pairs(s.params or {}) do paramNames[#paramNames + 1] = "$" .. p end
     table.sort(paramNames)
+    for _, n in ipairs(paramNames) do
+      local decl = s.params[n:sub(2)]
+      paramDecls[#paramDecls + 1] = { name = n, kind = decl.kind, filter = type(decl.filter) == "string" and decl.filter or nil }
+    end
     local steps = {}
     for i, st in ipairs(s.steps) do steps[i] = stepText(st) end
     local runners = {}
@@ -50,13 +54,14 @@ function View.model(sim)
         assigns[#assigns + 1] = { agent = id, label = "Run on " .. id, action = ("studio.assign.%s.%s"):format(name, id) }
       end
     end
-    skills[#skills + 1] = { name = name, agentType = s.agent_type, loop = s.loop, params = paramNames, steps = steps,
+    skills[#skills + 1] = { name = name, agentType = s.agent_type, loop = s.loop, params = paramNames, paramDecls = paramDecls,
+      select = "studio.select." .. name, steps = steps,
       createdFrom = s.created_from or "manual", runners = runners, assigns = assigns, delete = "archive.delete." .. name }
   end
   local used, max = Skills.count(sim), sim:archiveCapacity()
   return {
     skills = skills,
-    slots = { used = used, max = max, text = ("Skills %d/%d"):format(used, max) },
+    slots = { used = used, max = max, full = used >= max, text = ("Skills %d/%d"):format(used, max) },
     canSimulateAway = used > 0,
     simulateAway = used > 0 and "archive.away" or nil,
     offline = OfflineView.model(sim),
