@@ -32,6 +32,55 @@ local function monitorSpent(sim, e)
   return math.floor(((sim.compute.lifetime.monitor or 0) - e.baseMonitor) * 10 + 0.5) / 10
 end
 
+-- Worker agents of every branch (spec §15b.0): all but the Logisticians and the Monitor, in agent order.
+local function workerIds(sim)
+  local ids = {}
+  for _, id in ipairs(sim.agentOrder) do
+    local agent = sim.agents[id]
+    if agent and agent.type ~= "logistician" and agent.type ~= "monitor" then ids[#ids + 1] = id end
+  end
+  return ids
+end
+
+-- Workers grouped by branch (agent type), in first-seen order: -> { { type, ids }, ... }
+local function groupsOf(sim, ids)
+  local groups, byType = {}, {}
+  for _, id in ipairs(ids) do
+    local t = sim.agents[id].type
+    if not byType[t] then byType[t] = { type = t, ids = {} }; groups[#groups + 1] = byType[t] end
+    local g = byType[t].ids
+    g[#g + 1] = id
+  end
+  return groups
+end
+
+local function salvageShipOf(sim, id)
+  for _, sid in ipairs(sim.salvageOrder or {}) do
+    if sim.salvageShips[sid].owner == id then return sim.salvageShips[sid] end
+  end
+  return nil
+end
+
+local function salvaging(ship) return ship.state == "surveying" or ship.state == "salvaging" end
+
+-- One tick of a worker for mission 6: is it working, and is it sharing its vein (Miners) or site (Scavengers) with another ship?
+local function workerTick(sim, id)
+  local agent = sim.agents[id]
+  if agent.type == "miner" then
+    local ship = sim:ownedShip(id)
+    return ship.state == "mining", ship.state == "mining" and #ship.crowdedBy > 0
+  elseif agent.type == "scavenger" then
+    local ship = salvageShipOf(sim, id)
+    if not ship or not salvaging(ship) or not ship.job then return false, false end
+    for _, sid in ipairs(sim.salvageOrder) do
+      local other = sim.salvageShips[sid]
+      if other ~= ship and salvaging(other) and other.job and other.job.site == ship.job.site then return true, true end
+    end
+    return true, false
+  end
+  return agent.state == "acting", false
+end
+
 -- Fresh counters for a mission that just opened (or is retried).
 local function begin(sim, e, d)
   if d.check == "streak" then e.streaks = {}
@@ -40,12 +89,9 @@ local function begin(sim, e, d)
   elseif d.check == "orbis" then e.units = 0
   elseif d.check == "teamwork" then
     e.startTick, e.failed, e.lastTick, e.agents, e.earned, e.mining, e.crowded = sim.tick, false, -1, {}, {}, {}, {}
-    for _, sid in ipairs(sim.shipOrder) do
-      local owner = sim.ships[sid].owner
-      if owner then
-        e.agents[#e.agents + 1] = owner
-        e.earned[owner], e.mining[owner], e.crowded[owner] = 0, 0, 0
-      end
+    for _, id in ipairs(workerIds(sim)) do
+      e.agents[#e.agents + 1] = id
+      e.earned[id], e.mining[id], e.crowded[id] = 0, 0, 0
     end
   elseif d.check == "divide" then
     e.startTick, e.failed, e.errors, e.lastTick, e.agents, e.deliveries = sim.tick, false, 0, -1, {}, {}
@@ -74,7 +120,13 @@ local function startMet(sim, d)
   if s == nil then return true end
   if s.tier and sim.tier < s.tier then return false end
   for _, u in ipairs(s.upgrades or {}) do if not sim.upgrades[u] then return false end end
-  if s.ships and #sim.shipOrder < s.ships then return false end
+  if s.ships then
+    local found = false
+    for _, g in ipairs(groupsOf(sim, workerIds(sim))) do
+      if #g.ids >= s.ships then found = true end
+    end
+    if not found then return false end
+  end
   if s.logisticians then
     local found = false
     for _, sid in ipairs(sim.stationOrder) do
@@ -96,7 +148,7 @@ function Missions.lockReason(sim, d)
     if not sim.upgrades[u] then need[#need + 1] = UPGRADE_LABEL[u] or u end
   end
   if #need > 0 then return "Build " .. table.concat(need, " and ") end
-  if s and s.ships and #sim.shipOrder < s.ships then return ("Buy mining ship #%d"):format(s.ships) end
+  if s and s.ships then return ("Buy ship #%d in one branch"):format(s.ships) end
   if s and s.logisticians then return ("Hire %d Logisticians at one station"):format(s.logisticians) end
   return nil
 end
@@ -142,17 +194,21 @@ function Missions.progress(sim, e)
     local n = math.min(e.units or 0, d.units)
     return { fraction = n / d.units, text = ("%d / %d units to Orbis at %.1fx the HMC price"):format(n, d.units, d.minRatio), lines = {} }
   elseif d.check == "teamwork" then
-    local lines, sum = {}, 0
+    local lines, best = {}, 0
     for _, id in ipairs(e.agents) do
       local earned = e.earned[id] or 0
-      sum += math.min(1, earned / d.creditsEach)
       lines[#lines + 1] = { text = ("%s: %d / %d cr, crowded %d%%"):format(id, math.floor(earned), d.creditsEach,
         math.floor(crowdPct(e, id) + 0.5)), done = earned >= d.creditsEach and crowdPct(e, id) < d.crowdMaxPct }
+    end
+    for _, g in ipairs(groupsOf(sim, e.agents)) do -- the mission is met by one branch's team: show the closest one
+      local sum = 0
+      for _, id in ipairs(g.ids) do sum += math.min(1, (e.earned[id] or 0) / d.creditsEach) end
+      if #g.ids >= 2 and sum / #g.ids > best then best = sum / #g.ids end
     end
     local left = math.max(0, windowTicks(sim, d) - (sim.tick - e.startTick))
     local text = ("%d:%02d left"):format(math.floor(left / 600), math.floor(left / 10) % 60)
     if e.failed then text = "Window over, goals missed - retry" end
-    return { fraction = #e.agents > 0 and sum / #e.agents or 0, text = text, failed = e.failed == true, lines = lines }
+    return { fraction = best, text = text, failed = e.failed == true, lines = lines }
   elseif d.check == "divide" then
     local lines, sum = {}, 0
     for _, id in ipairs(e.agents) do
@@ -184,8 +240,9 @@ local function check(sim, e, d)
   if d.check == "streak" then return streakBest(e) >= d.trips end
   if d.check == "scout" then
     if sim.upgrades.scanner then e.scanner = true end
-    -- A revealed K4 means a scan happened (K4 is hidden until Kessa is scanned), also one done before the mission opened.
-    if e.scanner and sim.veins[d.vein] and sim.veins[d.vein].scanned then e.scanned = true end
+    -- A real `scan` call (counted when the scan finishes, also one made before the mission opened) that revealed K4:
+    -- a debug veins-reveal is not a scan.
+    if e.scanner and (sim.scanCalls or 0) > 0 and sim.veins[d.vein] and sim.veins[d.vein].scanned then e.scanned = true end
     return e.scanner and e.scanned and e.sold
   end
   if d.check == "skillcredit" then
@@ -198,22 +255,33 @@ local function check(sim, e, d)
       e.lastTick = sim.tick
       if d.check == "teamwork" and not e.failed then
         for _, id in ipairs(e.agents) do
-          local ship = sim:ownedShip(id)
-          if ship and ship.state == "mining" then
-            e.mining[id] += 1
-            if #ship.crowdedBy > 0 then e.crowded[id] += 1 end
+          if sim.agents[id] then
+            local active, crowded = workerTick(sim, id)
+            if active then
+              e.mining[id] += 1
+              if crowded then e.crowded[id] += 1 end
+            end
           end
         end
       end
     end
     if e.failed or sim.tick - e.startTick < windowTicks(sim, d) then return false end
-    local ok = #e.agents >= 2
-    for _, id in ipairs(e.agents) do
-      if d.check == "teamwork" then
-        if (e.earned[id] or 0) < d.creditsEach or crowdPct(e, id) >= d.crowdMaxPct then ok = false end
-      elseif (e.deliveries[id] or 0) < d.deliveries then ok = false end
+    local ok = false
+    if d.check == "teamwork" then -- two or more workers of one branch, all of them on target (spec §15b.0)
+      for _, g in ipairs(groupsOf(sim, e.agents)) do
+        local met = #g.ids >= 2
+        for _, id in ipairs(g.ids) do
+          if (e.earned[id] or 0) < d.creditsEach or crowdPct(e, id) >= d.crowdMaxPct then met = false end
+        end
+        if met then ok = true end
+      end
+    else
+      ok = #e.agents >= 2
+      for _, id in ipairs(e.agents) do
+        if (e.deliveries[id] or 0) < d.deliveries then ok = false end
+      end
+      if e.errors > 0 then ok = false end
     end
-    if d.check == "divide" and e.errors > 0 then ok = false end
     if not ok then e.failed = true end
     return ok
   end

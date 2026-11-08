@@ -286,6 +286,16 @@ local function mapOverlay(font, r, map, opts)
       button = UiTheme.button("map.focus." .. m.id, "cyan") }
     nodes[#nodes + 1] = label(c, m.name, ("T%d market"):format(m.tier), "text", "dim", 14)
   end
+  -- The depot and the outposts: a dotted dock line from the planet to the station, and its name above it (GR5-52).
+  for _, st in ipairs(opts.mapStations or {}) do
+    for _, d in ipairs(Shell.dashes(st.from, st.to, st.skipFrom, st.skipTo, st.spacing)) do
+      nodes[#nodes + 1] = dot(d, 3, "cyan", 0.75)
+    end
+    local title = text(font, st.label, T.small, "cyan")
+    title.text.align = "center"
+    nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
+      children = { title } }
+  end
   return nodes
 end
 
@@ -718,6 +728,8 @@ local function stationScreen(font, r, m, time)
     for i, tab in ipairs(m.tabs) do
       nodeAt(L.pad + (i - 1) * (c.tabWidth + c.tabGap), c.tabY, button(font, tab.label, tab.action, tab.active and "cyan" or "dim", c.tabWidth))
     end
+  else
+    nodeAt(L.pad, c.titleY, text(font, c.title, T.heading, "cyan"))
   end
   nodeAt(L.pad, c.headerY, text(font, ("%s  %s   stock %s"):format(m.label:upper(), m.planet, m.usedText), T.small, "dim"))
   nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, m.percent, m.percent >= 90 and Theme.semantic.warning or "cyan"))
@@ -758,7 +770,7 @@ local function missionsScreen(font, r, m)
   local c = Screens.missions
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
-  local width = r.w - 2 * L.pad
+  local width = c.textWidth
   local function wrapped(str, colorName)
     return { style = { maxWidth = width }, text = { text = str, font = font, size = T.body, color = UiTheme.color(colorName), wrap = true } }
   end
@@ -785,21 +797,24 @@ local function missionsScreen(font, r, m)
   else
     nodeAt(L.pad, L.pad, text(font, "ALL MISSIONS CLAIMED", T.heading, "green"))
   end
+  -- The mission list sits in a column to the right of the current mission, so it never runs past the panel's bottom edge.
   for i, row in ipairs(m.rows) do
     local y = c.listY + (i - 1) * c.rowHeight
     local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
-    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
-    for i, key in ipairs(row.icons) do nodeAt(c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
-    nodeAt(c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
+    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    for i, key in ipairs(row.icons) do nodeAt(c.listX + c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
+    nodeAt(c.listX + c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
+  -- Optional branch missions take two lines: the name and progress, then the reward and the Claim / Retry button.
   for j, row in ipairs(m.optional) do
-    local y = c.listY + (#m.rows + j - 1) * c.rowHeight
+    local y = c.listY + #m.rows * c.rowHeight + c.optionalGap + (j - 1) * c.optionalRowHeight
     local color = row.state == "claimed" and "green" or (row.failed and Theme.semantic.warning or (row.state == "current" and "cyan" or "dim"))
-    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
-    for i, key in ipairs(row.icons) do nodeAt(c.rewardX + c.optionalRewardOffset + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
-    nodeAt(c.rewardX + c.optionalRewardOffset + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
-    if row.claim then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Claim", row.claim, "green", 80)) end
-    if row.retry then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
+    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
+    local x = c.listX + c.optionalIndent
+    for i, key in ipairs(row.icons) do nodeAt(x + (i - 1) * (ICON.row + 2), y + c.rowHeight, Icon.node(key, ICON.row, color)) end
+    nodeAt(x + #row.icons * (ICON.row + 2), y + c.rowHeight, text(font, row.reward, T.small, color))
+    if row.claim then nodeAt(x + c.optionalButtonOffset, y + c.rowHeight - 6, button(font, "Claim", row.claim, "green", 80)) end
+    if row.retry then nodeAt(x + c.optionalButtonOffset, y + c.rowHeight - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
   end
   return withChildren(panel(r, nil), kids)
 end

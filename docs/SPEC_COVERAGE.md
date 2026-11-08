@@ -20,7 +20,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 6 | GR5-74 | Emergency advance has no notification/button | Gameplay | todo |
 | 7 | GR5-77 | Save/load, autosave, offline catch-up not wired | Gameplay | in review |
 | 8 | GR5-83 | M1/M6/M8 acceptance tests the spec asks for | Gameplay | todo |
-| 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | todo |
+| 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | done |
 | 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | backlog |
 | 11 | GR5-86 | Extended T5 demo: prepared save + deplete-vein action | Gameplay | backlog |
 | 12 | GR5-89 | Real-runtime check of UI screens the audit could not verify | Gameplay | backlog |
@@ -37,16 +37,16 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | Milestone | Status | Evidence | Gap / issue |
 |---|---|---|---|
 | M0 | DONE | `tests/test_m0.luau`, `tools/run_tests.sh`, engine self-test `scripts/server/selftest.luau` (GR5-35) | |
-| M1 | PARTIAL | `test_headless.luau:16` (K1 80 s / 300 cr), `test_shop.luau:62`. K1 verified by hand. K3 (110 s) and A1 Mk3 (221.5 s) also match when run ad hoc | Only K1 tested; no K3/K4/V1/A1 or "fifth planet" test (GR5-83). K3 pays 720 not 700 (7.2 depot rate, spec rounding) |
+| M1 | DONE | `test_acceptance.luau` sections 1-3: all 12 veins within +-1 s and exact credits, K3 Mk2, A1 Mk3 221.5 s, fifth planet by data only | K3 pays 720 (7.2/unit), see DECISIONS.md |
 | M2 | DONE | `test_missions.luau:55-77` (precise < 15 min on every seed, vague fails in >10/20), `test_miner.luau:117`, `test_rules.luau:73-88` | |
 | M3 | PARTIAL | Shell: top bar, map, feed, editor with live cost | Decider never set in client (GR5-71) |
 | M4 | PARTIAL | `compute_view`, `shop_view`, `logs_view` | Bailout unreachable (GR5-74) |
 | M5 | DONE | `test_offline.luau:113` (8 h under 2 s), `skill_studio`, `archive_view` | Studio UI and screens unverified in engine (GR5-89) |
-| M6 | PARTIAL | `test_market.luau:111` | Best-buyer flip test uses a scripted seller; baselines flip only iridium (DECISIONS.md:108). Station panel empty (GR5-73, GR5-83) |
+| M6 | PARTIAL | `test_market.luau:111` (250/min seller), `test_acceptance.luau` section 4 (unassisted baseline + 100/min seller) | Real dynamics alone flip only iridium; the criterion holds with a player-sales seller (DECISIONS.md GR5-83). Station panel empty (GR5-73) |
 | M7 | DONE | `test_logistics.luau`, `fleet_view`, convoy dots `shell.luau:224` | |
 | M7b | PARTIAL | `test_multi.luau` #2-#4 | No `set_home_station`; hold is single-ore (GR5-79, GR5-82) |
 | M7c | DONE | `test_monitor.luau` #2-#4 | Single Monitor, not per scope (GR5-81) |
-| M8 | PARTIAL | Missions 1-8; `docs/BALANCE_REPORT.md`: T3 27.2, T4 58.2, T5 123.4 min | `test_speed.luau:166` asserts T3 only (GR5-83); pacing tuning is GR5-63 |
+| M8 | DONE | `test_acceptance.luau` section 5: T3 in 20-30 min, T4 60 and T5 120 within +-30% (median of seeds 1-3); `docs/BALANCE_REPORT.md` | Pacing tuning is GR5-63 |
 | M9 | DONE (unverified on GPU) | `test_art.luau`, `render/glow.luau`, `render/vfx`, `test_ui_skin.luau` | Real render quality: GR5-48 family |
 | M10 | PARTIAL | `ai/axis.luau`, `ai/provider.luau`, `server/axis_http.luau`, `test_ai.luau` | `server/ai_host.luau` required nowhere; no net layer (GR5-87, GR5-88); token ratio not recorded (GR5-84) |
 | B-0 | DONE | `test_branches.luau:52` (dummy branch) | |
@@ -97,8 +97,8 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 13.1-13.4 skills | DONE | `skills.luau`, `checkParams`, `Skills.record`, wake-AI on abort | |
 | 13.5 studio UI | UNVERIFIED | `test_studio.luau` | GR5-89 |
 | 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Now run at launch from `client/save.luau`, summary shown as a modal over any screen (GR5-77) |
-| 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M2/M4 trigger deviations, hint text (GR5-80) |
-| 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | Missions 6-8 ignore other branches (GR5-80) |
+| 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M4 counts a skill saved before the mission opened (accepted, DECISIONS.md GR5-80) |
+| 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | |
 | 15b.1 ladders | DONE | `config/branches.luau` | |
 | 15b.2 refining, 15b.3 salvage, 15b.4 raiding | DONE | `test_refining.luau`, `test_salvage.luau`, `test_raiding.luau` | Refiner cap 4 not enforced as far as read |
 | 15b.5 V1-V3 missions, 15b.6 stubs | DONE | `missions_view.luau`, branch tests | |
