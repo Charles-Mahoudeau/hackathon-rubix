@@ -9,6 +9,30 @@ return {
   ores = { "titanium", "cobalt", "iridium", "crystal" },
   -- Base mining ship (spec §5.1): drill units/s at richness 1.0, hold in units, engine travel multiplier.
   ship = { drillRate = 2, cargoCap = 100, engineMult = 1.0, engineMark = 1, scanSeconds = 10 },
+  -- Tier 2 is entered when lifetime revenue reaches this (spec §6.6); other tiers come from their own purchases.
+  tierRevenue = { [2] = 1500 },
+  -- Tool slots per agent type (spec §8.1). `wait` and `run_skill` are free; every other equipped tool takes one slot.
+  toolSlots = { miner = 5, logistician = 5 },
+  freeTools = { wait = true, run_skill = true },
+  -- Command capacity (spec §5.3): agents a player can run = base + perReputationLevel x Rep level.
+  commandCapacity = { base = 3, perReputationLevel = 1 },
+  -- Shop (spec §6.5, D22): costs in cr. `mark` upgrades are bought in order and apply to every mining ship.
+  -- stat: drill (units/s at richness 1), hold (units), engine (travel multiplier; the mark sets range), scanner, archive, ship.
+  shop = {
+    tier = 2,
+    order = { "drill_mk2", "drill_mk3", "hold_mk2", "hold_mk3", "engine_mk2", "engine_mk3", "scanner", "archive", "ship2" },
+    items = {
+      drill_mk2 = { name = "Drill Mk2", stat = "drill", mark = 2, cost = 1200, value = 3, desc = "Drill 2 -> 3 u/s" },
+      drill_mk3 = { name = "Drill Mk3", stat = "drill", mark = 3, cost = 4000, value = 5, desc = "Drill 3 -> 5 u/s" },
+      hold_mk2 = { name = "Hold Mk2", stat = "hold", mark = 2, cost = 1500, value = 200, desc = "Hold 100 -> 200" },
+      hold_mk3 = { name = "Hold Mk3", stat = "hold", mark = 3, cost = 5000, value = 400, desc = "Hold 200 -> 400" },
+      engine_mk2 = { name = "Engine Mk2", stat = "engine", mark = 2, cost = 1000, value = 0.7, desc = "Travel x0.7, reaches Varn" },
+      engine_mk3 = { name = "Engine Mk3", stat = "engine", mark = 3, cost = 3500, value = 0.5, desc = "Travel x0.5, reaches Ashfall" },
+      scanner = { name = "Scanner", stat = "scanner", cost = 800, desc = "Unlocks the scan tool (takes 1 tool slot)" },
+      archive = { name = "Archive slot", stat = "archive", cost = 1000, max = 3, desc = "+1 skill slot per agent" },
+      ship2 = { name = "Mining ship #2", stat = "ship", cost = 6000, max = 1, desc = "+1 ship and an empty Miner agent" },
+    },
+  },
   waitMinSeconds = 10,
   waitMaxSeconds = 300,
   tiers = {

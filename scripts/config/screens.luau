@@ -83,6 +83,9 @@ return {
     values = { ["true"] = "on", ["false"] = "off" }, -- everything else is shown as its own text
   },
 
+  -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
+  shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
+
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,
   refreshSeconds = 0.25, -- the shell redraws at most this often, and only when what it shows changed
