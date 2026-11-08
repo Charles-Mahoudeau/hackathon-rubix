@@ -5,6 +5,8 @@ local World = require("@scripts/config/world")
 
 local Ai = {}
 local mode = "stub" -- "stub" | "vague"
+local providers = {} -- name -> decide(sim, agentId, ctx); the real provider registers itself here
+local provider = "stub"
 
 local function stub(sim, agentId, ctx)
   if agentId ~= "miner" then return { name = "report", args = { message = "idle" } } end
@@ -43,7 +45,22 @@ function Ai.setMode(m)
   mode = m
 end
 
+function Ai.register(name, decide)
+  assert(name ~= "stub" and type(decide) == "function", "Ai.register: needs a name other than 'stub' and a function")
+  providers[name] = decide
+end
+
+-- Debug panel / config switch (spec §10.1). Returns ok, err; an unregistered provider leaves the current one in place.
+function Ai.use(name)
+  if name ~= "stub" and not providers[name] then return false, "provider_unavailable: " .. tostring(name) end
+  provider = name
+  return true
+end
+
+function Ai.provider() return provider end
+
 function Ai.decide(sim, agentId, ctx)
+  if provider ~= "stub" then return providers[provider](sim, agentId, ctx) end
   if mode == "vague" then return vague(sim, agentId, ctx) end
   return stub(sim, agentId, ctx)
 end
