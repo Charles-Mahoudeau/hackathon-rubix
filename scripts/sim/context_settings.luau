@@ -13,7 +13,14 @@ Settings.order = { "prices_hmc", "prices_orbis", "prices_halcyon", "prices_merid
 Settings.monitorOrder = { "agent_detail", "show_skills", "show_veins", "show_prices", "format" }
 
 -- Panel order for an agent type.
-function Settings.orderFor(agentType) return agentType == "monitor" and Settings.monitorOrder or Settings.order end
+-- The Refiner adds the margins table and has no HMC prices, veins or warehouse panels (it sits at a station).
+Settings.refinerOrder = { "margins", "prices_orbis", "prices_halcyon", "prices_meridian", "price_trends", "format", "recent_results", "inbox" }
+
+function Settings.orderFor(agentType)
+  if agentType == "monitor" then return Settings.monitorOrder end
+  if agentType == "refiner" then return Settings.refinerOrder end
+  return Settings.order
+end
 
 local recentOptions = {}
 for i = 0, Ai.recentMax do recentOptions[#recentOptions + 1] = i end
@@ -24,6 +31,7 @@ Settings.options = {
   prices_halcyon = { false, true },
   prices_meridian = { false, true },
   price_trends = { false, true },
+  margins = { false, true },
   format = { "compact", "json" },
   recent_results = recentOptions,
   veins = { "vein", "planet", "all" },
@@ -37,7 +45,7 @@ Settings.options = {
 
 -- The cheapest option of each setting: the weight of an option is measured against it.
 Settings.minimal = { prices_hmc = "off", prices_orbis = false, prices_halcyon = false, prices_meridian = false,
-  price_trends = false, format = "compact", recent_results = 0, veins = "vein", inbox = false, warehouse = false,
+  price_trends = false, margins = false, format = "compact", recent_results = 0, veins = "vein", inbox = false, warehouse = false,
   agent_detail = "summary", show_skills = false, show_veins = false, show_prices = false }
 
 function Settings.defaults()

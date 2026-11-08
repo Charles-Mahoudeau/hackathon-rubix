@@ -4,6 +4,8 @@
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
 local Skills = require("@scripts/sim/skills")
+local Refined = require("@scripts/config/branches").refining
+local Market = require("@scripts/sim/market")
 
 local Ai = {}
 local mode = "stub" -- "stub" (spec §10.5, reads the directive) | "optimal" (always the best call) | "vague" (random bad calls)
@@ -152,20 +154,33 @@ logisticianStub = function(sim, agentId, ctx)
     end
   end
   local idle = { name = "wait", args = { seconds = cfg.waitSeconds } }
-  local ore = first(function(t) return firstWord(t, sortedKeys(World.ores)) end)
+  local goods = sortedKeys(World.ores)
+  for _, g in ipairs(Refined.recipeOrder) do goods[#goods + 1] = g end
+  local ore = first(function(t) return firstWord(t, goods) end)
   local market = first(function(t) return firstWord(t, World.marketOrder) end)
   local wantsSell = first(function(t) if t:find("sell", 1, true) then return true end end)
   local wantsShip = first(function(t) if t:find("ship", 1, true) then return true end end)
   local resource, have = ore, ore and ctx.stock[ore] or 0
   if not ore then
-    for _, o in ipairs(World.oreOrder) do
-      local q = ctx.stock[o] or 0
-      if q >= cfg.minStock and q > have then resource, have = o, q end
+    -- refined goods first (worth more per unit), once the station holds shipMinStock of one
+    for _, g in ipairs(Refined.recipeOrder) do
+      local q = ctx.stock[g] or 0
+      if q >= Refined.stub.shipMinStock and q > have then resource, have = g, q end
+    end
+    if not resource then
+      for _, o in ipairs(World.oreOrder) do
+        local q = ctx.stock[o] or 0
+        if q >= cfg.minStock and q > have then resource, have = o, q end
+      end
     end
   end
   if not resource or have < 1 then return idle end
   local cargo = sim.b.freighter.cargo
-  if wantsSell and not wantsShip and market ~= "halcyon" and market ~= "meridian" then
+  local refined = Refined.recipes[resource] ~= nil
+  if refined and wantsSell and not wantsShip and ctx.station.kind == "main" and Market.has(sim.market, "orbis", resource) then
+    return { name = "sell", args = { resource = resource, qty = "all", buyer = "orbis" } }
+  end
+  if wantsSell and not wantsShip and not refined and market ~= "halcyon" and market ~= "meridian" then
     local buyer = (market == "orbis" and ctx.station.kind == "main") and "orbis" or "hmc"
     return { name = "sell", args = { resource = resource, qty = "all", buyer = buyer } }
   end
@@ -176,7 +191,7 @@ logisticianStub = function(sim, agentId, ctx)
   if not dest then
     local pool = {}
     for _, m in ipairs(ctx.markets) do
-      if World.markets[m].demand[resource] then pool[#pool + 1] = m end
+      if Market.has(sim.market, m, resource) then pool[#pool + 1] = m end
     end
     if #pool == 0 then return idle end
     dest = pool[1 + math.floor(sim.randStub() * #pool)]

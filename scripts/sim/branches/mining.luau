@@ -2,6 +2,7 @@
 -- resource / pct skill parameters, declared as data for sim/branches/registry.luau. The mining rules themselves (mine,
 -- return, sell, store, scan, drilling) run in sim/sim.luau. Numbers: config/branches.luau.
 local C = require("@scripts/config/branches").mining
+local Refined = require("@scripts/config/branches").refining
 local World = require("@scripts/config/world")
 local Ai = require("@scripts/sim/ai")
 
@@ -47,7 +48,8 @@ return {
       if f.planet and vein.planet ~= f.planet then return name .. ": must be a vein on " .. f.planet end
     end },
     resource = { check = function(sim, name, v)
-      if not World.ores[v] then return name .. ": unknown resource" end
+      -- a Logistician skill may also move the refined goods of the refining branch
+      if not World.ores[v] and not Refined.recipes[v] then return name .. ": unknown resource" end
     end },
     pct = { check = function(sim, name, v)
       if type(v) ~= "number" or v < 10 or v > 100 then return name .. ": must be 10-100" end

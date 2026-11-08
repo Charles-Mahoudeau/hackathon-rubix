@@ -3,6 +3,7 @@
 -- Streams: `rng.events` rolls the short events, `rng.market` the trends and the rival sales.
 local World = require("@scripts/config/world")
 local C = require("@scripts/config/market")
+local Refined = require("@scripts/config/branches").refining
 local Rng = require("./rng")
 
 local Market = {}
@@ -47,7 +48,29 @@ local function note(m, kind, text)
   if m.notify then m.notify(kind, text) end
 end
 
-local function oreName(ore) return World.ores[ore].name end
+local function oreName(ore) return World.ores[ore] and World.ores[ore].name or Refined.recipes[ore].name end
+
+-- Base price of a raw ore or a refined good.
+local function baseOf(ore) return World.ores[ore] and World.ores[ore].basePrice or Refined.recipes[ore].price end
+
+-- The refining branch opened: every market that buys a refined good starts to list it, with its own depth (spec §15b.2).
+-- Added on opening, not at start, so a game without the branch keeps its random draws.
+function Market.addRefined(m)
+  for _, mid in ipairs(m.order) do
+    local mk = m.markets[mid]
+    for _, good in ipairs(Refined.recipeOrder) do
+      local b = Refined.demand[mid] and Refined.demand[mid][good]
+      if b and not mk.res[good] then
+        mk.order[#mk.order + 1] = good
+        mk.res[good] = { b = b, base = b, d = b, t = b, driftT = b, s = 1, depth = Refined.depth }
+        m.history[mid .. "." .. good] = {}
+      end
+    end
+  end
+end
+
+Market.round1 = round1
+Market.goodName = oreName
 
 function Market.has(m, mid, ore) return m.markets[mid] ~= nil and m.markets[mid].res[ore] ~= nil end
 
@@ -56,7 +79,7 @@ function Market.price(m, mid, ore)
   local mk = m.markets[mid]
   local r = mk and mk.res[ore]
   if not r then return nil end
-  return World.ores[ore].basePrice * r.d * r.s
+  return baseOf(ore) * r.d * r.s
 end
 
 -- The "usual" price: the baseline demand b with no saturation (spec §6.3, the faint line next to the price).
@@ -64,7 +87,7 @@ function Market.usual(m, mid, ore)
   local mk = m.markets[mid]
   local r = mk and mk.res[ore]
   if not r then return nil end
-  return World.ores[ore].basePrice * r.b
+  return baseOf(ore) * r.b
 end
 
 function Market.saturation(m, mid, ore) return m.markets[mid].res[ore].s end
@@ -73,8 +96,8 @@ function Market.saturation(m, mid, ore) return m.markets[mid].res[ore].s end
 function Market.sell(m, mid, ore, qty)
   local mk = m.markets[mid]
   local r = mk.res[ore]
-  local unit = World.ores[ore].basePrice * r.d * r.s
-  r.s = math.max(C.satFloor, r.s - qty / mk.depth)
+  local unit = baseOf(ore) * r.d * r.s
+  r.s = math.max(C.satFloor, r.s - qty / (r.depth or mk.depth))
   return unit, math.floor(qty * unit)
 end
 
@@ -140,7 +163,7 @@ end
 function Market.rivalArrives(m, mid, ore, qty)
   local mk = m.markets[mid]
   local r = mk.res[ore]
-  r.s = math.max(C.satFloor, r.s - qty / mk.depth)
+  r.s = math.max(C.satFloor, r.s - qty / (r.depth or mk.depth))
   m.convoys[#m.convoys + 1] = { market = mid, resource = ore, qty = qty, sec = m.sec }
 end
 
@@ -181,7 +204,7 @@ local function secondTick(m)
       local mk = m.markets[mid]
       for _, ore in ipairs(mk.order) do
         local h = m.history[mid .. "." .. ore]
-        h[#h + 1] = round1(World.ores[ore].basePrice * mk.res[ore].d * mk.res[ore].s)
+        h[#h + 1] = round1(baseOf(ore) * mk.res[ore].d * mk.res[ore].s)
         if #h > keep then table.remove(h, 1) end
       end
     end
@@ -240,5 +263,6 @@ function Market.load(m, data)
 end
 
 Market.round1 = round1
+Market.baseOf = baseOf
 
 return Market

@@ -5,6 +5,7 @@ local Ai = require("@scripts/config/ai")
 local Renderer = require("./context_renderer")
 local Market = require("./market")
 local Logistics = require("./logistics")
+local Refined = require("@scripts/config/branches").refining
 
 local Builder = {}
 
@@ -17,9 +18,17 @@ end
 
 local function round1(x) return math.floor(x * 10 + 0.5) / 10 end
 
+-- Raw ores, then the refined goods (refining branch).
+local function goodsOrder()
+  local out = {}
+  for _, g in ipairs(World.oreOrder) do out[#out + 1] = g end
+  for _, g in ipairs(Refined.recipeOrder) do out[#out + 1] = g end
+  return out
+end
+
 local function oreMap(prices)
   local pairs_ = {}
-  for _, ore in ipairs(World.oreOrder) do
+  for _, ore in ipairs(goodsOrder()) do
     if prices[ore] then pairs_[#pairs_ + 1] = { ore, prices[ore] } end
   end
   return map(pairs_)
@@ -90,7 +99,7 @@ local function priceSubs(sim, ship, s, planet)
   for _, mid in ipairs(World.marketOrder) do
     if wanted[mid] and sim:marketUnlocked(mid) then
       local p = {}
-      for ore in pairs(World.markets[mid].demand) do
+      for ore in pairs(sim.market.markets[mid].res) do
         local price = round1(Market.price(sim.market, mid, ore))
         -- Price trends add the usual price next to the price so the agent can tell a spike from a trend.
         p[ore] = s.price_trends and ("%s~%s"):format(Renderer.fmtNum(price), Renderer.fmtNum(round1(Market.usual(sim.market, mid, ore)))) or price
@@ -200,6 +209,40 @@ function builders.privateer(sim, agent, s)
   if c.alongside then
     data[#data + 1] = { key = "alongside", kind = "map", map = sortedPairs(c.alongside) }
   end
+  data[#data + 1] = { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" }, rows = recentRows(agent, s.recent_results) }
+  data[#data + 1] = { key = "inbox", kind = "strings", items = inboxList(agent, s) }
+  data[#data + 1] = { key = "credits", kind = "scalar", value = sim.resources.credits }
+  data[#data + 1] = { key = "compute", kind = "scalar", value = round1(sim.resources.compute) }
+  return data
+end
+
+-- Refiner (spec §15b.6): time, refinery, stock, recipes, margins (setting), prices, recent, inbox, credits, compute.
+function builders.refiner(sim, agent, s)
+  local c = sim.registry.agentTypes.refiner.context(sim, agent)
+  local stock = {}
+  for _, g in ipairs(goodsOrder()) do
+    if (c.stock[g] or 0) > 0 then stock[#stock + 1] = { g, c.stock[g] } end
+  end
+  local recipes = {}
+  for _, r in ipairs(c.recipes) do recipes[#recipes + 1] = { r.name, sortedPairs(r.inputs), r.time_s, r.can_make } end
+  local ref = c.refinery
+  local fields = { { "station", Logistics.label(sim.stations[ref.station]) }, { "state", ref.state }, { "speed", ref.mk2 and "x2" or "x1" } }
+  if ref.job then
+    fields[#fields + 1] = { "job", ("%s x%d, %ds left"):format(ref.job.recipe, ref.job.qty, ref.job.left_s) }
+  end
+  local data = {
+    { key = "time", kind = "scalar", value = clock(sim) },
+    { key = "refinery", kind = "object", fields = fields },
+    { key = "stock", kind = "map", map = map(stock) },
+    { key = "recipes", kind = "table", cols = { "recipe", "inputs", "time_s", "can_make" }, rows = recipes },
+  }
+  if s.margins then
+    local rows = {}
+    for _, m in ipairs(c.margins) do rows[#rows + 1] = { m.recipe, m.best_market, m.margin_per_unit } end
+    data[#data + 1] = { key = "margins", kind = "table", cols = { "recipe", "best_market", "margin_per_unit" }, rows = rows }
+  end
+  data[#data + 1] = { key = "prices", kind = "maps", subs = priceSubs(sim, nil, { prices_hmc = "off", prices_orbis = s.prices_orbis,
+    prices_halcyon = s.prices_halcyon, prices_meridian = s.prices_meridian, price_trends = s.price_trends }, ref.station) }
   data[#data + 1] = { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" }, rows = recentRows(agent, s.recent_results) }
   data[#data + 1] = { key = "inbox", kind = "strings", items = inboxList(agent, s) }
   data[#data + 1] = { key = "credits", kind = "scalar", value = sim.resources.credits }

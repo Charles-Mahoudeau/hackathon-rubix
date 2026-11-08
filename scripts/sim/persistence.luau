@@ -35,6 +35,10 @@ function Persistence.serialize(sim, savedAt)
     copy.feedEntry = it.feedEntry and it.feedEntry.id or nil -- relinked to the feed list on load
     interceptors[id] = copy
   end
+  local refiningState = Sim.deepCopy(sim.refining)
+  for sid, ref in pairs(sim.refining.refineries) do
+    refiningState.refineries[sid].feedEntry = ref.feedEntry and ref.feedEntry.id or nil -- relinked to the feed list on load
+  end
   local charges = {}
   for id, charge in pairs(sim.compute.charges) do charges[tostring(id)] = charge end
   local stations = {}
@@ -74,6 +78,7 @@ function Persistence.serialize(sim, savedAt)
       monitorSettings = sim.monitorSettings,
       branchesOpen = sim.branchesOpen,
       raid = sim.raid,
+      refining = refiningState,
       interceptorOrder = sim.interceptorOrder,
       stationOrder = sim.stationOrder,
       compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
@@ -152,6 +157,16 @@ function Persistence.restore(data, opts)
     sim.raid.standing = sim.raid.standing or {}
     sim.raid.convoys = sim.raid.convoys or {}
     sim.raid.fights = sim.raid.fights or {}
+  end
+  if st.refining then
+    sim.refining = st.refining
+    for _, ref in pairs(sim.refining.refineries) do
+      if ref.feedEntry then
+        local fid = ref.feedEntry
+        ref.feedEntry = nil
+        for _, e in ipairs(sim.feed) do if e.id == fid then ref.feedEntry = e end end
+      end
+    end
   end
   if data.interceptors then
     sim.interceptorOrder = st.interceptorOrder or {}

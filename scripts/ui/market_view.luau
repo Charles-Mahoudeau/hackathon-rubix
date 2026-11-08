@@ -3,6 +3,7 @@
 -- trading post). Pure reads, so the whole path is testable headless; the shell only lays it out.
 local World = require("@scripts/config/world")
 local Market = require("@scripts/sim/market")
+local Refined = require("@scripts/config/branches").refining
 
 local View = {}
 
@@ -16,14 +17,17 @@ end
 function View.model(sim)
   local m = sim.market
   local rows, bests = {}, {}
-  for _, ore in ipairs(World.oreOrder) do
+  local goods = {}
+  for _, ore in ipairs(World.oreOrder) do goods[#goods + 1] = ore end
+  for _, good in ipairs(Refined.recipeOrder) do if Market.has(m, "orbis", good) then goods[#goods + 1] = good end end
+  for _, ore in ipairs(goods) do
     bests[ore] = Market.best(m, ore, function(mid) return sim:marketUnlocked(mid) end)
   end
   for _, r in ipairs(Market.rows(m)) do
     if sim:marketUnlocked(r.market) then
       r.best = bests[r.resource] == r.market
       r.trend = arrow(r.price, r.usual)
-      r.text = ("%s %s  %.1f cr (usual %.1f)"):format(r.name, World.ores[r.resource].name, r.price, r.usual)
+      r.text = ("%s %s  %.1f cr (usual %.1f)"):format(r.name, Market.goodName(r.resource), r.price, r.usual)
       rows[#rows + 1] = r
     end
   end

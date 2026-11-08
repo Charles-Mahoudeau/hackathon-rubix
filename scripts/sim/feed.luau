@@ -18,6 +18,7 @@ local function fmtArgs(tool, a)
   if tool == "wait" then return tostring(a.seconds) end
   if tool == "report" then return a.to or "player" end
   if tool == "scan" then return tostring(a.planet) end
+  if tool == "refine" then return ("%s x%s"):format(tostring(a.recipe), tostring(a.qty)) end
   if tool == "scan_route" then return tostring(a.route) end
   if tool == "intercept" then
     if type(a.convoy) == "table" then return ("max_escort=%s"):format(tostring(a.convoy.max_escort or "any")) end
