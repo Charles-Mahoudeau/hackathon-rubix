@@ -163,6 +163,7 @@ engine.ecs.system("game.Shell", {
 			if editorClick(click.action) then changed = true end
 			if Shell.act(state.shell, click.action) then changed = true end
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
+			if Model.act(state.sim, click.action) then changed = true end
 			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
 			if FleetView.act(state.sim, click.action) then changed = true end

@@ -205,4 +205,38 @@ local guard = 0
 while Shell.update(shell, 0.1) and guard < 100 do guard += 1 end
 assert(guard < 100 and Shell.update(shell, 0.1) == nil, "glitch ends")
 
+-- Emergency advance notification (GR5-74, spec §8.5): shown only while the sim offers it, Claim adds 3 Compute and
+-- starts the cooldown, then the banner is gone.
+do
+  local Debug = require("@scripts/sim/debug")
+  local Balance = require("@scripts/config/balance")
+  local function claimButtons(spec, out)
+    if spec.button and spec.button.action == "notice.claim" then out[#out + 1] = spec end
+    for _, c in ipairs(spec.children or {}) do claimButtons(c, out) end
+    return out
+  end
+  local s = Sim.new()
+  s:step()
+  assert(Model.notification(s) == nil and #claimButtons(Shell.spec(s, "map"), {}) == 0, "hidden when not offered")
+  local sigBefore = Model.signature(s, "map")
+  assert(Debug.run(s, "setStuck"), "debug panel sets the stuck state")
+  s:step()
+  local n = Model.notification(s)
+  assert(n and n.action == "notice.claim" and n.compute == Balance.bailout.grantCompute and n.text:find("%+3"), "offer in the shell model")
+  assert(Model.signature(s, "map") ~= sigBefore, "the shell redraws when the offer appears")
+  for _, screen in ipairs({ "map", "missions" }) do
+    assert(#claimButtons(Shell.spec(s, screen), {}) == 1, "Claim button on " .. screen)
+  end
+  local before = s.resources.compute
+  local handled, ok = Model.act(s, "notice.claim")
+  assert(handled and ok and s.resources.compute == before + 3, "claiming adds 3 Compute")
+  assert(s.lastAdvanceTick == s.tick and Model.notification(s) == nil and #claimButtons(Shell.spec(s, "map"), {}) == 0, "cooldown started, banner hidden")
+  s.resources.compute = 0
+  s:run(5)
+  assert(Model.notification(s) == nil, "no new offer during the cooldown")
+  local h2, ok2 = Model.act(s, "notice.claim")
+  assert(h2 and not ok2 and s.resources.compute == 0, "a late click grants nothing")
+  assert(not Model.act(s, "nav.map"), "foreign actions are not handled")
+end
+
 print("shell OK")
