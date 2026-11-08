@@ -5,18 +5,14 @@
 
 local Theme = require("@scripts/config/theme")
 local config = require("@scripts/config/background")
+local Linear = require("@scripts/client/linear")
 
 local Background = {}
 
 local function paletteColor(name: string)
 	local hex = Theme.palette[name]
 	assert(hex, "Background: colour '" .. tostring(name) .. "' is not in the theme palette")
-	return {
-		x = bit32.extract(hex, 16, 8) / 255,
-		y = bit32.extract(hex, 8, 8) / 255,
-		z = bit32.extract(hex, 0, 8) / 255,
-		w = 1,
-	}
+	return Linear.fromHex(hex)
 end
 
 local shader, texture
