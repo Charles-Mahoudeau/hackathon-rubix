@@ -32,15 +32,23 @@ end
 
 -- Runs the steps due after `dt` real seconds and returns how many. Nothing runs while paused. A stall longer than
 -- maxStepsPerFrame steps drops the rest instead of spiralling.
-function Clock.advance(sim, dt: number): number
-  if sim.paused or type(dt) ~= "number" or dt ~= dt or dt <= 0 then return 0 end
-  local step = sim.b.tickSeconds
+local function runSteps(sim, dt: number, step: number): number
   sim.clockAcc += dt * sim.speed
   local n = math.floor(sim.clockAcc / step + 1e-9)
   local cap = sim.b.speed.maxStepsPerFrame
   if n > cap then n = cap; sim.clockAcc = n * step end
   sim.clockAcc -= n * step
   for _ = 1, n do sim:step() end
+  return n
+end
+
+function Clock.advance(sim, dt: number): number
+  if type(dt) ~= "number" or dt ~= dt or dt <= 0 then return 0 end
+  local step = sim.b.tickSeconds
+  local n = sim.paused and 0 or runSteps(sim, dt, step)
+  -- The hourly AI token window is REAL time (spec §10.4): it also passes while paused and over a dropped stall. Each step
+  -- already added 1/speed, so only the rest of `dt` is added here.
+  sim.realTicks += dt / step - n / sim.speed
   return n
 end
 
