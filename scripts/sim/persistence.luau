@@ -39,6 +39,12 @@ function Persistence.serialize(sim, savedAt)
   for sid, ref in pairs(sim.refining.refineries) do
     refiningState.refineries[sid].feedEntry = ref.feedEntry and ref.feedEntry.id or nil -- relinked to the feed list on load
   end
+  local salvageShips = {}
+  for id, ship in pairs(sim.salvageShips) do
+    local copy = Sim.deepCopy(ship)
+    copy.feedEntry = ship.feedEntry and ship.feedEntry.id or nil -- relinked to the feed list on load
+    salvageShips[id] = copy
+  end
   local charges = {}
   for id, charge in pairs(sim.compute.charges) do charges[tostring(id)] = charge end
   local stations = {}
@@ -79,6 +85,8 @@ function Persistence.serialize(sim, savedAt)
       branchesOpen = sim.branchesOpen,
       raid = sim.raid,
       refining = refiningState,
+      salvage = sim.salvage,
+      salvageOrder = sim.salvageOrder,
       interceptorOrder = sim.interceptorOrder,
       stationOrder = sim.stationOrder,
       compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
@@ -90,6 +98,7 @@ function Persistence.serialize(sim, savedAt)
     veins = veins,
     ships = ships,
     interceptors = interceptors,
+    salvageShips = salvageShips,
   }
 end
 
@@ -166,6 +175,27 @@ function Persistence.restore(data, opts)
         ref.feedEntry = nil
         for _, e in ipairs(sim.feed) do if e.id == fid then ref.feedEntry = e end end
       end
+    end
+  end
+  -- Salvage (spec §15b.3): older saves have none, so the fresh state from Sim.new stays.
+  if st.salvage then
+    sim.salvage = st.salvage
+    sim.salvage.sites = sim.salvage.sites or {}
+    sim.salvage.blueprints = sim.salvage.blueprints or {}
+    sim.salvage.bonuses = sim.salvage.bonuses or { refinerySpeed = 0, hold = 0, compute = {} }
+    sim.salvage.bonuses.compute = sim.salvage.bonuses.compute or {}
+  end
+  if data.salvageShips then
+    sim.salvageOrder = st.salvageOrder or {}
+    sim.salvageShips = {}
+    for id, saved in pairs(Sim.deepCopy(data.salvageShips)) do
+      if saved.feedEntry then
+        local fid = saved.feedEntry
+        saved.feedEntry = nil
+        for _, e in ipairs(sim.feed) do if e.id == fid then saved.feedEntry = e end end
+      end
+      saved.hold = saved.hold or {}
+      sim.salvageShips[id] = saved
     end
   end
   if data.interceptors then

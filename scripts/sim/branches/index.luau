@@ -3,7 +3,8 @@
 local Mining = require("./mining")
 local Raiding = require("./raiding")
 local Refining = require("./refining")
+local Salvage = require("./salvage")
 
 return {
-  all = { Mining, Raiding, Refining },
+  all = { Mining, Raiding, Refining, Salvage },
 }

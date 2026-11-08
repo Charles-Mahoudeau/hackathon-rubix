@@ -25,6 +25,7 @@ return {
       monitor = "supervisor: you watch the other agents and act on them",
       refiner = "refiner: you run one refinery, turning the ores in your station stock into refined goods for the markets",
       privateer = "privateer: you fly one armed interceptor, scan trade routes and raid rival convoys for their cargo",
+      scavenger = "scavenger: you fly one salvage ship, survey abandoned sites and strip their layers for loot while the hull holds",
     },
     act = "You act only by calling exactly one tool from the TOOLS list.",
     reply = "Reply with JSON only, no other text:",

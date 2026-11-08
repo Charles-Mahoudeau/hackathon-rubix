@@ -22,6 +22,14 @@ return {
   },
   planetOrder = { "kessa", "varn", "ashfall", "lumen" },
 
+  -- Abandoned planets (spec §15b.3): no veins, no market, no depot. Salvage sites spawn here; `travel` = seconds from Kessa
+  -- with the base engine, `engineMark` = minimum engine to reach.
+  abandoned = {
+    tessar   = { name = "Tessar Graveyard", engineMark = 2, travel = 90,  siteTypes = { "wreck" } },
+    oldhaven = { name = "Oldhaven",         engineMark = 3, travel = 150, siteTypes = { "colony_depot", "research_outpost" } },
+  },
+  abandonedOrder = { "tessar", "oldhaven" },
+
   -- Planet-to-planet travel for the base engine, game seconds (spec §4.2).
   travel = {
     kessa   = { kessa = 0,   varn = 60,  ashfall = 120, lumen = 180 },
