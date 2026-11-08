@@ -27,7 +27,7 @@ return {
     {
       id = 4, name = "Remember", check = "skillcredit", -- opens when mission 3 is claimed
       goal = "Save a skill, then earn 500 credits from skill steps (online or offline).",
-      hint = "Skill steps cost no Compute. Save a routine that works, run it, and let it earn while you are away.",
+      hint = "Select a good trip in the feed and save it as a skill. Then let it run, or simulate time away.",
       credits = 500,
       steps = { "Save a skill", "Earn credits from skill steps" },
       reward = { archiveSlot = 1 },
