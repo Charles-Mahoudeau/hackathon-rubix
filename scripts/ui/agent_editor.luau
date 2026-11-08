@@ -171,7 +171,7 @@ function Editor.model(sim, agentId, draft)
     orderActive = agent.order ~= "",
     orderSource = (agent.order ~= "" and agent.orderSource) or nil,
     -- the Monitor lock: only shown once a Monitor is hired, and never for the Monitor itself
-    lock = (sim.agents.monitor and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
+    lock = (require("@scripts/sim/alerts").monitorOf(sim) and agent.type ~= "monitor") and { locked = agent.monitorLock == true, action = "editor.lock" } or nil,
     sections = p.sections,
     inputTokens = p.input,
     outputTokens = cfg.estimatedOutputTokens,

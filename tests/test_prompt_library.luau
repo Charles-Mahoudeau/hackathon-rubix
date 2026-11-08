@@ -215,14 +215,14 @@ local function withMonitor(directive)
     steps = { { tool = "mine", args = { vein = "$vein" } }, { tool = "return" }, { tool = "sell" } } }))
   assert(s:buyUpgrade("command_center") and s:hireMonitor())
   assert(s:setMonitorSettings({ heartbeat = false }))
-  s.agents.monitor.directive = directive
+  s.agents.monitor_1.directive = directive
   return s
 end
 do
   local s = withMonitor("")
   local ex = Library.roleExamples(s, "monitor")
   assert(#ex == 3 and ex[3].blocker == nil)
-  s.agents.monitor.directive = text(ex, "good")
+  s.agents.monitor_1.directive = text(ex, "good")
   assert(s:apply("miner", { name = "run_skill", args = { name = "Titanium loop", params = { vein = "K1" } } }))
   s:run(200)
   local t0, rotated
