@@ -524,9 +524,72 @@ local function finishRequest(self, reqId, tokens)
   self.reqs[reqId] = nil
 end
 
+-- Async AI provider (ai/provider.luau): the decision goes out as a request once the AiQueue lets it start, and comes back
+-- through onAiResponse. nil = the sync decider only. A decision still in flight when the provider changes is refunded
+-- and re-decided on the next tick.
+function Sim:setProvider(provider)
+  if provider == self.provider then return end
+  for id, agent in pairs(self.agents) do
+    local pend = agent.pending
+    if pend then
+      agent.pending = nil
+      self.compute:settle(pend.charge, pend.input, 0)
+      finishRequest(self, pend.reqId, 0)
+      setAgentState(self, agent, "idle")
+      self:log("WARN", id .. ": AI provider switched, pending decision dropped")
+    end
+  end
+  self.provider = provider
+end
+
+-- A provider answer for the decision `resp.id`. Failures (error, timeout, invalid) are logged and the sync decider (the
+-- stub) takes the decision instead, so the game never stalls on the network. Compute was charged on the estimate at
+-- send and is corrected to the real token count when the provider reports one (a failed request stays charged).
+function Sim:onAiResponse(resp)
+  local agentId, agent
+  for id, a in pairs(self.agents) do
+    if a.pending and a.pending.provider and a.pending.pid == resp.id then agentId, agent = id, a break end
+  end
+  if not agent then return end
+  local pend = agent.pending
+  agent.pending = nil
+  local realIn, realOut = resp.input_tokens or 0, resp.output_tokens or 0
+  if resp.ok and realIn + realOut > 0 then
+    local est = resp.estimated_tokens or 0
+    local real = realIn + realOut
+    local pct = est > 0 and math.floor((real - est) / est * 100 + 0.5) or 0
+    self:log("INFO", ("ai %s: tokens est %d real %d (%+d%%) in %.1fs"):format(agentId, est, real, pct, resp.seconds or 0))
+    self.compute:settle(pend.charge, realIn, realOut)
+    finishRequest(self, pend.reqId, real)
+  else
+    self.compute:settle(pend.charge, pend.input, self.aiConfig.estimatedOutputTokens)
+    finishRequest(self, pend.reqId, pend.input + self.aiConfig.estimatedOutputTokens)
+  end
+  setAgentState(self, agent, "idle")
+  if resp.ok then
+    if resp.tool_call.reasoning ~= "" then self:log("INFO", agentId .. " reasoning: " .. resp.tool_call.reasoning) end
+    self:resolveDecision(agentId, { name = resp.tool_call.tool, args = resp.tool_call.args }, pend.ctx)
+    return
+  end
+  self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
+  if self.decide then
+    local ok, call = pcall(self.decide, self, agentId, pend.ctx)
+    if ok then
+      self:log("WARN", agentId .. ": fell back to stub")
+      self:resolveDecision(agentId, call, pend.ctx)
+    else self:log("ERROR", "decide failed: " .. tostring(call)) end
+  end
+end
+
 -- Step 6 of the tick (spec §3): decide for every agent that is allowed to.
 function Sim:stepAgent(id, agent)
   local pend = agent.pending
+  if pend and pend.provider then
+    if pend.started and not pend.pid then
+      pend.pid = self.provider:request({ agent_id = id, prompt = pend.prompt, max_output_tokens = self.aiConfig.maxOutputTokens })
+    end
+    return
+  end
   if pend then
     if pend.started then pend.delay = pend.delay - 1 end
     if pend.started and pend.delay <= 0 then
@@ -561,8 +624,12 @@ function Sim:stepAgent(id, agent)
   end
   agent.throttled = false
   local ctx = self:context(id)
-  local ok, call = pcall(self.decide, self, id, ctx)
-  if not ok then self:log("ERROR", "decide failed: " .. tostring(call)); return end
+  local call
+  if not self.provider then
+    local ok, res = pcall(self.decide, self, id, ctx)
+    if not ok then self:log("ERROR", "decide failed: " .. tostring(res)); return end
+    call = res
+  end
   local reqId, status = self.aiQueue:submit({ agentId = id, monitor = agent.type == "monitor" })
   if not reqId then
     setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
@@ -570,6 +637,13 @@ function Sim:stepAgent(id, agent)
   end
   local charge = self.compute:charge(id, prompt.input)
   agent.decisions[#agent.decisions + 1] = self.tick
+  if self.provider then
+    agent.pending = { provider = true, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input,
+      started = status == "running", prompt = Prompt.forProvider(self, id, prompt) }
+    self.reqs[reqId] = agent.pending
+    setAgentState(self, agent, "thinking")
+    return
+  end
   self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
   local d = self.b.ai
   agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, started = status == "running",
@@ -580,6 +654,9 @@ end
 
 function Sim:step()
   self.tick = self.tick + 1
+  if self.provider then
+    for _, resp in ipairs(self.provider:drain()) do self:onAiResponse(resp) end
+  end
   self:stepVeins()
   local byVein = self:minersByVein()
   for _, sid in ipairs(self.shipOrder) do

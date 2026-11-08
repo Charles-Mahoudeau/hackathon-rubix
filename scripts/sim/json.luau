@@ -96,8 +96,17 @@ local function decodeString(text, pos)
     if e == "u" then
       local hex = string.match(text, "^%x%x%x%x", j + 2)
       if not hex then fail(text, j, "bad \\u escape") end
-      out[#out + 1] = utf8.char(tonumber(hex, 16))
+      local cp = tonumber(hex, 16)
       i = j + 6
+      if cp >= 0xD800 and cp <= 0xDBFF then -- a high surrogate pairs with the \uDC00-\uDFFF escape that follows
+        local low = string.match(text, "^\\u(%x%x%x%x)", i)
+        local lo = low and tonumber(low, 16)
+        if lo and lo >= 0xDC00 and lo <= 0xDFFF then
+          cp = 0x10000 + (cp - 0xD800) * 0x400 + (lo - 0xDC00)
+          i = i + 6
+        end
+      end
+      out[#out + 1] = (cp >= 0xD800 and cp <= 0xDFFF) and "\239\191\189" or utf8.char(cp)
     elseif UNESCAPES[e] then
       out[#out + 1] = UNESCAPES[e]
       i = j + 2
@@ -105,7 +114,9 @@ local function decodeString(text, pos)
   end
 end
 
-function decodeValue(text, pos)
+local depth, MAX_DEPTH = 0, 64
+
+local function decodeInner(text, pos)
   pos = skip(text, pos)
   local c = string.sub(text, pos, pos)
   if c == "{" then
@@ -149,11 +160,27 @@ function decodeValue(text, pos)
   return n, pos + #num
 end
 
+function decodeValue(text, pos)
+  depth += 1
+  if depth > MAX_DEPTH then fail(text, pos, "nested too deeply") end
+  local v, nextPos = decodeInner(text, pos)
+  depth -= 1
+  return v, nextPos
+end
+
 function Json.decode(text)
   if type(text) ~= "string" then error("json: expected a string", 0) end
+  depth = 0
   local value, pos = decodeValue(text, 1)
   if skip(text, pos) <= #text then fail(text, skip(text, pos), "trailing data") end
   return value
+end
+
+-- For untrusted text (AI replies, network bodies): value, or nil + the error message. A JSON null is nil too.
+function Json.tryDecode(text)
+  local ok, value = pcall(Json.decode, text)
+  if ok then return value end
+  return nil, tostring(value)
 end
 
 return Json

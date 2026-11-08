@@ -22,13 +22,25 @@ local function rulesText(agent, format)
   return table.concat(lines, "\n")
 end
 
+-- One arg as a short phrase: "integer 10-300 required (desc)". Static text, it is the tool's token weight.
+local function argText(spec)
+  local parts = { spec.type }
+  if spec.enum then parts[#parts + 1] = table.concat(spec.enum, "|") end
+  if spec.min or spec.max then parts[#parts + 1] = (spec.min or "") .. "-" .. (spec.max or "") end
+  if spec.maxLength then parts[#parts + 1] = "<=" .. spec.maxLength .. " chars" end
+  if spec.required then parts[#parts + 1] = "required" end
+  local text = table.concat(parts, " ")
+  if spec.desc then text = text .. " (" .. spec.desc .. ")" end
+  return text
+end
+
 local function toolsText(sim, agentId)
   local out = {}
   for _, name in ipairs(sim:equippedTools(agentId)) do
     local sch = ToolsConfig.schemas[name]
     if sch then
       local args = {}
-      for k, v in pairs(sch.args) do args[k] = v end
+      for k, v in pairs(sch.args) do args[k] = argText(v) end
       out[#out + 1] = Json.encode({ name = name, description = sch.description, args = args })
     end
   end
@@ -59,7 +71,23 @@ function Prompt.build(sim, agentId, opts)
     input = input + sections[name]
   end
   local text = table.concat({ parts.rules, parts.directive, parts.order, parts.context, parts.tools }, "\n\n")
-  return { text = text, sections = sections, input = input, contextText = contextText, format = settings.format }
+  return { text = text, sections = sections, input = input, contextText = contextText, format = settings.format,
+    system = parts.rules, user = table.concat({ parts.directive, parts.order, parts.context, parts.tools }, "\n\n") }
+end
+
+-- What the real provider is sent for one decision: `built` is a Prompt.build result. `tools` is what the validator
+-- accepts (equipped tools by name); `note` is the short line Axis records as the user turn (memory, not the full prompt).
+function Prompt.forProvider(sim, agentId, built)
+  local tools = {}
+  for _, name in ipairs(sim:equippedTools(agentId)) do tools[name] = ToolsConfig.schemas[name] end
+  local ship
+  for _, sid in ipairs(sim.shipOrder) do
+    if sim.ships[sid].owner == agentId then ship = sim.ships[sid] break end
+  end
+  local note = ("t=%.1fs %s credits %d compute %.1f"):format(sim.tick * sim.b.tickSeconds, agentId,
+    sim.resources.credits, sim.resources.compute)
+  if ship then note = note .. (" ship %s at %s hold %d"):format(ship.state, ship.at, ship.cargo) end
+  return { system = built.system, user = built.user, note = note, tools = tools }
 end
 
 -- Tokens billed for the model's reply (the JSON tool call). `reasoning` may be nil.
