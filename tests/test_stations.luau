@@ -50,7 +50,8 @@ for id, def in pairs(config.stations) do
     local s = e["rtype.SpriteRenderer"]
     assert(e["rtype.Transform"].position.x == 100 + m.x * 0.5 and e["rtype.Transform"].scale.x == 0.5)
     assert(s.texture == "texture:" .. config.spriteDir .. m.sprite .. ".png" and s.source.z == m.w and s.source.w == m.h)
-    assert(s.layer == config.layer and s.material == mi, id .. ": one material for the whole station")
+    assert(s.layer == config.layer and (m.corp and s.material ~= mi or s.material == mi), id .. ": one material for the whole station, bar the accents")
+    assert(not m.corp or Theme.corps[m.corp], id .. ": accent corporation is in the theme")
   end
 end
 
@@ -122,18 +123,53 @@ sim.upgrades.hub = true
 assert(ids(sim) == "hmc_depot,orbis_exchange,halcyon_shipyards,meridian_institute", "tier 4: all three markets")
 sim.stations.varn = { id = "varn", planet = "varn", kind = "outpost", stock = {}, hangar = 0 }
 assert(ids(sim) == "hmc_depot,outpost_varn,orbis_exchange,halcyon_shipyards,meridian_institute", "a built outpost appears on its planet")
-local view = require("@scripts/config/theme").layout.view
-for _, st in ipairs(SystemMap.stations(sim)) do
-  local b = Stations.bounds(st.id, st.upgrades, st.scale)
-  assert(st.at.x + b.left >= 0 and st.at.x + b.right <= view.w and st.at.y + b.top >= 0 and st.at.y + b.bottom <= view.h, st.id .. " stays on screen")
+local main = Shell.layout().main
+local planets = Shell.planetPositions()
+local function inside(st)
+  local e, edge = Stations.extent(st.id, st.upgrades, st.scale), config.map.edge
+  return st.at.x + e.left >= main.x + edge - 1e-6 and st.at.x + e.right <= main.x + main.w - edge + 1e-6
+    and st.at.y + e.top >= main.y + edge - 1e-6 and st.at.y + e.bottom <= main.y + main.h - edge + 1e-6
 end
--- a market's station stands above its node, clear of the node's label
+for _, st in ipairs(SystemMap.stations(sim)) do
+  assert(inside(st), st.id .. " stays inside the main panel, clear of the nebula edge")
+  -- no station sits on a planet: its modules never cover a planet's centre
+  local b = Stations.bounds(st.id, st.upgrades, st.scale)
+  for pid, p in pairs(planets) do
+    local covered = p.x > st.at.x + b.left and p.x < st.at.x + b.right and p.y > st.at.y + b.top and p.y < st.at.y + b.bottom
+    assert(not covered, st.id .. " covers the planet " .. pid)
+  end
+end
+-- the depot is readable at 1280x720: a hub of 80+ px and turrets of 40+ px, also once every stage is built, clear of Kessa
+local function depotOf(s) return SystemMap.stations(s)[1] end
+local base = Sim.new()
+local d0 = depotOf(base)
+assert(Stations.parts("hmc_depot", nil).modules[1].w * d0.scale >= 80, "the base depot hub is at least 80 px")
+assert(config.turrets.frame * config.turrets.boost * d0.scale >= 40, "an animated turret is at least 40 px")
+local full = Sim.new()
+for _, up in ipairs({ "warehouse", "tradingPost", "hub", "commandCenter" }) do full.upgrades[up] = true end
+local d1 = depotOf(full)
+assert(d1.scale < d0.scale and inside(d1), "the full depot shrinks to fit the panel")
+assert(Stations.parts("hmc_depot", nil).modules[1].w * d1.scale >= 60, "the full depot hub is still at least 60 px")
+for _, d in ipairs({ d0, d1 }) do
+  local dx, dy = d.at.x - kessa.x, d.at.y - kessa.y
+  assert(math.sqrt(dx * dx + dy * dy) > Screens.map.planetRadius, "the depot hub is off Kessa's disc")
+end
+-- the label and dock line tie the depot and each outpost to its planet
+local labels = SystemMap.stationLabels(sim)
+assert(#labels == 2 and labels[1].label == config.map.home.label and labels[2].label == config.map.outposts.varn.label, "depot and outpost labelled")
+for _, l in ipairs(labels) do
+  assert(l.at.y >= main.y and #Shell.dashes(l.from, l.to, l.skipFrom, l.skipTo, l.spacing) >= 1, "a dock line with dashes")
+end
+-- a market's station stands against its node (above, or to the side), never on it, and big enough to read
 for _, st in ipairs(SystemMap.stations(sim)) do
   local mid = ({ orbis_exchange = "orbis", halcyon_shipyards = "halcyon", meridian_institute = "meridian" })[st.id]
   if mid then
     local node = Shell.mapPoint(Screens.map.markets[mid].x, Screens.map.markets[mid].y)
-    local b = Stations.bounds(st.id, nil, st.scale)
-    assert(st.at.y + b.bottom <= node.y - 9, st.id .. " is above its node")
+    local e = Stations.extent(st.id, nil, st.scale)
+    local over = node.x > st.at.x + e.left - 9 and node.x < st.at.x + e.right + 9 and node.y > st.at.y + e.top - 9 and node.y < st.at.y + e.bottom + 9
+    assert(not over, st.id .. " does not cover its node")
+    if not config.map.markets[mid].side then assert(st.at.y + e.bottom <= node.y - 9, st.id .. " is above its node") end
+    assert(st.scale >= 0.2, st.id .. " is big enough to read")
   end
 end
 

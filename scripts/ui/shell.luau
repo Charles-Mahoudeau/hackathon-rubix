@@ -283,6 +283,16 @@ local function mapOverlay(font, r, map, opts)
       button = UiTheme.button("map.focus." .. m.id, "cyan") }
     nodes[#nodes + 1] = label(c, m.name, ("T%d market"):format(m.tier), "text", "dim", 14)
   end
+  -- The depot and the outposts: a dotted dock line from the planet to the station, and its name above it (GR5-52).
+  for _, st in ipairs(opts.mapStations or {}) do
+    for _, d in ipairs(Shell.dashes(st.from, st.to, st.skipFrom, st.skipTo, st.spacing)) do
+      nodes[#nodes + 1] = dot(d, 3, "cyan", 0.75)
+    end
+    local title = text(font, st.label, T.small, "cyan")
+    title.text.align = "center"
+    nodes[#nodes + 1] = { style = { position = "absolute", left = st.at.x - 90, top = st.at.y, width = 180, alignItems = "center", ignorePointer = true },
+      children = { title } }
+  end
   return nodes
 end
 

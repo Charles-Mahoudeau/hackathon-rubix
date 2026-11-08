@@ -18,13 +18,18 @@ return {
 	-- Per-state swap, passed to assets/shaders/palette_remap.glsl: `brightness` scales the whole sprite, `emissiveScale`
 	-- only its emissive pixels (windows, beacons). The palette itself stays the same.
 	states = {
-		idle   = { brightness = 0.75, emissiveScale = 0.35 },
+		idle   = { brightness = 0.85, emissiveScale = 0.7 },
 		active = { brightness = 1.0,  emissiveScale = 1.0 },
 	},
 
 	-- The pack is coloured, not greyscale: these luminance cuts (bg|panel, panel|neon, neon|text) decide which pixels
 	-- become the corporation neon. Grey-plated sprites need a higher neon cut or the whole hull turns neon.
-	steps = { default = { 0.1, 0.45, 0.9 }, hmc_depot = { 0.1, 0.68, 0.9 } },
+	-- Dark hulls (the markets, the lumen outpost) turn neon from 0.3; the grey-plated ones (depot, varn, ashfall, plating at
+	-- 0.5-0.6) from 0.5, and their highlights above 0.72 go white. The old 0.68 cut left the whole hull on the panel colour.
+	steps = {
+		default = { 0.1, 0.3, 0.75 },
+		hmc_depot = { 0.1, 0.5, 0.72 }, outpost_varn = { 0.1, 0.5, 0.72 }, outpost_ashfall = { 0.1, 0.5, 0.72 },
+	},
 
 	-- Which corporation tints each station (a key of config/theme.luau `corps`). Outposts are the player's.
 	corp = {
@@ -62,36 +67,42 @@ return {
 			},
 		},
 		frame = 64, -- px, square
+		boost = 1.5, -- an animated turret is drawn this much bigger than the hull scale, so it reads on the map
 	},
 
 	-- Where a station sits on the system map (view pixels from its node), and how big a sprite pixel is there.
 	-- Planet stations hang off the planet; market stations stand above their node (the node and label stay as the hit area).
 	map = {
-		home = { station = "hmc_depot", planet = "kessa", dx = 78, dy = -92, scale = 0.2 },
+		-- `scale` is the biggest world unit per sprite pixel; a station shrinks below it so that its whole extent (modules, turrets,
+		-- debris) fits `fit` (px), which is how the depot stays on the map as the command centre grows it.
+		home = { station = "hmc_depot", planet = "kessa", dx = 96, dy = -108, scale = 0.5, fit = { w = 200, h = 240 }, label = "HMC DEPOT" },
 		outposts = {
-			varn = { station = "outpost_varn", dx = 62, dy = -56, scale = 0.2 },
-			ashfall = { station = "outpost_ashfall", dx = 62, dy = -56, scale = 0.2 },
-			lumen = { station = "outpost_lumen", dx = -62, dy = -56, scale = 0.2 },
+			varn = { station = "outpost_varn", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "VARN OUTPOST" },
+			ashfall = { station = "outpost_ashfall", dx = 80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "ASHFALL OUTPOST" },
+			lumen = { station = "outpost_lumen", dx = -80, dy = -84, scale = 0.32, fit = { w = 130, h = 120 }, label = "LUMEN OUTPOST" },
 		},
 		markets = {
-			orbis = { station = "orbis_exchange", scale = 0.18 },
-			halcyon = { station = "halcyon_shipyards", scale = 0.16 },
-			meridian = { station = "meridian_institute", scale = 0.17 },
+			-- `side`: where the station stands against its node: "up" (default), "left" or "right", whichever keeps clear of the
+			-- planets and their labels.
+			orbis = { station = "orbis_exchange", scale = 0.3, side = "right" },
+			halcyon = { station = "halcyon_shipyards", scale = 0.3 },
+			meridian = { station = "meridian_institute", scale = 0.3, side = "left" },
 		},
-		marketGap = 16, -- px between the node centre and the bottom of the station above it
-		labelGap = 6, -- px between the bottom of a station and its label when the label sits below
+		marketGap = 18, -- px between the node centre and the nearest edge of its station
+		edge = 8, -- px a station keeps from the edge of the main panel
+		dock = { gap = 4, spacing = 9 }, -- the dock line from a planet to its depot: dash spacing, and the clearance at the planet rim
 	},
 
 	-- Stations: `modules` always, then each `stages` entry once the player has that upgrade (`when` = a key of sim.upgrades).
 	-- A module is a sprite of RandomBuildings with its size and an offset in px from
-	-- the hub sprite centre (+x right, +y down). `turrets`: animated { kind, x, y, phase } or static { still, w, h, x, y }.
+	-- the hub sprite centre (+x right, +y down); `corp` (a key of theme corps) draws that module in another neon, the amber accents. `turrets`: animated { kind, x, y, phase } or static { still, w, h, x, y }.
 	-- `debris`: { sprite, w, h, x, y } of MiniAsteroids. Each sprite is used once in the whole file (tests/test_stations.luau).
 	stations = {
 		-- The player's depot at Kessa: grows with the warehouse (T3), trading post, logistics hub (T4) and command centre (T5).
 		hmc_depot = { label = "HMC Depot",
 			modules = {
 				{ sprite = "B08", w = 195, h = 195, role = "hub",   x = 0,    y = 0 },
-				{ sprite = "B14", w = 79, h = 100, role = "dock",  x = 137,  y = 0 },
+				{ sprite = "B14", w = 79, h = 100, role = "dock",  x = 137,  y = 0, corp = "rivalB" },
 			},
 			turrets = { { kind = "XN22", x = -78, y = -78, phase = 0 } },
 			stages = {
@@ -99,11 +110,11 @@ return {
 					modules = { { sprite = "B05", w = 196, h = 91, role = "cargo", x = 0, y = 143 } },
 					turrets = { { kind = "DX41", x = 78, y = 78, phase = 1.7 }, { still = "Turret09", w = 78, h = 119, x = -80, y = 80 } } },
 				{ when = "tradingPost", label = "Trading post",
-					modules = { { sprite = "B15", w = 116, h = 90, role = "wing", x = -155, y = 0 } },
+					modules = { { sprite = "B15", w = 116, h = 90, role = "wing", x = -155, y = 0, corp = "rivalB" } },
 					turrets = { { kind = "MK531", x = -155, y = -30, phase = 3.1 } } },
 				{ when = "hub", label = "Logistics hub",
 					modules = {
-						{ sprite = "B07", w = 195, h = 143, role = "hangar", x = 0, y = -169 },
+						{ sprite = "B07", w = 195, h = 143, role = "hangar", x = 0, y = -169, corp = "rivalB" },
 						{ sprite = "Platform[PLAYER]/P01", w = 128, h = 128, role = "pad", x = -170, y = 125 },
 						{ sprite = "Platform[PLAYER]/P02", w = 128, h = 128, role = "pad", x = 170, y = 125 },
 					},

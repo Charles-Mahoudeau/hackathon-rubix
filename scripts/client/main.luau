@@ -90,7 +90,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
 	state.shell.screen = shown
 end
 

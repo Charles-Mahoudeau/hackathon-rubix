@@ -64,6 +64,28 @@ function Stations.bounds(stationId: string, upgrades, scale: number?)
 	return { left = b.left * k, right = b.right * k, top = b.top * k, bottom = b.bottom * k }
 end
 
+-- Bounding box of everything the station draws (modules, turrets, debris) in px from the hub centre, times `scale`. A turret
+-- counts at its drawn size: the animated ones are `turrets.boost` times their frame.
+function Stations.extent(stationId: string, upgrades, scale: number?)
+	local k, parts, b = scale or 1, Stations.parts(stationId, upgrades), nil
+	local function add(x: number, y: number, w: number, h: number)
+		local l, r, t, d = x - w / 2, x + w / 2, y - h / 2, y + h / 2
+		b = b and { left = math.min(b.left, l), right = math.max(b.right, r), top = math.min(b.top, t), bottom = math.max(b.bottom, d) }
+			or { left = l, right = r, top = t, bottom = d }
+	end
+	for _, m in ipairs(parts.modules) do add(m.x, m.y, m.w, m.h) end
+	for _, d in ipairs(parts.debris) do add(d.x, d.y, d.w, d.h) end
+	for _, t in ipairs(parts.turrets) do
+		if t.kind then
+			local f = config.turrets.frame * config.turrets.boost
+			add(t.x, t.y, f, f)
+		else
+			add(t.x, t.y, t.w, t.h)
+		end
+	end
+	return { left = b.left * k, right = b.right * k, top = b.top * k, bottom = b.bottom * k }
+end
+
 -- Names of the animated turret kinds, sorted: the index goes in the entity's game.StationTurret component.
 local kindNames = {}
 for name in pairs(config.turrets.kinds) do kindNames[#kindNames + 1] = name end
@@ -125,7 +147,8 @@ function Stations.entities(stationId: string, state: string, position, scale: nu
 	local material, k, out = Stations.material(stationId, state, corp), scale or 1, {}
 	local function at(x: number, y: number) return { position = { x = position.x + x * k, y = position.y + y * k }, scale = { x = k, y = k } } end
 	for _, m in ipairs(parts.modules) do
-		out[#out + 1] = { ["rtype.Transform"] = at(m.x, m.y), ["rtype.SpriteRenderer"] = sprite(config.spriteDir .. m.sprite .. ".png", m.w, m.h, material, config.layer) }
+		local mat = m.corp and Stations.material(stationId, state, m.corp) or material
+		out[#out + 1] = { ["rtype.Transform"] = at(m.x, m.y), ["rtype.SpriteRenderer"] = sprite(config.spriteDir .. m.sprite .. ".png", m.w, m.h, mat, config.layer) }
 	end
 	for _, d in ipairs(parts.debris) do
 		out[#out + 1] = { ["rtype.Transform"] = at(d.x, d.y), ["rtype.SpriteRenderer"] = sprite(config.debrisDir .. d.sprite .. ".png", d.w, d.h, material, config.layer) }
@@ -135,8 +158,10 @@ function Stations.entities(stationId: string, state: string, position, scale: nu
 		if t.kind then
 			local idx = table.find(kindNames, t.kind)
 			assert(idx, "Stations: unknown turret '" .. tostring(t.kind) .. "'")
+			local boosted = at(t.x, t.y)
+			boosted.scale = { x = k * config.turrets.boost, y = k * config.turrets.boost }
 			out[#out + 1] = {
-				["rtype.Transform"] = at(t.x, t.y),
+				["rtype.Transform"] = boosted,
 				["rtype.SpriteRenderer"] = sprite(Stations.turretPath(t.kind, t.phase or 0), frame, frame, material, config.turretLayer),
 				["game.StationTurret"] = { kind = idx, phase = math.floor((t.phase or 0) * 10 + 0.5) },
 			}
