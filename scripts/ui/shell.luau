@@ -1121,6 +1121,48 @@ end
 
 -- Missions (GR5-9, spec §15): the current mission (goal, hint, progress bar, reward, Claim), then every mission in order.
 local function missionsScreen(font, r, m)
+  local listWidth = math.min(340, math.floor(r.w * 0.35))
+  local detailWidth = r.w - listWidth - L.gap
+  local list = { text(font, "MISSIONS", T.small, "dim") }
+  for _, row in ipairs(m.rows) do
+    local color = (row.state == "claimed" or row.state == "complete") and "green" or (row.state == "active" or row.state == "current") and "cyan" or "dim"
+    local label = Fit.truncate(row.name .. "  [" .. row.state .. "]", T.small, listWidth - 2 * L.pad - 20)
+    list[#list + 1] = buttonNode({ width = listWidth - 2 * L.pad, height = 32, justify = "center" }, row.action, color,
+      { text(font, label, T.small, color) }, m.current and m.current.id == row.id)
+  end
+  if #m.rows == 0 then list[#list + 1] = text(font, "No missions", T.small, "dim") end
+  local detail = {}
+  local function wrapped(value, color)
+    detail[#detail + 1] = { style = { maxWidth = detailWidth - 2 * L.pad - 16 },
+      text = { text = value, font = font, size = T.body, color = UiTheme.color(color), wrap = true } }
+  end
+  local cur = m.current
+  if cur then
+    wrapped(cur.name, "cyan")
+    wrapped("Status: " .. cur.status, "dim")
+    for _, line in ipairs(cur.brief) do wrapped(line, "text") end
+    if cur.hint then wrapped("Hint: " .. cur.hint, "dim") end
+    if cur.percent then detail[#detail + 1] = gauge({ height = 12, width = math.min(420, detailWidth - 2 * L.pad - 16) }, cur.percent, cur.status == "complete" and "green" or "cyan") end
+    wrapped(cur.progressText, cur.locked and Theme.semantic.warning or "text")
+    for _, line in ipairs(cur.lines) do wrapped((line.done and "[x] " or "[ ] ") .. line.text, line.done and "green" or "dim") end
+    wrapped(cur.rewardText, "text")
+    if cur.claim then detail[#detail + 1] = button(font, "Claim reward", cur.claim, "green", 150) end
+    if cur.retry then detail[#detail + 1] = button(font, "Retry", cur.retry, Theme.semantic.warning, 150) end
+  else
+    wrapped(m.allDone and "All missions claimed" or "Select a mission", "dim")
+  end
+  local function scrollPanel(rect, children)
+    local p = panel(rect, { direction = "column", gap = 8, padding = L.pad, overflow = "scroll" })
+    p.scroll = { speed = 30 }
+    return withChildren(p, children)
+  end
+  return { style = { position = "absolute", left = r.x, top = r.y, width = r.w, height = r.h }, children = {
+    scrollPanel({ x = 0, y = 0, w = listWidth, h = r.h }, list),
+    scrollPanel({ x = listWidth + L.gap, y = 0, w = detailWidth, h = r.h }, detail),
+  } }
+end
+
+local function oldMissionsScreen(font, r, m)
   local c = Screens.missions
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end

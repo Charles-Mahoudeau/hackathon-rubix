@@ -63,6 +63,16 @@ function View.model(sim, view)
       brief = v.brief, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
+  for _, row in ipairs(out.optional) do
+    row.action = "missions.select." .. row.id
+    rows[#rows + 1] = row
+    if view and view.selected == row.id then
+      out.current = { id = row.id, name = row.name, brief = row.brief, hint = row.hint,
+        status = row.state, progressText = row.progressText, lines = {}, rewardText = "Reward: " .. row.reward,
+        rewardIcons = row.icons, claim = row.claim, retry = row.retry, locked = row.state == "locked" }
+    end
+  end
+  if out.current then return out end
   if view and view.selected then
     for i, e in ipairs(sim.missions) do
       if e.id == view.selected then cur, def, index = e, Missions.def(e.id), i; break end
@@ -106,8 +116,8 @@ end
 -- "missions.claim.<id>" / "missions.retry.<id>" -> handled, ok, err.
 function View.act(sim, action, view)
   if type(action) ~= "string" then return false end
-  local selected = action:match("^missions%.select%.(%d+)$")
-  if selected and view then view.selected = tonumber(selected); return true end
+  local selected = action:match("^missions%.select%.([%w]+)$")
+  if selected and view then view.selected = tonumber(selected) or selected; return true end
   local rverb, rid = action:match("^missions%.(%a+)%.(V%d+)$")
   if rid == Refining.mission(sim).id then
     if rverb == "claim" then return true, Refining.claimMission(sim) end
