@@ -11,6 +11,7 @@ local Feed = require("@scripts/sim/feed")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
+local Missions = require("@scripts/sim/missions")
 
 local Sim = {}
 Sim.__index = Sim
@@ -81,6 +82,8 @@ function Sim.new(opts)
   self.aiQueue = AiQueue.new(aiCfg, opts.aiClock or function() return self.tick * b.tickSeconds end)
   self.aiConfig = aiCfg
   self.compute = Compute.new(self.resources, aiCfg, function() return self.tick * b.tickSeconds end, self.aiQueue)
+  self.missions = Missions.new()
+  Missions.update(self)
   return self
 end
 
@@ -380,6 +383,8 @@ function Sim:apply(agentId, call, opts)
   if shipCall and entry then ship.feedEntry, ship.recordId = entry, rid end
   if n == "mine" then
     local vein = self.veins[args.vein]
+    -- Which vein the hold came from, for the missions: "mixed" once two veins feed one hold.
+    if ship.cargo <= 0 then ship.cargoVein = vein.id elseif ship.cargoVein ~= vein.id then ship.cargoVein = "mixed" end
     ship.stopPct, ship.mineStartTick, ship.mineStartCargo = args.stop_at_hold_pct or 100, self.tick, ship.cargo
     ship.state, ship.vein, ship.dest = "travel_out", vein, vein.planet
     ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
@@ -454,7 +459,8 @@ function Sim:sell(ship, planetId)
     self:finishMine(ship)
     local text = ("sold %d %s, +%d cr"):format(ship.cargo, ship.ore, gain)
     if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
-    ship.cargo, ship.cargoF, ship.ore = 0, 0, nil
+    Missions.onSale(self, ship)
+    ship.cargo, ship.cargoF, ship.ore, ship.cargoVein = 0, 0, nil, nil
   else self:finishDock(ship, "docked, hold empty") end
   ship.state = "idle"
 end
@@ -885,6 +891,7 @@ function Sim:step()
   Upgrades.claimShips(self)
   for _, id in ipairs(self.agentOrder) do self:stepAgent(id, self.agents[id]) end
   self:updateBailout()
+  Missions.update(self)
 end
 
 function Sim:needsDecision(agentId)

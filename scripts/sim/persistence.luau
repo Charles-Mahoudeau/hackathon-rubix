@@ -52,6 +52,7 @@ function Persistence.serialize(sim, savedAt)
       feedSeq = sim.feedSeq,
       records = sim.records,
       recordSeq = sim.recordSeq,
+      missions = sim.missions,
     }),
     veins = veins,
     ships = ships,
@@ -62,7 +63,7 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "missions" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
