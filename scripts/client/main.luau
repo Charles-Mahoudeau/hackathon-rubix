@@ -33,6 +33,7 @@ require("@scripts/client/station_fx")
 local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
+local Cues = require("@scripts/render/vfx/cues")
 
 -- One entity per sprite of a ship on the map (client/fleet_map.luau); `slot` finds its pose, which game.MapSprites writes.
 engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
@@ -45,6 +46,7 @@ local state = {
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
+	cueUi = nil, cueSim = nil, -- one-shot pixel cues: the UI layer that draws them, and the sim they last watched (GR5-100)
 	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
 	-- Save / load (GR5-77): the engine's rtype.Persistence plugin behind the Persistence module, driven by client/save.luau.
 	storage = Storage.engine(), save = nil,
@@ -92,6 +94,36 @@ local function flushRetired(commands)
 		if r.frames <= 0 then commands:despawn(r.entity) else keep[#keep + 1] = r end
 	end
 	retired = keep
+end
+
+-- One-shot pixel cues (cue sheet, render/vfx/cues): watch the credits and the planets, then draw the live quads in their own
+-- small UI layer so a burst never forces a redraw of the whole shell. Turret shots come from client/station_fx.
+local function observeCues(state, now)
+	local cues, sim = Cues.shared, state.sim
+	if state.cueSim ~= sim then
+		Cues.reset(cues) -- a new or loaded game: record the baselines, fire nothing
+		state.cueSim = sim
+	end
+	local credits = sim.resources.credits
+	if cues.lastCredits ~= credits then
+		Cues.observeCredits(cues, credits, now, Shell.creditsAnchor(Model.topBar(sim).creditsText))
+	end
+	local lit = {}
+	for _, p in ipairs(Model.map(sim).planets) do lit[p.id] = p.lit end
+	Cues.observePlanets(cues, lit, Shell.planetPositions(), Screens.map.planetRadius, now)
+	Cues.update(cues, now)
+end
+
+local function syncCues(commands, now)
+	local hide = state.shell.screen ~= Screens.defaultScreen and { planetUnlock = true, turretFire = true } or nil
+	local spec = Cues.spec(Cues.shared, now, Theme.layout.view, hide)
+	if spec then
+		retire(state.cueUi)
+		state.cueUi = engine.ui.spawn(commands, spec)
+	elseif state.cueUi then
+		retire(state.cueUi)
+		state.cueUi = nil
+	end
 end
 
 local function rebuildUi(commands, glitchFrame)
@@ -175,6 +207,7 @@ engine.ecs.system("game.Shell", {
 			if play then Sounds.play(ctx, play) end
 		end
 		local glitchFrame = Shell.update(state.shell, dt)
+		observeCues(state, now)
 
 		state.draft = state.draft or Editor.newDraft(state.sim, Screens.editor.agent)
 		-- The typed text is in the input's UiText; the input's `action` says which field it is.
@@ -286,6 +319,7 @@ engine.ecs.system("game.Shell", {
 			rebuildUi(ctx.commands, glitchFrame)
 		end
 		syncInputs(ctx.commands)
+		syncCues(ctx.commands, now)
 		flushRetired(ctx.commands)
 	end,
 })
