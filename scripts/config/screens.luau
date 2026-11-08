@@ -57,6 +57,8 @@ return {
     },
     safeRouteSeconds = 160, -- outpost routes up to this long are drawn blue
     routeThickness = 2,
+    riskValue = { low = 0.2, medium = 0.6 }, -- the cosmetic risk fed to render/vfx/route for a route's colour
+    animSeconds = 0.15, -- the map redraws this often (planet pulse, moving dashes); other screens use refreshSeconds
     routeSpacing = 14, -- view pixels between two dashes of a route line
     convoyDot = 6,
     rivalDot = 5, -- rival convoys (raiding branch): amber on the raidable orange routes, dim on the others

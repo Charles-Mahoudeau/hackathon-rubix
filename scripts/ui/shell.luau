@@ -21,6 +21,10 @@ local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
 local Glitch = require("@scripts/render/vfx/glitch")
+local Route = require("@scripts/render/vfx/route")
+local Vfx = require("@scripts/config/vfx")
+local Planets = require("@scripts/config/planets")
+local Glow = require("@scripts/ui/glow")
 
 local Shell = {}
 
@@ -155,42 +159,69 @@ local function feedStrip(font, r, lines)
   return withChildren(panel(r, { direction = "column", padding = L.gap, overflow = "hidden" }), rows)
 end
 
--- Dash positions along a route A -> B, skipping the planet discs at both ends. Pure; spacing in view pixels.
-function Shell.dashes(a, b, skipA: number, skipB: number, spacing: number)
+-- Dash positions along a route A -> B, skipping the planet discs at both ends. Pure; spacing in view pixels. `phase` slides
+-- the whole pattern along the line, which is how an active route animates.
+function Shell.dashes(a, b, skipA: number, skipB: number, spacing: number, phase: number?)
   local dx, dy = b.x - a.x, b.y - a.y
   local len = math.sqrt(dx * dx + dy * dy)
   local out = {}
   if len < 1 then return out end
   local n = math.floor(len / spacing)
-  for i = 1, n - 1 do
-    local d = i * spacing
+  local shift = (phase or 0) % spacing
+  for i = (phase and 0 or 1), n - 1 do
+    local d = i * spacing + shift
     if d > skipA and d < len - skipB then out[#out + 1] = { x = a.x + dx * d / len, y = a.y + dy * d / len } end
   end
   return out
 end
 
 local function dot(center, size: number, colorName: string, alpha: number?)
-  return { style = { position = "absolute", left = center.x - size / 2, top = center.y - size / 2, width = size, height = size },
+  return { style = { position = "absolute", left = center.x - size / 2, top = center.y - size / 2, width = size, height = size, ignorePointer = true },
     background = { color = UiTheme.color(colorName, alpha), radius = size / 2 } }
 end
 
-local function mapOverlay(font, r, map)
+-- A transparent hit area over a map thing: hovering tints it, a click focuses it ("map.focus.<id>", Shell.act).
+local function focusArea(center, size: number, id: string, colorName: string)
+  return { style = { position = "absolute", left = center.x - size / 2, top = center.y - size / 2, width = size, height = size },
+    background = { color = UiTheme.color(colorName, 0), radius = size / 2 },
+    button = { action = "map.focus." .. id, hovered = UiTheme.hover(colorName), pressed = UiTheme.pressed(colorName) } }
+end
+
+-- opts: time (seconds, animates the pulse and the moving dashes), focus (the hovered / selected planet or market id).
+local function mapOverlay(font, r, map, opts)
   local cfg = Screens.map
+  local t, focus = opts.time or 0, opts.focus
   local nodes = {}
   local points = {}
   for _, p in ipairs(map.planets) do points[p.id] = Shell.mapPoint(p.x, p.y) end
   for _, m in ipairs(map.markets) do points[m.id] = Shell.mapPoint(m.x, m.y) end
-  local routeColor = { safe = "cyan", risky = Theme.semantic.warning }
+  local routeName = { safe = Vfx.route.safe, risky = Vfx.route.risky }
+  local glow = Vfx.glow
 
+  local busy = {}
+  for _, c in ipairs(map.convoys) do busy[c.from .. ">" .. c.to] = true end
+
+  -- Routes: colour and alpha from render/vfx/route; a route with a convoy on it (or touching the focus) moves and glows.
   for _, route in ipairs(map.routes) do
     local a, b = points[route.from], points[route.to]
-    for _, d in ipairs(Shell.dashes(a, b, cfg.planetRadius + 6, 14, cfg.routeSpacing)) do
-      nodes[#nodes + 1] = dot(d, cfg.routeThickness, routeColor[route.color], 0.55)
+    local focused = focus ~= nil and (route.from == focus or route.to == focus)
+    local active = busy[route.from .. ">" .. route.to] == true
+    local style = Route.style(cfg.riskValue[route.risk] or 0.5, active or focused, t)
+    local name = routeName[route.color]
+    local scale = focused and glow.focusScale or 1
+    local phase = style.dashOffset / (style.dash + style.gap) * cfg.routeSpacing
+    for i, d in ipairs(Shell.dashes(a, b, cfg.planetRadius + 6, 14, cfg.routeSpacing, phase)) do
+      if (active or focused) and i % 2 == 0 then
+        nodes[#nodes + 1] = dot(d, glow.routeUnderlay.size * scale, name, glow.routeUnderlay.alpha)
+      end
+      nodes[#nodes + 1] = dot(d, cfg.routeThickness * scale, name, math.min(1, style.color[4] * 0.55 + (focused and 0.3 or 0)))
     end
   end
   for _, c in ipairs(map.convoys) do
     local a, b = points[c.from], points[c.to]
-    nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.convoyDot, "text")
+    local at = { x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }
+    for _, n in ipairs(Glow.halo(at, cfg.convoyDot / 2, "active", t, true, "text")) do nodes[#nodes + 1] = n end
+    nodes[#nodes + 1] = dot(at, cfg.convoyDot, "text")
   end
   for _, c in ipairs(map.rivals) do
     local a, b = points[c.from], points[c.to]
@@ -206,12 +237,23 @@ local function mapOverlay(font, r, map)
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
     local sub = p.lit and table.concat(p.ores, ", ") or ("Locked: " .. p.condition)
+    if p.lit then
+      local look = Planets.planets[p.id]
+      local neon = look.rim and look.rim[1] or "cyan"
+      for _, n in ipairs(Glow.planetRing(c, cfg.planetRadius, neon, t)) do nodes[#nodes + 1] = n end
+      if focus == p.id then
+        for _, n in ipairs(Glow.halo(c, cfg.planetRadius, "selected", t, false)) do nodes[#nodes + 1] = n end
+      end
+      nodes[#nodes + 1] = focusArea(c, cfg.planetRadius * 2, p.id, neon)
+    end
     nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
   end
   for _, m in ipairs(map.markets) do
     local c = points[m.id]
+    for _, n in ipairs(Glow.halo(c, glow.node, focus == m.id and "selected" or "idle", t, false)) do nodes[#nodes + 1] = n end
     nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - 9, top = c.y - 9, width = 18, height = 18 },
-      background = { color = UiTheme.color("panel"), radius = 3, borderColor = UiTheme.color("cyan"), borderWidth = 1 } }
+      background = { color = UiTheme.color("panel"), radius = 3, borderColor = UiTheme.color("cyan"), borderWidth = 1 },
+      button = { action = "map.focus." .. m.id, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") } }
     nodes[#nodes + 1] = label(c, m.name, ("T%d market"):format(m.tier), "text", "dim", 14)
   end
   return nodes
@@ -300,6 +342,7 @@ local function editorScreen(font, r, m, opts)
   local left = {}
   local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
   nodeAt(L.pad, L.pad, text(font, "AGENT EDITOR  " .. m.agentId, T.small, "dim"))
+  for _, n in ipairs(Glow.light({ x = L.pad + 7 * (16 + #m.agentId) + 12, y = L.pad + 8 }, opts.state, opts.time or 0)) do left[#left + 1] = n end
   for _, n in ipairs(tabButtons(font, "editor")) do left[#left + 1] = n end
   nodeAt(L.pad, e.directiveY - 22, text(font, "Directive (permanent)", T.body, "text"))
   nodeAt(e.leftWidth - L.pad - 150, e.directiveY - 22, text(font, m.directive.text .. " tokens", T.body, counterColor(m.directive)))
@@ -567,7 +610,7 @@ end
 
 -- Fleet (GR5-12, spec §6.5-6.7): Reputation and command capacity, the logistics hub, each station with its freighters,
 -- Logisticians and idle reason, outposts to build, and the mining ships.
-local function fleetScreen(font, r, m)
+local function fleetScreen(font, r, m, time)
   local c = Screens.fleet
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
@@ -588,7 +631,8 @@ local function fleetScreen(font, r, m)
     end
   end
   local y = c.stationY
-  local function row(label, colorName, x)
+  local function row(label, colorName, x, state)
+    if state then for _, n in ipairs(Glow.light({ x = (x or L.pad) - 8, y = y + 8 }, state, time)) do kids[#kids + 1] = n end end
     nodeAt(x or L.pad, y, text(font, label, T.small, colorName))
     y += c.lineHeight
   end
@@ -596,9 +640,9 @@ local function fleetScreen(font, r, m)
     row(("%s   stock %s"):format(st.label, st.stockText), "text")
     row(("freighters %d/%d   hangars %d   Logisticians %s"):format(st.freighters, st.freighterCap, st.hangar,
       #st.logisticians > 0 and table.concat(st.logisticians, ", ") or "none"), "dim")
-    if st.idleText then row(st.idleText, Theme.semantic.warning) end
+    if st.idleText then row(st.idleText, Theme.semantic.warning, L.pad + 12, "pending") end
     for _, f in ipairs(st.freighterRows) do
-      row(f.state == "docked" and (f.id .. "  docked") or ("%s  %s  eta %ds"):format(f.id, f.cargo and ("-> " .. f.dest .. " " .. f.cargo) or ("back to " .. f.dest), f.eta), "dim", c.convoyX)
+      row(f.state == "docked" and (f.id .. "  docked") or ("%s  %s  eta %ds"):format(f.id, f.cargo and ("-> " .. f.dest .. " " .. f.cargo) or ("back to " .. f.dest), f.eta), "dim", c.convoyX, f.state == "docked" and "idle" or "acting")
     end
     if m.hubOpen then
       local x = L.pad
@@ -625,7 +669,7 @@ local function fleetScreen(font, r, m)
     y += 34 + c.blockGap
   end
   row("SHIPS", "dim")
-  for _, s in ipairs(m.ships) do row(s.text, s.owner and "text" or Theme.semantic.warning) end
+  for _, s in ipairs(m.ships) do row(s.text, s.owner and "text" or Theme.semantic.warning, L.pad + 12, s.owner and "acting" or "idle") end
   return withChildren(panel(r, nil), kids)
 end
 
@@ -719,7 +763,7 @@ local function alertsScreen(font, r, m)
 end
 
 -- Branches (B-0, spec §15b.1): one row per branch with its state, agents and money per hour.
-local function branchesScreen(font, r, m)
+local function branchesScreen(font, r, m, time)
   local c = Screens.branches
   local kids = {}
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
@@ -727,6 +771,11 @@ local function branchesScreen(font, r, m)
   for i, row in ipairs(m.rows) do
     local y = c.rowY + (i - 1) * c.rowHeight
     local color = row.state == "open" and "green" or (row.state == "available" and "cyan" or "dim")
+    local accent = row.state == "open" and 1 or (row.state == "available" and 0.55 or Theme.alpha.line)
+    kids[#kids + 1] = Glow.accentBar(0, y - 2, c.rowHeight - 8, row.id, accent)
+    if #row.agents > 0 then
+      for _, n in ipairs(Glow.light({ x = L.pad + c.stateX + 72, y = y + 8 }, "acting", time)) do kids[#kids + 1] = n end
+    end
     nodeAt(L.pad, y, text(font, row.name, T.body, color))
     nodeAt(L.pad + c.stateX, y, text(font, row.state, T.small, color))
     nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or "no agents", T.small, "text"))
@@ -771,7 +820,7 @@ local function studioRows(font, kids, rows)
 end
 
 -- Team (GR5-28, spec §8.6): one monospace row per agent, a click opens its editor.
-local function teamScreen(font, r, m)
+local function teamScreen(font, r, m, time)
   local c = Screens.team
   local kids = {}
   local function nodeAt(x, y, node, w, h) kids[#kids + 1] = at(x, y, node, w, h) end
@@ -781,7 +830,8 @@ local function teamScreen(font, r, m)
   local y, rowW = c.rowY + 8, r.w - 2 * L.pad
   for _, row in ipairs(m.rows) do
     local line = fmt:format(row.id, row.asset, row.mode, row.state, ("%.1f"):format(row.computePerHour), Model.thousands(row.netPerHour), row.errors, row.lastAlert)
-    local color = (row.state == "paused_error" or row.errors > 0) and Theme.semantic.warning or (row.netPerHour < 0 and Theme.semantic.warning or "text")
+    local color = (row.state == "paused_error" or row.errors > 0) and Theme.tokens.alert.error or (row.netPerHour < 0 and Theme.tokens.alert.warning or "text")
+    for _, n in ipairs(Glow.light({ x = L.pad - 6, y = y + c.rowHeight / 2 }, row.state, time)) do kids[#kids + 1] = n end
     nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
       background = { color = UiTheme.color("panel", 0), radius = 2 },
       button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
@@ -902,7 +952,7 @@ function Shell.spec(sim, screenId: string, opts)
     local mapPanel = panel(rects.main, nil, true)
     mapPanel.background.color = UiTheme.color("panel", 0)
     children[#children + 1] = mapPanel
-    for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim))) do children[#children + 1] = n end
+    for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim), opts)) do children[#children + 1] = n end
   elseif screenId == "agents" and sim.agents[Screens.editor.agent] then
     local id = Screens.editor.agent
     local a, b
@@ -911,7 +961,7 @@ function Shell.spec(sim, screenId: string, opts)
     else
       local compute = { rows = ComputeView.agentRows(sim), top = ComputeView.topBar(sim), cfg = sim.compute.cfg,
         buy = ComputeView.buyOptions(sim, Screens.compute.packs) }
-      a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute })
+      a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute, state = sim.agents[id].state, time = opts.time })
     end
     children[#children + 1] = a
     children[#children + 1] = b
@@ -927,13 +977,13 @@ function Shell.spec(sim, screenId: string, opts)
   elseif screenId == "shop" then
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
   elseif screenId == "fleet" and sim.tier >= 4 then
-    children[#children + 1] = fleetScreen(font, rects.main, FleetView.model(sim))
+    children[#children + 1] = fleetScreen(font, rects.main, FleetView.model(sim), opts.time or 0)
   elseif screenId == "team" then
-    children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim))
+    children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim), opts.time or 0)
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
   elseif screenId == "branches" and sim.tier >= 2 then
-    children[#children + 1] = branchesScreen(font, rects.main, BranchesView.model(sim))
+    children[#children + 1] = branchesScreen(font, rects.main, BranchesView.model(sim), opts.time or 0)
   elseif screenId == "alerts" and sim.tier >= 5 then
     children[#children + 1] = alertsScreen(font, rects.main, AlertsView.model(sim))
   elseif screenId == "archive" then
@@ -943,6 +993,7 @@ function Shell.spec(sim, screenId: string, opts)
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end
+  for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
   local shift = opts.glitch and opts.glitch.slices[1] and opts.glitch.slices[1].shift or 0
   return {
     style = { position = "absolute", left = shift, top = 0, width = L.view.w, height = L.view.h },
@@ -952,7 +1003,16 @@ end
 
 -- Glitch hook: the shell glitches only when an agent enters paused_error (art direction). Anything else is refused by
 -- render/vfx/glitch.luau. Call `Shell.update` every frame and pass the result to Shell.spec as `opts.glitch`.
-function Shell.new() return { screen = Screens.defaultScreen, glitch = Glitch.new() } end
+function Shell.new() return { screen = Screens.defaultScreen, glitch = Glitch.new(), focus = nil } end
+
+-- Map hover / select: "map.focus.<id>" focuses a planet or market (its routes glow); the same click again clears it.
+function Shell.act(state, action): boolean
+  if type(action) ~= "string" then return false end
+  local id = action:match("^map%.focus%.([%w_]+)$")
+  if not id then return false end
+  state.focus = (state.focus ~= id) and id or nil
+  return true
+end
 function Shell.onSimEvent(state, event) if event.name == "agent_paused_error" then return Glitch.trigger(state.glitch, "ai_error") end return false end
 function Shell.update(state, dt: number) return Glitch.update(state.glitch, dt) end
 
