@@ -123,7 +123,11 @@ function SystemMap.tags(sim, sid: string?)
 		out[#out + 1] = MapLife.agentBadge(agent, agent and agent.state == "acting" and "working" or "waiting", label)
 	end
 	for _, id in ipairs(Logistics.logisticiansAt(sim, sid)) do tag(sim.agents[id], "LOG") end
-	if sid == StationsConfig.map.home.planet and sim.agents.monitor and sim.upgrades and sim.upgrades.commandCenter then tag(sim.agents.monitor, "MON") end
+	if sid == StationsConfig.map.home.planet and sim.upgrades and sim.upgrades.commandCenter then
+		for _, id in ipairs(sim.agentOrder) do
+			if sim.agents[id].type == "monitor" then tag(sim.agents[id], "MON") end
+		end
+	end
 	local ref = sim.refining and Refining.refineryAt(sim, sid)
 	if ref and ref.owner and sim.agents[ref.owner] then tag(sim.agents[ref.owner], "REF") end
 	return out

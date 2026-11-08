@@ -108,6 +108,26 @@ end
 function Persistence.restore(data, opts)
   local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance, branches = opts and opts.branches })
   local st = Sim.deepCopy(data.state)
+  -- Migrate the original singleton Monitor and its keyed accounting to its numbered identity.
+  if st.agents.monitor then
+    st.agents.monitor_1 = st.agents.monitor
+    st.agents.monitor = nil
+    st.agents.monitor_1.id = "monitor_1"
+    for i, id in ipairs(st.agentOrder) do if id == "monitor" then st.agentOrder[i] = "monitor_1" end end
+    for _, name in ipairs({ "records", "versions", "lastDecision" }) do
+      local map = st[name]
+      if type(map) == "table" and map.monitor ~= nil then map.monitor_1, map.monitor = map.monitor, nil end
+    end
+    if st.compute then
+      if st.compute.lifetime and st.compute.lifetime.monitor then st.compute.lifetime.monitor_1, st.compute.lifetime.monitor = st.compute.lifetime.monitor, nil end
+      for _, row in ipairs(st.compute.spend or {}) do if row.agent == "monitor" then row.agent = "monitor_1" end end
+      for _, charge in pairs(st.compute.charges or {}) do if charge.agent == "monitor" then charge.agent = "monitor_1" end end
+    end
+    for _, a in ipairs((st.alerts and st.alerts.list) or {}) do
+      a.deliveries = {}
+      if a.queued then a.deliveries.monitor_1 = a.handled or true end
+    end
+  end
   for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions", "branchesOpen", "scanCalls" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
@@ -144,6 +164,12 @@ function Persistence.restore(data, opts)
   end
   for id, saved in pairs(st.agents) do
     if saved.mode == "default" then saved.mode = "ai" end
+    if saved.type == "monitor" then
+      saved.monitorSettings = saved.monitorSettings or Sim.deepCopy(sim.monitorSettings)
+      for _, t in ipairs(sim.registry.alertTypes) do
+        if saved.monitorSettings.alertTypes[t] == nil then saved.monitorSettings.alertTypes[t] = true end
+      end
+    end
     sim.agents[id] = saved
   end
   if st.market then Market.load(sim.market, st.market) end
