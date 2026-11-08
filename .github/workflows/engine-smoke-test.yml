@@ -28,7 +28,7 @@ jobs:
         run: |
           runtime_bin=$(echo engine/*/runtime/aylo-runtime)
           set +e
-          timeout 15s "$runtime_bin" --server --game "$GITHUB_WORKSPACE" --port 14242 > engine-run.log 2>&1
+          timeout 15s "$runtime_bin" "$GITHUB_WORKSPACE" --server --port 14242 > engine-run.log 2>&1
           code=$?
           set -e
           cat engine-run.log
