@@ -24,6 +24,9 @@ jobs:
           unzip -q engine.zip -d engine
           chmod +x engine/*/runtime/aylo-runtime
 
+      - name: Run the sim self-test inside the engine
+        run: tools/run_engine_test.sh "$(echo engine/*/runtime/aylo-runtime)"
+
       - name: Boot the game headless and watch for a crash
         run: |
           runtime_bin=$(echo engine/*/runtime/aylo-runtime)

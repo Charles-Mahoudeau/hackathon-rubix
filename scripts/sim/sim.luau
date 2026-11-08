@@ -1161,7 +1161,7 @@ function Sim:stepAgent(id, agent)
     setAgentState(self, agent, "thinking")
     return
   end
-  self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
+  self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call, prompt = prompt.text }
   local d = self.b.ai
   agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, rec = rec.id, started = status == "running",
     delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }

@@ -41,6 +41,8 @@ local function sims()
   for tier = 1, 5 do
     local s = Sim.new()
     s.tier = tier
+    s.upgrades.warehouse = tier >= 3 or nil -- the Station and Market screens need the warehouse
+    s.upgrades.hub = tier >= 4 or nil
     stress(s)
     out[#out + 1] = { s, "T" .. tier }
   end
@@ -58,6 +60,9 @@ for _, pair in ipairs(sims()) do
   local sim, name = pair[1], pair[2]
   for _, e in ipairs(Screens.nav) do
     lint(sim, e.id, {}, name .. "/" .. e.id)
+  end
+  if sim.upgrades.warehouse then
+    for _, id in ipairs(sim.stationOrder) do lint(sim, "station", { station = { station = id } }, name .. "/station-" .. id) end
   end
   lint(sim, "agents", { tab = "context" }, name .. "/agents-context")
   lint(sim, "agents", { toast = "Saved. " .. long }, name .. "/agents-toast")

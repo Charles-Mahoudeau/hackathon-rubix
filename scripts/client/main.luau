@@ -19,7 +19,10 @@ local ArchiveView = require("@scripts/ui/archive_view")
 local SkillStudio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local OfflineView = require("@scripts/ui/offline_view")
+local DebugPanel = require("@scripts/ui/debug")
+local Persistence = require("@scripts/sim/persistence")
 local MarketView = require("@scripts/ui/market_view")
+local StationView = require("@scripts/ui/station_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
@@ -31,9 +34,13 @@ local state = {
 	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
+	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
+	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
+	-- No file API yet [ENGINE]: "Reset save" writes the fresh game to memory, which is all the stand-in sim has.
+	storage = Persistence.memoryStorage(),
 }
 
 local function despawnAll(commands, list)
@@ -73,7 +80,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug })
 	state.shell.screen = shown
 end
 
@@ -159,6 +166,7 @@ engine.ecs.system("game.Shell", {
 			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
 			if FleetView.act(state.sim, click.action) then changed = true end
+			if StationView.act(state.station, click.action) then changed = true end
 			if MissionsView.act(state.sim, click.action) then changed = true end
 			if AlertsView.act(state.sim, click.action) then changed = true end
 			if BranchesView.act(state.sim, click.action) then changed = true end
@@ -169,6 +177,12 @@ engine.ecs.system("game.Shell", {
 				state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
 			end
 			if OfflineView.act(state.sim, click.action) then changed = true end
+			local debugHandled, freshSim = DebugPanel.act(state.sim, state.debug, click.action, { storage = state.storage, path = "gridmind.save", savedAt = 0 })
+			if debugHandled then changed = true end
+			if freshSim then
+				state.sim, state.draft, state.toast, state.inputsDirty = freshSim, nil, nil, true
+				state.uiSig, state.worldSig = nil, nil
+			end
 			if Clock.act(state.sim, click.action) then changed = true end
 			local teamHandled, teamAgent = TeamView.act(state.sim, click.action)
 			if teamHandled and teamAgent then
@@ -204,6 +218,7 @@ engine.ecs.system("game.Shell", {
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
+		if state.shell.screen == "station" then extra = StationView.signature(state.sim, state.station) end
 		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
 		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
 		if state.shell.screen == "alerts" then extra = AlertsView.signature(state.sim) end
@@ -211,6 +226,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) .. "|" .. SkillStudio.signature(state.sim, state.studio) end
 		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
+		if state.shell.screen == "debug" then extra = DebugPanel.signature(state.sim, state.debug) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		-- The map animates (planet pulse, moving route dashes), so it redraws on its own faster beat.
