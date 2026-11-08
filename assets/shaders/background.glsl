@@ -6,7 +6,8 @@
 
 uniform float mode = 0.0;         // 0: nebula (clouds with a thin outline band). 1: dust and stars (transparent between).
 uniform float seed = 1.0;         // Per layer: changes the pattern.
-uniform float pixels = 160.0;     // Pixel grid of the layer (the lower, the chunkier).
+uniform float pixels = 360.0;     // Pixel rows of the layer (the lower, the chunkier). Columns are pixels * aspect: square pixels.
+uniform float aspect = 1.0;       // Width / height of the covered area.
 uniform float size = 6.0;         // Noise scale: how many clouds.
 uniform int octaves = 4;
 uniform vec2 drift = vec2(0.002, 0.0); // Noise scrolled per second. Different per layer gives the parallax.
@@ -17,6 +18,7 @@ uniform vec4 ramp2 = vec4(0.24, 0.36, 0.46, 1.0);
 uniform vec4 ramp3 = vec4(0.62, 0.83, 0.9, 1.0);  // ... to its dense core.
 uniform vec4 star1 = vec4(0.95, 0.92, 0.87, 1.0);
 uniform vec4 star2 = vec4(0.85, 0.7, 0.44, 1.0);
+uniform float twinkle = 0.3;      // Stars blink off now and then, this many times a second (0: steady).
 
 float rand(vec2 coord) {
     return fract(sin(dot(coord, vec2(12.9898, 78.233))) * (15.5453 + seed));
@@ -73,12 +75,14 @@ vec3 rampColor(float level) {
 }
 
 void fragment() {
-    vec2 uv = floor(UV * pixels) / pixels;
-    bool dith = mod(uv.y + UV.x, 2.0 / pixels) <= 1.0 / pixels; // checkerboard dither, as in the original
-    vec2 base = (uv + drift * TIME) * size;
+    vec2 grid = vec2(pixels * aspect, pixels);
+    vec2 uv = floor(UV * grid) / grid;
+    bool dith = mod(floor(UV.x * grid.x) + floor(UV.y * grid.y), 2.0) < 1.0; // checkerboard dither, as in the original
+    vec2 square = vec2(aspect, 1.0); // noise space with square cells, so clouds are not stretched
+    vec2 base = (uv * square + drift * TIME) * size;
 
     if (mode < 0.5) {
-        float d = distance(uv, vec2(0.5)) * 0.4;
+        float d = distance(uv * square, vec2(0.5) * square) * 0.4;
         float n = cloud(base);
         float n2 = fbm(base + vec2(1.0, 1.0));
         float density = n2 * n * n; // n2 * (n * n): dust inside the cloud
@@ -101,8 +105,9 @@ void fragment() {
         float level = floor(pow(dust, 3.2) * 56.0);
         vec3 color = rampColor(max(level, 1.0));
         // Stars: a hash per pixel of the grid, fixed on screen (they do not drift with the dust).
-        float h = fract(sin(dot(floor(UV * pixels) + vec2(seed), vec2(127.1, 311.7))) * 43758.5453);
+        float h = fract(sin(dot(floor(UV * grid) + vec2(seed), vec2(127.1, 311.7))) * 43758.5453);
         float isStar = step(1.0 - starDensity, h);
+        isStar *= 1.0 - step(0.85, sin(TIME * twinkle * 6.2832 + h * 4000.0) * 0.5 + 0.5) * step(0.0001, twinkle);
         vec3 starColor = mix(star2.rgb, star1.rgb, step(0.5, fract(h * 97.0)));
         color = mix(color, starColor, isStar);
         COLOR = vec4(color, max(aDust, isStar));

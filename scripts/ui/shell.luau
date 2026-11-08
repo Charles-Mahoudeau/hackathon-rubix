@@ -73,6 +73,7 @@ local function panel(r, extra, plain)
   local node = { style = { rect(r), { overflow = "hidden" }, extra }, children = {} }
   if skin and not plain then
     node.image = { texture = skin.texture, slice = skin.slice, color = skin.color }
+    node.background = { color = UiTheme.color("panel", Theme.alpha.chromeFill), radius = L.radius }
   else
     node.background = { color = UiTheme.panel(), radius = L.radius, borderColor = UiTheme.line(), borderWidth = 1 }
   end
@@ -242,18 +243,7 @@ local function mapOverlay(font, r, map, opts)
       nodes[#nodes + 1] = dot(d, cfg.routeThickness * scale, name, math.min(1, style.color[4] * 0.55 + (focused and 0.3 or 0)))
     end
   end
-  for _, c in ipairs(map.convoys) do
-    local a, b = points[c.from], points[c.to]
-    local at = { x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }
-    for _, n in ipairs(Glow.halo(at, cfg.convoyDot / 2, "active", t, true, "text")) do nodes[#nodes + 1] = n end
-    nodes[#nodes + 1] = dot(at, cfg.convoyDot, "text")
-  end
-  for _, c in ipairs(map.rivals) do
-    local a, b = points[c.from], points[c.to]
-    if a and b then
-      nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.rivalDot, c.orange and Theme.semantic.warning or "dim")
-    end
-  end
+  -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
   local function label(center, name, sub, colorName, subColor, below)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
@@ -1051,6 +1041,17 @@ local function modalOverlay(font, m)
     background = { color = UiTheme.color("bg", 0.7) }, children = { box } }
 end
 
+-- The HMC emergency-advance banner (spec §8.5): text and a Claim button, over the top right of the main panel.
+local function noticeBanner(font, r, n)
+  local c = Screens.notice
+  local btn = buttonNode({ width = c.buttonWidth, height = 28, justify = "center", alignItems = "center" }, n.action, "cyan",
+    { text(font, n.button, T.small, "cyan") }, true)
+  local textW = c.width - c.buttonWidth - 3 * L.pad
+  return withChildren(panel({ x = r.x + r.w - c.width - c.margin, y = r.y + c.margin, w = c.width, h = c.height },
+    { direction = "row", alignItems = "center", gap = 12, paddingX = L.pad }, true),
+    { text(font, Fit.truncate(n.text, T.small, textW), T.small, Theme.semantic.warning, { width = textW }), btn })
+end
+
 -- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", logs = LogsView.new() state, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
@@ -1114,6 +1115,8 @@ function Shell.spec(sim, screenId: string, opts)
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end
+  local notice = Model.notification(sim)
+  if notice then children[#children + 1] = noticeBanner(font, rects.main, notice) end
   for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
   if opts.save then
     local modal = SaveView.model(opts.save, sim)

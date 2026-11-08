@@ -17,6 +17,8 @@ local function texture(path: string)
 	return textures[path]
 end
 
+Ship.texture = texture
+
 -- Remap thresholds for a tier_glow in [0,1].
 function Ship.steps(tierGlow: number): { number }
 	local r = Config.remap
