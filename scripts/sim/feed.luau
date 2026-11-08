@@ -18,6 +18,11 @@ local function fmtArgs(tool, a)
   if tool == "wait" then return tostring(a.seconds) end
   if tool == "report" then return a.to or "player" end
   if tool == "scan" then return tostring(a.planet) end
+  if tool == "scan_route" then return tostring(a.route) end
+  if tool == "intercept" then
+    if type(a.convoy) == "table" then return ("max_escort=%s"):format(tostring(a.convoy.max_escort or "any")) end
+    return tostring(a.convoy)
+  end
   if tool == "set_order" then return ("%s, %q"):format(tostring(a.agent), tostring(a.text)) end
   if tool == "assign_skill" then return ("%s, %s"):format(tostring(a.agent), tostring(a.skill)) end
   if tool == "pause_agent" or tool == "resume_agent" then return tostring(a.agent) end

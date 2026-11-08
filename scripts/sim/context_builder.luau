@@ -177,6 +177,36 @@ function builders.logistician(sim, agent, s)
   }
 end
 
+-- Privateer (spec §15b.6): time, ship, notoriety, scan, recent, inbox, credits, compute.
+function builders.privateer(sim, agent, s)
+  local c = sim.registry.agentTypes.privateer.context(sim, agent)
+  local it = c.interceptor
+  local hold = {}
+  for _, ore in ipairs(World.oreOrder) do
+    if it.hold[ore] and it.hold[ore] > 0 then hold[#hold + 1] = { ore, it.hold[ore] } end
+  end
+  local scan = {}
+  for _, r in ipairs(c.scan) do scan[#scan + 1] = { r.id, r.route, r.owner, r.resource, r.cargo, r.escort, r.eta_s, r.reach and "y" or "n" } end
+  local data = {
+    { key = "time", kind = "scalar", value = clock(sim) },
+    { key = "ship", kind = "object", fields = { { "id", it.id }, { "state", it.state }, { "at", it.at }, { "hull", it.hull .. "/" .. it.hull_max },
+      { "attack", it.attack }, { "hold", it.hold_total .. "/" .. it.cap }, { "target", it.target or "-" } } },
+    { key = "hold", kind = "map", map = map(hold) },
+    { key = "notoriety", kind = "scalar", value = c.notoriety },
+    { key = "standing", kind = "map", map = sortedPairs(c.standing) },
+    { key = "routes", kind = "scalar", value = c.routes },
+    { key = "scan", kind = "table", cols = { "id", "route", "owner", "res", "cargo", "escort", "eta_s", "reach" }, rows = scan },
+  }
+  if c.alongside then
+    data[#data + 1] = { key = "alongside", kind = "map", map = sortedPairs(c.alongside) }
+  end
+  data[#data + 1] = { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" }, rows = recentRows(agent, s.recent_results) }
+  data[#data + 1] = { key = "inbox", kind = "strings", items = inboxList(agent, s) }
+  data[#data + 1] = { key = "credits", kind = "scalar", value = sim.resources.credits }
+  data[#data + 1] = { key = "compute", kind = "scalar", value = round1(sim.resources.compute) }
+  return data
+end
+
 local function skillParamText(skill)
   local keys = {}
   for k in pairs(skill.params or {}) do keys[#keys + 1] = k end

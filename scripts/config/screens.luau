@@ -59,6 +59,7 @@ return {
     routeThickness = 2,
     routeSpacing = 14, -- view pixels between two dashes of a route line
     convoyDot = 6,
+    rivalDot = 5, -- rival convoys (raiding branch): amber on the raidable orange routes, dim on the others
   },
 
   -- Agent editor (GR5-5): view pixels inside the main panel. The two text inputs are their own UI tree, so typing never
@@ -119,7 +120,7 @@ return {
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
   missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360 },
+    buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360, optionalRewardOffset = 120, optionalButtonOffset = 200 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,

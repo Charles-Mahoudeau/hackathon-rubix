@@ -135,14 +135,25 @@ local function rollTrend(m)
   note(m, "trend", f and f[dir] or C.trendGeneric[dir]:format(mk.name:match("^(%S+)"), oreName(pick[2])))
 end
 
+-- A rival sale lands on `mid`: the ore saturates and a dot shows on the board. Called by the scripted sale below and, once the
+-- raiding branch is open, by the real convoy when it arrives (sim/raiding.luau).
+function Market.rivalArrives(m, mid, ore, qty)
+  local mk = m.markets[mid]
+  local r = mk.res[ore]
+  r.s = math.max(C.satFloor, r.s - qty / mk.depth)
+  m.convoys[#m.convoys + 1] = { market = mid, resource = ore, qty = qty, sec = m.sec }
+end
+
 local function rivalSale(m)
   local rv = C.rivals
+  if m.convoyHook and m.convoyHook(m) then
+    m.nextRival = interval(m, "market", rv.everySeconds, rv.jitterSeconds)
+    return
+  end
   local mk = m.markets[m.order[Rng.pick(m.rng, "market", #m.order)]]
   local ore = mk.order[Rng.pick(m.rng, "market", #mk.order)]
   local qty = rv.minUnits + math.floor(Rng.next(m.rng, "market") * (rv.maxUnits - rv.minUnits + 1))
-  local r = mk.res[ore]
-  r.s = math.max(C.satFloor, r.s - qty / mk.depth)
-  m.convoys[#m.convoys + 1] = { market = mk.id, resource = ore, qty = qty, sec = m.sec }
+  Market.rivalArrives(m, mk.id, ore, qty)
   m.nextRival = interval(m, "market", rv.everySeconds, rv.jitterSeconds)
 end
 

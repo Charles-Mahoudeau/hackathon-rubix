@@ -192,6 +192,12 @@ local function mapOverlay(font, r, map)
     local a, b = points[c.from], points[c.to]
     nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.convoyDot, "text")
   end
+  for _, c in ipairs(map.rivals) do
+    local a, b = points[c.from], points[c.to]
+    if a and b then
+      nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.rivalDot, c.orange and Theme.semantic.warning or "dim")
+    end
+  end
 
   local function label(center, name, sub, colorName, subColor, below)
     return { style = { position = "absolute", left = center.x - 90, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
@@ -662,6 +668,14 @@ local function missionsScreen(font, r, m)
     local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
     nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
     nodeAt(c.rewardX, y, text(font, row.reward, T.small, color))
+  end
+  for j, row in ipairs(m.optional) do
+    local y = c.listY + (#m.rows + j - 1) * c.rowHeight
+    local color = row.state == "claimed" and "green" or (row.failed and Theme.semantic.warning or (row.state == "current" and "cyan" or "dim"))
+    nodeAt(L.pad, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name .. "  " .. row.progressText, T.small, color))
+    nodeAt(c.rewardX + c.optionalRewardOffset, y, text(font, row.reward, T.small, color))
+    if row.claim then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Claim", row.claim, "green", 80)) end
+    if row.retry then nodeAt(c.rewardX + c.optionalButtonOffset, y - 6, button(font, "Retry", row.retry, Theme.semantic.warning, 80)) end
   end
   return withChildren(panel(r, nil), kids)
 end

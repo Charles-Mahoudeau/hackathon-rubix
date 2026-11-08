@@ -5,7 +5,9 @@
 -- A branch table:
 --   id, name, scope                       scope = the Monitor scope of the branch
 --   unlock = { startsOpen = true } | { tier, cost, rep, needs }   how it opens (needs = a shop item id)
---   agent = { type, tools = {...}, startTier, toolSlots, stub = { optimal, directive } }
+--   agent = { type, tools = {...}, startTier, toolSlots, stub = { optimal, directive }, busy?(sim, agent) -> bool, skip?(sim, agent, call) -> reason | nil,
+--     context?(sim, agent) -> snapshot for the prompt, at?(sim, agent) -> location text for the Monitor }
+--     busy/skip tell the skill runner when the asset is occupied and which steps have nothing to do
 --   asset = { type, label }               what the agent runs (ship, ...)
 --   tools = { name = { tier, schema?, validate?(sim, agent, args) -> ok, err, apply?(sim, agentId, args, info) -> text, result } }
 --   alerts = { kinds = { name = { after? } }, detect?(sim, cfg, raise) }
@@ -23,6 +25,14 @@ Registry.reservedParamKinds = { "site", "recipe", "route", "convoy_filter" }
 
 -- Kinds the company-wide Archive always knows (checked in sim/skills.luau): they belong to no branch.
 Registry.sharedParamKinds = { "destination", "buyer", "station" }
+
+-- Keys of a table in name order, so a branch's tools and alert kinds register in the same order on every run.
+local function sortedKeys(t)
+  local ks = {}
+  for k in pairs(t) do ks[#ks + 1] = k end
+  table.sort(ks)
+  return ks
+end
 
 local function insertAfter(list, after, name)
   for i, v in ipairs(list) do
@@ -57,9 +67,11 @@ function Registry.new(defs, b)
     local a = def.agent
     if a then
       assert(not reg.agentTypes[a.type], "branch " .. def.id .. ": agent type already exists: " .. a.type)
-      reg.agentTypes[a.type] = { type = a.type, tools = a.tools, startTier = a.startTier, toolSlots = a.toolSlots, branch = def.id, stub = a.stub }
+      reg.agentTypes[a.type] = { type = a.type, tools = a.tools, startTier = a.startTier, toolSlots = a.toolSlots, branch = def.id, stub = a.stub,
+        busy = a.busy, skip = a.skip, context = a.context, at = a.at }
     end
-    for name, tool in pairs(def.tools or {}) do
+    for _, name in ipairs(sortedKeys(def.tools or {})) do
+      local tool = def.tools[name]
       assert(not reg.toolDefs[name], "branch " .. def.id .. ": tool declared twice: " .. name)
       reg.toolDefs[name] = tool
       reg.toolTier[name] = tool.tier
@@ -71,7 +83,8 @@ function Registry.new(defs, b)
         assert(reg.schemas[name], "branch " .. def.id .. ": tool has no schema: " .. name)
       end
     end
-    for kind, spec in pairs(def.alerts and def.alerts.kinds or {}) do
+    for _, kind in ipairs(sortedKeys(def.alerts and def.alerts.kinds or {})) do
+      local spec = def.alerts.kinds[kind]
       assert(not reg.alertGroup[kind], "branch " .. def.id .. ": alert kind declared twice: " .. kind)
       reg.alertGroup[kind] = def.scope
       if spec.after then insertAfter(reg.alertTypes, spec.after, kind) else reg.alertTypes[#reg.alertTypes + 1] = kind end

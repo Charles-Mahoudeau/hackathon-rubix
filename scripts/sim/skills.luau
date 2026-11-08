@@ -9,8 +9,10 @@ local Alerts = require("./alerts")
 local Skills = {}
 
 -- Which arg is turned into which parameter ("make this a parameter"), and which parameter kinds exist (spec §13.2b).
-local PARAM_OF_ARG = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", stop_at_hold_pct = "pct" }
-local PARAM_NAMES = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", pct = "pct", station = "station" }
+local PARAM_OF_ARG = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", stop_at_hold_pct = "pct",
+  route = "route", convoy = "convoy_filter" }
+local PARAM_NAMES = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", pct = "pct", station = "station",
+  route = "route", convoy_filter = "convoy_filter" }
 
 local function isParam(v) return type(v) == "string" and v:sub(1, 1) == "$" end
 
@@ -367,7 +369,9 @@ function Skills.step(sim, agentId, agent)
   local skill = sim.skills[agent.activeSkill or ""]
   if not skill then return stop(sim, agentId, agent, "skill_deleted", false) end
   local ship = agent.type == "miner" and sim:ownedShip(agentId) or nil
-  if (ship and ship.state ~= "idle") or (run.waitUntil and sim.tick < run.waitUntil) or (run.holdUntil and sim.tick < run.holdUntil) then
+  local def = sim.registry.agentTypes[agent.type]
+  local branchBusy = def.busy ~= nil and def.busy(sim, agent)
+  if (ship and ship.state ~= "idle") or branchBusy or (run.waitUntil and sim.tick < run.waitUntil) or (run.holdUntil and sim.tick < run.holdUntil) then
     agent.state = "acting"
     return
   end
@@ -376,7 +380,10 @@ function Skills.step(sim, agentId, agent)
   local step = skill.steps[run.i]
   local call = resolve(skill, step, agent.skillParams)
   local skip
-  if ship and call.name == "return" and ship.state == "idle" then
+  local branchSkip = def.skip and def.skip(sim, agent, call)
+  if branchSkip then
+    skip = branchSkip
+  elseif ship and call.name == "return" and ship.state == "idle" then
     skip = "already docked" -- the ship came home on its own once the hold was full
   elseif ship and call.name == "sell" and (call.args.buyer or "hmc") == "hmc" and ship.cargo <= 0 and not sim:hasWarehouse() then
     skip = "hold already sold at the depot"

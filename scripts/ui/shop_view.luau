@@ -44,6 +44,10 @@ function View.model(sim)
     local s = sim.ships[sid]
     fleet[#fleet + 1] = { id = sid, owner = s.owner, text = ("%s  drill %g u/s  hold %d  engine x%g"):format(sid, s.drillRate, s.cargoCap, s.engineMult) }
   end
+  for _, id in ipairs(sim.interceptorOrder) do
+    local it = sim.interceptors[id]
+    fleet[#fleet + 1] = { id = id, owner = it.owner, text = ("%s  attack %d  hull %d/%d  hold %d"):format(id, it.attack, it.hull, it.hullMax, it.cap) }
+  end
   return { rows = rows, slots = slots, fleet = fleet, credits = math.floor(sim.resources.credits), tier = sim.tier }
 end
 
