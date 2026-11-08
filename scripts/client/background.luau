@@ -1,17 +1,16 @@
 -- Background.new(screenId, size, position?) builds the layered procedural space backdrop (see assets/shaders/background.glsl).
 -- Returns a list of entity descriptions, back to front, to pass one by one to ctx.commands:spawn(). Client only.
--- Every colour is a GameConfig.palette name, so a background cannot leave the 8-colour theme.
+-- Every colour is a palette name (config/planets.luau), so a background cannot leave the 8-colour theme.
 -- Big stars are not drawn here: call Star.new (client/bodies.luau) for those.
 
-Background = {}
+local planets = require("@scripts/config/planets")
+local config = require("@scripts/config/background")
 
-if not engine.isClient then
-	return
-end
+local Background = {}
 
 local function paletteColor(name: string)
-	local hex = GameConfig.palette[name]
-	assert(hex, "Background: colour '" .. tostring(name) .. "' is not in GameConfig.palette")
+	local hex = planets.palette[name]
+	assert(hex, "Background: colour '" .. tostring(name) .. "' is not in planets.palette")
 	return {
 		x = bit32.extract(hex, 16, 8) / 255,
 		y = bit32.extract(hex, 8, 8) / 255,
@@ -47,11 +46,11 @@ local function material(name: string, def, r)
 	})
 end
 
--- screenId: a key of GameConfig.backgrounds. size: {x, y} in world units, the area to cover.
+-- screenId: a key of config.backgrounds. size: {x, y} in world units, the area to cover.
 function Background.new(screenId: string, size, position)
-	local layers = GameConfig.backgrounds[screenId]
+	local layers = config.backgrounds[screenId]
 	assert(layers, "Background.new: unknown screen '" .. tostring(screenId) .. "'")
-	local r = GameConfig.backgroundRender
+	local r = config.backgroundRender
 	texture = texture or engine.assets.texture(r.texturePath)
 	local out = {}
 	for i, def in ipairs(layers) do
@@ -71,3 +70,5 @@ function Background.new(screenId: string, size, position)
 	end
 	return out
 end
+
+return Background

@@ -1,6 +1,7 @@
 -- AI-error glitch. Triggered only by trigger("ai_error"); never by idle/hover/etc. One short flicker.
-local cfg = VfxConfig.glitch
-Glitch = {}
+local cfg = require("@scripts/config/vfx").glitch
+
+local Glitch = {}
 
 function Glitch.new()
 	return { t = nil, rng = cfg.seed }
@@ -48,4 +49,4 @@ function Glitch.update(self, dt: number)
 	}
 end
 
-
+return Glitch

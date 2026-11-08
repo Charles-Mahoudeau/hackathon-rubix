@@ -1,6 +1,7 @@
 -- Agent context halo: idle / pending (decision pending) / executing.
-local cfg = VfxConfig.halo
-Halo = {}
+local cfg = require("@scripts/config/vfx").halo
+
+local Halo = {}
 
 function Halo.style(state: string, t: number)
 	local s = cfg[state]
@@ -12,4 +13,4 @@ function Halo.style(state: string, t: number)
 	return { color = s.color, alpha = s.alpha * pulse, radius = s.radius }
 end
 
-
+return Halo

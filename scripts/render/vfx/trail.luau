@@ -1,6 +1,7 @@
 -- Ship/convoy engine trail: ring buffer of fading points. Feed with position each frame.
-local cfg = VfxConfig.trail
-Trail = {}
+local cfg = require("@scripts/config/vfx").trail
+
+local Trail = {}
 
 function Trail.new()
 	return { points = {}, acc = 0 }
@@ -34,4 +35,4 @@ function Trail.draw(self)
 	return out
 end
 
-
+return Trail
