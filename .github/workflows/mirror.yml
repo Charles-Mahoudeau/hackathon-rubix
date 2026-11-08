@@ -1,0 +1,40 @@
+name: Mirror repository
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: github.repository == 'Charles-Mahoudeau/hackathon-rubix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure SSH
+        env:
+          MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
+        run: |
+          test -n "$MIRROR_SSH_KEY" || { echo '::error::MIRROR_SSH_KEY secret is not configured'; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/known_hosts
+
+      - name: Mirror main
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+        run: |
+          git push --force git@github.com:rubix-consulting-eu/groupe-5.git HEAD:refs/heads/main

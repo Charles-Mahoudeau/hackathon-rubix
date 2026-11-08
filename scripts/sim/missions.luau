@@ -219,7 +219,7 @@ function Missions.progress(sim, e)
     lines[#lines + 1] = { text = ("%d stock or freighter errors"):format(e.errors), done = e.errors == 0 }
     local left = math.max(0, windowTicks(sim, d) - (sim.tick - e.startTick))
     local text = ("%d:%02d left"):format(math.floor(left / 600), math.floor(left / 10) % 60)
-    if e.failed then text = "Failed (an error or too few deliveries) - retry" end
+    if e.failed then text = "Failed: errors or few deliveries" end
     return { fraction = #e.agents > 0 and sum / #e.agents or 0, text = text, failed = e.failed == true, lines = lines }
   elseif d.check == "watch" then
     local n = math.min(e.resolved or 0, d.resolve)

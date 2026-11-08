@@ -83,8 +83,8 @@ return {
     standing = { perAttack = -1, hostileAt = -3, escortBonus = 1 },
     -- Mission V3 "Rules of engagement" (spec §15b.5). Optional, outside the linear tutorial.
     mission = { id = "V3", name = "Rules of engagement", wins = 3, reward = 5000,
-      goal = "Win 3 attacks while Notoriety never reaches 3.",
-      hint = "Tell your Privateer what it must not attack, not only what it should." },
+      brief = { "Win three attacks.", "Keep Notoriety below 3 throughout." },
+      hint = "Say what the Privateer must avoid." },
     -- Stub Privateer (spec §15b.6).
     stub = { waitSeconds = 30, repairBelow = 40, scanReuseSeconds = 90 },
     streams = { convoy = 53, combat = 59 }, -- rng stream i = seed x this + 7
@@ -164,8 +164,8 @@ return {
     },
     -- Mission V2 "Treasure hunt" (spec §15b.5). Optional, outside the linear tutorial. Reward: one blueprint.
     mission = { id = "V2", name = "Treasure hunt", layer = 3,
-      goal = "Salvage a layer-3 without the ship being disabled.",
-      hint = "Survey first. Deep layers pay, but danger stacks up." },
+      brief = { "Salvage a layer-3 site.", "Keep the ship from being disabled." },
+      hint = "Survey first; deeper means danger." },
     -- Stub Scavenger (spec §15b.6).
     stub = { waitSeconds = 30, repairAt = 1 },
     streams = { site = 61, loot = 67 }, -- rng stream i = seed x this + 7
@@ -206,8 +206,8 @@ return {
     qtyMin = 1, qtyMax = 50,
     -- Mission V1 "Value added" (spec §15b.5). Optional, outside the linear tutorial.
     mission = { id = "V1", name = "Value added", units = 50, margin = 1.5, reward = 3000,
-      goal = "Sell 50 refined units for at least 1.5 x the base value of their inputs.",
-      hint = "Refining only pays if someone wants the result. Give your Refiner the prices." },
+      brief = { "Sell 50 refined units.", "Reach 1.5x their input base value." },
+      hint = "Give your Refiner current prices." },
     -- Stub Refiner (spec §15b.6): a quantity the text does not name is random between randQtyMin and randQtyMax.
     -- A Logistician stub ships a refined good once the station holds shipMinStock of it.
     stub = { waitSeconds = 30, randQtyMin = 5, randQtyMax = 50, shipMinStock = 40 },

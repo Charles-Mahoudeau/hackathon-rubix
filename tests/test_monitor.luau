@@ -210,7 +210,7 @@ do
   assert(#m.rows == 1 and m.rows[1].type == "agent_paused")
   local spec = Shell.spec(s, "alerts", {})
   local all = table.concat(texts(spec), "\n")
-  assert(all:find("agent_paused", 1, true) and all:find("Heartbeat 240 s", 1, true) and all:find("[ ] crowding", 1, true), all)
+  assert(all:find("Agent paused", 1, true) and all:find("Heartbeat 240 s", 1, true) and all:find("[ ] Vein crowded", 1, true), all)
   local team = TeamView.model(s)
   assert(team.rows[1].lastAlert:find("agent_paused", 1, true) and team.rows[2].lastAlert == "-" and team.rows[2].asset == "command center")
   assert(Shell.spec(s, "team", {}))

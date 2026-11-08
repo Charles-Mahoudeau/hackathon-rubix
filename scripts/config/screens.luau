@@ -15,7 +15,7 @@ return {
     { id = "station", label = "Station", unlockTier = 3 },
     { id = "market", label = "Market", unlockTier = 3 },
     { id = "fleet", label = "Fleet", unlockTier = 4 },
-    { id = "alerts", label = "Alerts", unlockTier = 5 },
+    { id = "alerts", label = "Monitor", unlockTier = 5 },
     -- Debug panel (spec §16.4): listed only while config/debug.luau `enabled` (debug builds and demo mode), never in release.
     { id = "debug", label = "Debug", unlockTier = 1, debugOnly = true },
   },
@@ -34,7 +34,7 @@ return {
     market = { title = "No market data", hint = "The warehouse lights the markets and shows who buys what." },
     fleet = { title = "No fleet", hint = "The logistics hub (tier 4) brings freighters and their routes." },
     debug = { title = "Debug", hint = "Debug tools are not available in this build." },
-    alerts = { title = "No alerts", hint = "The command center (tier 5) watches your team and raises alerts." },
+    alerts = { title = "No alerts yet.", hint = "Buy the command center first." },
   },
 
   -- System map: positions as fractions of the main panel (0..1). Planets are drawn in the world, labels in the UI.
@@ -137,16 +137,16 @@ return {
   market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
 
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
-  -- The current mission is the left column (text wraps at textWidth); the mission list is the right column from listX.
-  missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
-    buttonWidth = 140, textWidth = 540, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 44, optionalIndent = 24, rewardX = 230, optionalButtonOffset = 150 },
+  -- The current mission is the left column (one line per brief string); the mission list is the right column from listX.
+  missions = { nameY = 30, goalY = 66, briefLine = 18, hintY = 126, hintLine = 16, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
+    buttonWidth = 140, listX = 580, listY = 30, rowHeight = 20, optionalGap = 10, optionalRowHeight = 96, optionalLine = 16, optionalProgressX = 270, optionalIndent = 24, rewardX = 260, optionalButtonX = 330 },
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
-  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
-    listY = 220, rowHeight = 20, maxRows = 14, noteX = 190 },
+  alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 200, typesPerRow = 5, typeRowHeight = 34,
+    rowHeight = 20, maxRows = 8, headingGap = 22, sectionGap = 12, historyRows = 4 },
 
   -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
-  branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
+  branches = { headerY = 24, rowY = 44, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
 
   -- Debug screen (spec §16.4, GR5-72): one row per action group, then the status line, the result line and the last prompt.
   -- Layout polish is GR5-69.

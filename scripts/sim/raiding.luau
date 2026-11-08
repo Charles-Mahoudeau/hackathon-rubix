@@ -260,10 +260,10 @@ end
 
 -- Mission V3 -------------------------------------------------------------------------------------------------------
 
--- -> { id, name, goal, hint, reward, status = locked|active|complete|claimed, wins, target, failed }
+-- -> { id, name, brief, hint, reward, status = locked|active|complete|claimed, wins, target, failed }
 function Raiding.mission(sim)
   local e, d = sim.raid.mission, Cfg.mission
-  return { id = d.id, name = d.name, goal = d.goal, hint = d.hint, reward = d.reward, status = e.status, wins = e.wins,
+  return { id = d.id, name = d.name, brief = d.brief, hint = d.hint, reward = d.reward, status = e.status, wins = e.wins,
     target = d.wins, failed = e.failed == true }
 end
 
