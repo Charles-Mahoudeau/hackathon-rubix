@@ -22,8 +22,8 @@ end
 local shader, texture
 
 -- Builds the material of one planet: its shader with the planet's seed, palette and rotation.
-local function material(id: string, def)
-	local r = GameConfig.planetRender
+local function material(id: string, def, render)
+	local r = render or GameConfig.planetRender
 	shader = shader or engine.assets.shader(r.shaderPath)
 	texture = texture or engine.assets.texture(r.texturePath)
 	return engine.assets.material({
@@ -31,7 +31,7 @@ local function material(id: string, def)
 		shader = shader,
 		values = {
 			seed = def.seed,
-			pixels = r.pixels,
+			pixels = def.pixels or r.pixels,
 			size = r.size,
 			octaves = r.octaves,
 			timeSpeed = r.rotationSpeed,
@@ -53,11 +53,9 @@ local function material(id: string, def)
 	})
 end
 
--- planetId: a key of GameConfig.planets. radius: in world units. Returns the spawn command's entity description
--- table to pass to ctx.commands:spawn(); add components to it (e.g. a game component) before spawning if needed.
-function Planet.new(planetId: string, radius: number, position)
-	local def = GameConfig.planets[planetId]
-	assert(def, "Planet.new: unknown planet '" .. tostring(planetId) .. "'")
+-- Builds the entity description of any shader body (planet, asteroid, star, galaxy) from a look table `def`
+-- (same fields as GameConfig.planets entries, plus optional pixels/layer). id must be unique per distinct look.
+function Planet.fromDef(id: string, def, radius: number, position)
 	local r = GameConfig.planetRender
 	local scale = (radius * 2) / r.textureSize
 	return {
@@ -66,8 +64,16 @@ function Planet.new(planetId: string, radius: number, position)
 			texture = texture or engine.assets.texture(r.texturePath),
 			source = { x = 0, y = 0, z = r.textureSize, w = r.textureSize }, -- the whole texture: UV 0..1
 			origin = { x = r.textureSize / 2, y = r.textureSize / 2 },
-			material = material(planetId, def),
-			layer = -90,
+			material = material(id, def, r),
+			layer = def.layer or -90,
 		},
 	}
+end
+
+-- planetId: a key of GameConfig.planets. radius: in world units. Returns the spawn command's entity description
+-- table to pass to ctx.commands:spawn(); add components to it (e.g. a game component) before spawning if needed.
+function Planet.new(planetId: string, radius: number, position)
+	local def = GameConfig.planets[planetId]
+	assert(def, "Planet.new: unknown planet '" .. tostring(planetId) .. "'")
+	return Planet.fromDef(planetId, def, radius, position)
 end
