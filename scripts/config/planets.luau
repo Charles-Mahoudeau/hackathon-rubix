@@ -17,12 +17,15 @@ config.planetRender = {
 	size = 5, -- continents noise scale, a whole number
 	light = { x = 0.3, y = 0.3 },
 	lightBorders = { x = 0.4, y = 0.6 },
+	rimWidth = 0.03, -- outline ring of a planet that has `rim`, as a fraction of its diameter (~2 pixels of its grid)
 }
 
 -- Stable seeds: picked once, never regenerated. Colours are theme names, lit to shadow: a neon accent on the lit side,
 -- falling off through dim and panel into bg. A locked planet uses `locked` instead (greyed, no neon).
+-- `rim` = { lit side, shadow side }: the outline that keeps the globe readable against the dark backdrop; the shadow
+-- ramp ends on panel, not bg, for the same reason (bg IS the space behind the planet).
 -- waterLevel 0 = all land; cloudCover >= 1 = no clouds. Trade planets get the same treatment as harvest ones.
-config.locked = { land = { "dim", "panel", "panel", "bg" }, water = { "panel", "bg" }, cloud = { "dim", "panel" } }
+config.locked = { land = { "dim", "panel", "panel", "panel" }, water = { "panel", "panel" }, cloud = { "dim", "panel" }, rim = { "dim", "dim" } }
 
 config.planets = {
 	kessa = { -- harvest (Kessa): barren rock, the player's home: cyan
@@ -31,7 +34,8 @@ config.planets = {
 		phase = 11,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "cyan", "dim", "panel", "bg" },
+		land = { "cyan", "dim", "panel", "panel" },
+		rim = { "cyan", "dim" },
 		water = { "dim", "panel" },
 		cloud = { "text", "dim" },
 	},
@@ -41,7 +45,8 @@ config.planets = {
 		phase = 47,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "text", "dim", "panel", "bg" },
+		land = { "text", "dim", "panel", "panel" },
+		rim = { "text", "dim" },
 		water = { "dim", "panel" },
 		cloud = { "text", "dim" },
 	},
@@ -51,7 +56,8 @@ config.planets = {
 		phase = 59,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "amber", "dim", "panel", "bg" },
+		land = { "amber", "dim", "panel", "panel" },
+		rim = { "amber", "dim" },
 		water = { "amber", "bg" },
 		cloud = { "text", "dim" },
 	},
@@ -61,7 +67,8 @@ config.planets = {
 		phase = 83,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "green", "dim", "panel", "bg" },
+		land = { "green", "dim", "panel", "panel" },
+		rim = { "green", "dim" },
 		water = { "dim", "panel" },
 		cloud = { "text", "dim" },
 	},

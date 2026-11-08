@@ -14,7 +14,7 @@ function SystemMap.look(id: string, lit: boolean)
 	local def = Planets.planets[id]
 	if lit then return def end
 	local look = table.clone(def)
-	look.land, look.water, look.cloud = Planets.locked.land, Planets.locked.water, Planets.locked.cloud
+	look.land, look.water, look.cloud, look.rim = Planets.locked.land, Planets.locked.water, Planets.locked.cloud, Planets.locked.rim
 	return look
 end
 

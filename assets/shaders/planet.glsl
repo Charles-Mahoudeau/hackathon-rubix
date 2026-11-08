@@ -12,6 +12,9 @@ uniform float phase = 0.0;        // Starting point of the rotation (seconds), s
 uniform float waterLevel = 0.45;  // Below this noise value: water. 0 gives a planet that is all land.
 uniform float cloudCover = 0.5;   // Cloud threshold. 1 or more: no clouds.
 uniform int octaves = 3;
+uniform float rimWidth = 0.0;     // Width of the outline ring, as a fraction of the disc. 0: no ring.
+uniform vec4 rim1 = vec4(1.0, 1.0, 1.0, 1.0);    // Ring on the lit side,
+uniform vec4 rim2 = vec4(0.4, 0.4, 0.5, 1.0);    // ring on the shadow side.
 uniform vec2 lightOrigin = vec2(0.3, 0.3);
 uniform vec2 lightBorders = vec2(0.4, 0.6);
 uniform vec4 land1 = vec4(0.8, 0.8, 0.5, 1.0);   // Lit land, to...
@@ -95,6 +98,7 @@ void fragment() {
     vec2 uv = floor(UV * pixels) / pixels;
     float disc = step(distance(uv, vec2(0.5)), 0.5);
     float dLight = distance(uv, lightOrigin);
+    float edge = distance(uv, vec2(0.5));
     uv = spherify(rotate(uv, tilt));
     float tile = size;
     float t = (TIME + phase) * timeSpeed;
@@ -110,6 +114,10 @@ void fragment() {
     float cloudMask = step(cloudCover, c1);
     vec3 cloud = mix(cloud1.rgb, cloud2.rgb, float(c2 < c1 - 0.04 + dLight * 0.2));
     color = mix(color, cloud, cloudMask);
+
+    // The outline keeps the disc readable where the shaded side is as dark as the space behind it.
+    vec3 ring = mix(rim2.rgb, rim1.rgb, float(dLight < lightBorders.y));
+    color = mix(color, ring, step(0.5 - rimWidth, edge) * step(0.0001, rimWidth));
 
     COLOR = vec4(color * disc, disc);
 }
