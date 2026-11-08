@@ -34,7 +34,10 @@ function Model.topBar(sim)
     credits = round(sim.resources.credits),
     creditsText = Model.thousands(round(sim.resources.credits)) .. " cr",
     compute = c.compute, computeLevel = c.level, computeText = ("%.1f"):format(c.compute),
-    computeFraction = c.budget.fraction, budgetReached = c.budget.reached,
+    computeCreditsText = ("%d cr"):format(math.floor(c.computeCredits + 0.5)),
+    computeFraction = c.budget.fraction, budgetReached = c.budget.reached, budgetMessage = c.budget.message,
+    budgetPercent = round(c.budget.fraction * 100), teamPerHour = c.teamPerHour,
+    buy = ComputeView.buyOptions(sim, 1)[1],
     reputation = rep, reputationText = ("Rep %d"):format(rep.level),
     tier = sim.tier, tierText = ("T%d"):format(sim.tier),
   }
@@ -134,7 +137,8 @@ function Model.signature(sim, screenId: string, extra: string?)
   local top, parts = Model.topBar(sim), {}
   parts[#parts + 1] = screenId
   parts[#parts + 1] = extra or ""
-  parts[#parts + 1] = ("%s|%s|%s|%s|%d"):format(top.creditsText, top.computeText, top.reputationText, top.tierText, round(top.computeFraction * 100))
+  parts[#parts + 1] = ("%s|%s|%s|%s|%d|%s|%s|%s"):format(top.creditsText, top.computeText, top.reputationText, top.tierText,
+    round(top.computeFraction * 100), top.computeLevel, tostring(top.budgetReached), tostring(top.buy.affordable))
   for _, p in ipairs(Model.map(sim).planets) do parts[#parts + 1] = p.id .. (p.lit and "+" or "-") end
   for _, m in ipairs(Model.map(sim).markets) do parts[#parts + 1] = m.id end
   for _, l in ipairs(Model.feed(sim)) do parts[#parts + 1] = l.text .. l.status end

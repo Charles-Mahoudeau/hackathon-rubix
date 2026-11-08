@@ -9,6 +9,7 @@ local Screens = require("@scripts/config/screens")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
+local ComputeView = require("@scripts/ui/compute_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
 local Shell = {}
@@ -77,20 +78,30 @@ local function topBar(font, r, bar)
     return { style = { direction = "column", gap = 2, justify = "center", extra },
       children = { text(font, label, T.small, "dim"), text(font, value, T.heading, valueColor or "text") } }
   end
-  local gauge = { style = { direction = "column", gap = 4, justify = "center", width = 190 },
+  local note = bar.computeLevel == "empty" and "  EMPTY" or (bar.computeLevel == "low" and "  low" or "")
+  local gauge = { style = { direction = "column", gap = 4, justify = "center", width = 230 },
     children = {
-      text(font, "Compute  " .. bar.computeText, T.small, "dim"),
+      text(font, ("Compute  %s (%s)%s"):format(bar.computeText, bar.computeCreditsText, note), T.small, bar.computeLevel == "ok" and "dim" or Theme.semantic.warning),
       { style = { height = 8, width = "100%" }, background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
         children = { { style = { height = "100%", width = ("%d%%"):format(math.floor(bar.computeFraction * 100)) },
           background = { color = UiTheme.color(bar.budgetReached and Theme.semantic.warning or gaugeColor), radius = 2 } } } },
     } }
-  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = 32, paddingX = L.pad }), {
+  -- Always offered: the button is greyed, never hidden, when the credits do not cover the pack (it then does nothing).
+  local buyColor = bar.buy.affordable and "cyan" or "dim"
+  local buy = { style = { width = 176, height = 28, justify = "center", alignItems = "center" },
+    background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(buyColor, 0.6), borderWidth = 1 },
+    button = { action = bar.buy.action, hovered = UiTheme.hover(buyColor), pressed = UiTheme.pressed(buyColor) },
+    children = { text(font, bar.buy.text, T.small, buyColor) } }
+  local children = {
     text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
     cell("Credits", bar.creditsText, "text"),
     gauge,
+    buy,
     cell("Reputation", repLine, "text"),
     cell("Tier", bar.tierText, "green"),
-  })
+  }
+  if bar.budgetReached then children[#children + 1] = text(font, bar.budgetMessage, T.small, Theme.semantic.warning) end
+  return withChildren(panel(r, { direction = "row", alignItems = "center", gap = 24, paddingX = L.pad }), children)
 end
 
 local function nav(font, r, entries, screenId)
@@ -206,12 +217,65 @@ local function button(font, label: string, action: string, colorName: string, w:
     children = { text(font, label, T.small, colorName) } }
 end
 
+local function tabButtons(font, active: string)
+  local out = {}
+  for _, tab in ipairs(Screens.tabs) do
+    out[#out + 1] = at(tab.x, Screens.tabs.y, button(font, tab.label, "editor.tab." .. tab.id, tab.id == active and "cyan" or "dim", tab.w))
+  end
+  return out
+end
+
+-- Cost of one decision: what the Context panel and the editor both say, from the same prompt the ledger bills.
+local function costRows(font, m, formats)
+  local rows = {
+    text(font, "COST OF ONE DECISION", T.small, "dim"),
+    text(font, m.cost.text, T.heading, "cyan"),
+    text(font, ("%d input + %d output = %d tokens"):format(m.inputTokens, m.outputTokens, m.totalTokens), T.small, "dim"),
+    text(font, "", T.small, "dim"),
+  }
+  for _, name in ipairs({ "rules", "directive", "order", "context", "tools" }) do
+    rows[#rows + 1] = text(font, ("%-10s %5d tokens"):format(name, m.sections[name]), T.body, "text")
+  end
+  rows[#rows + 1] = text(font, "", T.small, "dim")
+  for _, f in ipairs(formats) do
+    rows[#rows + 1] = text(font, ("Context %-7s %5d tokens%s"):format(f.format, f.context, f.active and "  (in use)" or ""), T.small, f.active and "cyan" or "dim")
+  end
+  return rows
+end
+
+-- Per-agent Compute/h, the hourly AI budget and the buy packs, under the editor fields.
+local function computeBlock(font, cv, nodeAt)
+  local c = Screens.compute
+  local y = c.y
+  nodeAt(L.pad, y, text(font, "COMPUTE PER HOUR  (who thinks the most)", T.small, "dim"))
+  y += c.rowHeight + 2
+  for _, row in ipairs(cv.rows) do
+    local blocked = row.state == "no_compute"
+    local state = blocked and ("no compute: " .. tostring(row.blockReason or "")) or row.state
+    local line = ("%-10s %6.1f /h  (%d cr/h)  %s"):format(row.id, row.computePerHour, math.floor(row.creditsPerHour + 0.5), state)
+    nodeAt(L.pad, y, text(font, line, T.small, blocked and Theme.semantic.warning or (row.thinksMost and #cv.rows > 1 and "cyan" or "text")))
+    y += c.rowHeight
+  end
+  nodeAt(L.pad, y, text(font, ("%-10s %6.1f /h  (%d cr/h)"):format("team", cv.top.teamPerHour, math.floor(cv.top.teamPerHour * cv.cfg.compute.priceCredits + 0.5)), T.small, "dim"))
+  y += c.rowHeight
+  local b = cv.top.budget
+  local budgetText = b.reached and b.message or ("AI budget this hour: %s / %s tokens (%d%%)"):format(Model.thousands(b.used), Model.thousands(b.cap), math.floor(b.fraction * 100))
+  nodeAt(L.pad, y, text(font, budgetText, T.small, b.reached and Theme.semantic.warning or "dim"))
+  y += c.rowHeight + 6
+  local x = L.pad
+  for _, o in ipairs(cv.buy) do
+    nodeAt(x, y, button(font, o.text, o.action, o.affordable and "cyan" or "dim", c.buyWidth))
+    x += c.buyWidth + c.buyGap
+  end
+end
+
 local function editorScreen(font, r, m, opts)
   local e = Screens.editor
   local counterColor = function(c) return c.amber and Theme.semantic.warning or "dim" end
   local left = {}
   local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
   nodeAt(L.pad, L.pad, text(font, "AGENT EDITOR  " .. m.agentId, T.small, "dim"))
+  for _, n in ipairs(tabButtons(font, "editor")) do left[#left + 1] = n end
   nodeAt(L.pad, e.directiveY - 22, text(font, "Directive (permanent)", T.body, "text"))
   nodeAt(e.leftWidth - L.pad - 150, e.directiveY - 22, text(font, m.directive.text .. " tokens", T.body, counterColor(m.directive)))
   nodeAt(L.pad, e.orderY - 22, text(font, "Order (one-off, until cleared)", T.body, "text"))
@@ -227,26 +291,50 @@ local function editorScreen(font, r, m, opts)
   if note then
     nodeAt(L.pad, e.toastY, text(font, note, T.small, opts.toast and "green" or (not m.canSave and Theme.semantic.warning or "dim")))
   end
+  computeBlock(font, opts.compute, nodeAt)
   local leftPanel = panel({ x = r.x, y = r.y, w = e.leftWidth, h = r.h }, nil)
   withChildren(leftPanel, left)
 
-  local rows = {
-    text(font, "COST OF ONE DECISION", T.small, "dim"),
-    text(font, m.cost.text, T.heading, "cyan"),
-    text(font, ("%d input + %d output = %d tokens"):format(m.inputTokens, m.outputTokens, m.totalTokens), T.small, "dim"),
-    text(font, "", T.small, "dim"),
-  }
-  for _, name in ipairs({ "rules", "directive", "order", "context", "tools" }) do
-    rows[#rows + 1] = text(font, ("%-10s %5d tokens"):format(name, m.sections[name]), T.body, "text")
-  end
-  rows[#rows + 1] = text(font, "", T.small, "dim")
-  for _, f in ipairs(m.formats) do
-    rows[#rows + 1] = text(font, ("Context %-7s %5d tokens%s"):format(f.format, f.context, f.active and "  (in use)" or ""), T.small, f.active and "cyan" or "dim")
-  end
+  local rows = costRows(font, m, m.formats)
   rows[#rows + 1] = text(font, "", T.small, "dim")
   rows[#rows + 1] = text(font, "TOOLS (each one is paid in every prompt)", T.small, "dim")
   for _, t in ipairs(m.tools) do rows[#rows + 1] = text(font, ("%-8s %4d tokens"):format(t.name, t.tokens), T.small, "text") end
   rows[#rows + 1] = text(font, ("Skill slots %d / %d"):format(m.skills.used, m.skills.slots), T.small, "dim")
+  local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
+  return leftPanel, withChildren(rightPanel, rows)
+end
+
+-- Context panel (GR5-6, spec §9.3): every setting with the tokens each option adds to every decision. The total on the
+-- right is the cost the ledger bills for the next decision.
+local function contextScreen(font, r, panelModel)
+  local e, c = Screens.editor, Screens.context
+  local left = {}
+  local function nodeAt(x, y, node) left[#left + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "CONTEXT  " .. panelModel.agentId, T.small, "dim"))
+  for _, n in ipairs(tabButtons(font, "context")) do left[#left + 1] = n end
+  nodeAt(L.pad, c.rowY - 22, text(font, "(+N) = tokens the option adds to every decision of this agent", T.small, "dim"))
+  for i, row in ipairs(panelModel.rows) do
+    local y = c.rowY + (i - 1) * c.rowHeight
+    nodeAt(L.pad, y + 6, text(font, row.label, T.body, row.available and "text" or "dim"))
+    if not row.available then
+      nodeAt(L.pad + c.optionX, y + 6, text(font, ("Locked: unlocks at T%d"):format(row.unlockTier), T.small, Theme.semantic.warning))
+    elseif row.kind == "stepper" then
+      nodeAt(L.pad + c.optionX, y, button(font, "-", row.stepActions.down, "cyan", c.stepWidth))
+      nodeAt(L.pad + c.optionX + c.stepWidth + 10, y + 6, text(font, ("%d  (+%d)"):format(row.value, row.weight), T.body, "cyan"))
+      nodeAt(L.pad + c.optionX + 160, y, button(font, "+", row.stepActions.up, "cyan", c.stepWidth))
+    else
+      for k, o in ipairs(row.options) do
+        local label = o.weight > 0 and ("%s (+%d)"):format(o.text, o.weight) or o.text
+        nodeAt(L.pad + c.optionX + (k - 1) * (c.optionWidth + c.optionGap), y, button(font, label, o.action, o.selected and "cyan" or "dim", c.optionWidth))
+      end
+    end
+  end
+  local leftPanel = withChildren(panel({ x = r.x, y = r.y, w = e.leftWidth, h = r.h }, nil), left)
+
+  local rows = costRows(font, panelModel, panelModel.formatList)
+  rows[#rows + 1] = text(font, "", T.small, "dim")
+  local b = panelModel.budget
+  rows[#rows + 1] = text(font, b.reached and b.message or ("AI budget this hour: %d%% used"):format(math.floor(b.fraction * 100)), T.small, b.reached and Theme.semantic.warning or "dim")
   local rightPanel = panel({ x = r.x + e.costX, y = r.y, w = r.w - e.costX, h = r.h }, { direction = "column", gap = 4, padding = L.pad, overflow = "hidden" })
   return leftPanel, withChildren(rightPanel, rows)
 end
@@ -269,7 +357,7 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
--- The whole screen as a spec for engine.ui.spawn. opts = { font, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
+-- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
   skin = opts.skin
@@ -290,7 +378,14 @@ function Shell.spec(sim, screenId: string, opts)
     for _, n in ipairs(mapOverlay(font, rects.main, Model.map(sim))) do children[#children + 1] = n end
   elseif screenId == "agents" and sim.agents[Screens.editor.agent] then
     local id = Screens.editor.agent
-    local a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim) })
+    local a, b
+    if opts.tab == "context" then
+      a, b = contextScreen(font, rects.main, ComputeView.contextPanel(sim, id))
+    else
+      local compute = { rows = ComputeView.agentRows(sim), top = ComputeView.topBar(sim), cfg = sim.compute.cfg,
+        buy = ComputeView.buyOptions(sim, Screens.compute.packs) }
+      a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute })
+    end
     children[#children + 1] = a
     children[#children + 1] = b
   else

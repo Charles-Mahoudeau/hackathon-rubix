@@ -7,6 +7,7 @@ local Theme = require("@scripts/config/theme")
 local Sim = require("@scripts/sim/sim")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
+local ComputeView = require("@scripts/ui/compute_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
@@ -15,6 +16,7 @@ local SystemMap = require("@scripts/client/system_map")
 local state = {
 	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil, acc = 0,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
+	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 }
 
 local function despawnAll(commands, list)
@@ -36,14 +38,14 @@ end
 local function rebuildUi(commands, glitchFrame)
 	if state.ui then commands:despawn(state.ui) end
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab })
 	state.shell.screen = shown
 end
 
 -- The editor's two text inputs live in their own tree so a shell redraw never drops the focus. Respawned only when the
 -- draft changes from outside the fields (screen entry, preset, save, clear), never while the player types.
 local function syncInputs(commands)
-	local editing = state.shell.screen == "agents"
+	local editing = state.shell.screen == "agents" and state.tab == "editor"
 	if state.inputs and (not editing or state.inputsDirty) then
 		commands:despawn(state.inputs)
 		state.inputs = nil
@@ -62,6 +64,8 @@ local function editorClick(action)
 	elseif action == "editor.clear_order" then
 		Editor.clearOrder(state.sim, id, state.draft)
 		state.toast, state.inputsDirty = nil, true
+	elseif action:sub(1, 11) == "editor.tab." then
+		state.tab, state.toast, state.inputsDirty = action:sub(12), nil, true
 	elseif action:sub(1, 14) == "editor.preset." then
 		Editor.applyPreset(state.sim, state.draft, action:sub(15))
 		state.toast, state.inputsDirty = nil, true
@@ -106,6 +110,7 @@ engine.ecs.system("game.Shell", {
 
 		for click in ctx.events.read("rtype.UiClicked") do
 			if editorClick(click.action) then changed = true end
+			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
@@ -124,7 +129,13 @@ engine.ecs.system("game.Shell", {
 		local extra = ""
 		if state.shell.screen == "agents" and state.sim.agents[Screens.editor.agent] then
 			local m = Editor.model(state.sim, Screens.editor.agent, state.draft)
-			extra = table.concat({ state.draft.directive, state.draft.order, state.toast or "", m.totalTokens }, "|")
+			local rates = {}
+			for _, row in ipairs(ComputeView.agentRows(state.sim)) do rates[#rates + 1] = row.id .. row.computePerHour .. row.state end
+			local settings = {}
+			for key, value in pairs(state.sim.agents[Screens.editor.agent].contextSettings) do settings[#settings + 1] = key .. "=" .. tostring(value) end
+			table.sort(settings)
+			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
+				table.concat(rates, ","), table.concat(settings, ",") }, "|")
 		end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		local due = now - state.lastRefresh >= Screens.refreshSeconds
