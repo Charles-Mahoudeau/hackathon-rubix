@@ -23,6 +23,8 @@ function Offline.run(sim, awaySeconds)
   sim.tally = { credits = {}, units = {}, aborted = {}, startTick = sim.tick }
   local ticks = math.floor(seconds / sim.b.tickSeconds + 0.5)
   local ok, err = pcall(function() for _ = 1, ticks do sim:step() end end)
+  -- The steps counted ticks / speed of real time; the player was really away `awaySeconds` (spec §10.4: the token window is real time).
+  sim.realTicks += awaySeconds / sim.b.tickSeconds - ticks / sim.speed
   local tally = sim.tally
   sim.decide, sim.provider, sim.offline, sim.tally = decide, provider, nil, nil
   if not ok then error(err, 0) end
