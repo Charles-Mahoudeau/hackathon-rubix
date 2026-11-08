@@ -456,12 +456,34 @@ local function travelTicks(self, ship, from, to, jumps)
 end
 
 -- Apply a validated call. Invalid => logged ERROR, ignored.
+-- A call enters the agent's history; an accepted one gets its §11 result table when the action ends (Sim:setResult).
 local function remember(agent, call, ok, err)
-  if not agent or type(call) ~= "table" or type(call.name) ~= "string" then return end
+  if not agent or type(call) ~= "table" or type(call.name) ~= "string" then return nil end
   local h = agent.history
-  h[#h + 1] = { tool = call.name, args = type(call.args) == "table" and call.args or {}, ok = ok,
-    result = ok and {} or { error = err } }
+  agent.histSeq = (agent.histSeq or 0) + 1
+  local args = {}
+  if type(call.args) == "table" then for k, v in pairs(call.args) do if k ~= "ship" then args[k] = v end end end -- `ship` is the sim's own routing key
+  h[#h + 1] = { id = agent.histSeq, tool = call.name, args = args, ok = ok, result = ok and {} or { error = err } }
   if #h > 20 then table.remove(h, 1) end
+  return agent.histSeq
+end
+
+function Sim:setResult(agentId, histId, result, ok)
+  local agent = self.agents[agentId]
+  if not agent or not histId then return end
+  local h = agent.history
+  for i = #h, 1, -1 do
+    if h[i].id == histId then
+      h[i].result = result
+      if ok == false then h[i].ok = false end
+      return
+    end
+  end
+end
+
+local function holdMap(ship)
+  if ship.cargo > 0 and ship.ore then return { [ship.ore] = ship.cargo } end
+  return {}
 end
 
 -- opts.auto: the sim itself issues the call (a full hold sends the ship home); it gets no feed line of its own.
@@ -471,7 +493,7 @@ function Sim:apply(agentId, call, opts)
   local who = self.agents[agentId]
   if who and who.type == "logistician" then who.waitUntil = self.tick + self:ticks(self.b.logistics.cooldownSeconds) end
   local ok, err = self:validate(agentId, call)
-  remember(self.agents[agentId], call, ok, err)
+  local histId = remember(self.agents[agentId], call, ok, err)
   local rec = opts and opts.record
   if opts and opts.skill then rec = DecisionLog.skillStep(self, agentId, opts.skill) end
   if not ok then
@@ -519,7 +541,9 @@ function Sim:apply(agentId, call, opts)
     gain = math.floor(gain * Raiding.priceFactor(self, args.buyer or "hmc"))
     st.stock[args.resource] = st.stock[args.resource] - q
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
-    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
+    local unit = q > 0 and math.floor(gain / q * 10 + 0.5) / 10 or 0
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain), true,
+      { sold = q, unit_price = unit, total = gain })
     self:credit(agentId, rid, gain)
     if orbisUnit then
       if Refining.isGood(args.resource) then Refining.onSale(self, args.resource, q, orbisUnit)
@@ -536,24 +560,31 @@ function Sim:apply(agentId, call, opts)
     f.state, f.timer, f.load = "out", self:ticks(oneWay), { resource = args.resource, qty = q, destination = args.destination }
     f.owner, f.recordId = agentId, rid
     self:log("INFO", ("%s shipped %d %s to %s on %s"):format(agentId, q, args.resource, args.destination, f.id))
-    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("%s on its way (%d s)"):format(f.id, oneWay))
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("%s on its way (%d s)"):format(f.id, oneWay), true,
+      { freighter_id = f.id, eta_s = oneWay })
     return true, { freighter_id = f.id, eta_s = oneWay }
   end
   if agent.type == "logistician" and n == "wait" then
     agent.waitUntil = self.tick + self:ticks(args.seconds)
-    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), "waiting")
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), "waiting", true, {})
     return true
   end
   local shipCall = agent.type == "miner" and (n == "mine" or n == "return" or n == "sell" or n == "scan" or n == "wait")
   if n == "run_skill" then
     local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
     Skills.assign(self, agentId, args.name, args.params)
-    Feed.finish(self, entry, "running skill " .. args.name)
+    agent.skillHistId = histId
+    Feed.finish(self, entry, "running skill " .. args.name, true, {})
     return true
   end
-  if shipCall and n == "return" then self:finishMine(ship) end
+  if shipCall and n == "return" then
+    ship.stopBecause = opts and opts.because or "recalled"
+    self:finishMine(ship)
+  end
   local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
   if shipCall and entry then ship.feedEntry, ship.recordId = entry, rid end
+  -- an automatic call has no feed line: its history row is resolved straight from the ship's dock
+  if shipCall and not entry then ship.autoHist = histId end
   if n == "mine" then
     local vein = self.veins[args.vein]
     -- Which vein the hold came from, for the missions: "mixed" once two veins feed one hold.
@@ -592,16 +623,18 @@ function Sim:apply(agentId, call, opts)
     ship.cargoF = ship.cargo
     if ship.cargo <= 0 then ship.ore, ship.cargoVein = nil, nil end
     self:log("INFO", ("%s stored %d %s"):format(agentId, amt, args.resource))
-    Feed.finish(self, entry, ("%d %s stored"):format(amt, args.resource))
+    Feed.finish(self, entry, ("%d %s stored"):format(amt, args.resource), true,
+      { stored = amt, partial = amt < want, warehouse_free = Logistics.room(self, st) })
     ship.feedEntry = nil
   elseif n == "report" then
     self:log("INFO", agentId .. " report: " .. tostring(args.message))
-    Feed.finish(self, entry, "sent")
+    local delivered = true
     if args.to ~= nil and args.to ~= "player" then
-      self:deliver(args.to, ("from %s: %s"):format(agentId, tostring(args.message)))
+      delivered = self:deliver(args.to, ("from %s: %s"):format(agentId, tostring(args.message)))
     else
       Feed.info(self, agentId, tostring(args.message))
     end
+    Feed.finish(self, entry, "sent", true, { delivered = delivered })
   end
   return true
 end
@@ -622,15 +655,24 @@ function Sim:finishMine(ship)
   local e = ship.feedEntry
   if e and e.tool == "mine" and e.status == "running" then
     local gained = math.max(0, ship.cargo - (ship.mineStartCargo or 0))
-    Feed.finish(self, e, ("+%d %s (%d s)"):format(gained, ship.ore or ship.vein and ship.vein.ore or "ore",
-      math.floor((self.tick - (ship.mineStartTick or self.tick)) * self.b.tickSeconds + 0.5)))
+    local ore = ship.ore or ship.vein and ship.vein.ore or "ore"
+    local seconds = math.floor((self.tick - (ship.mineStartTick or self.tick)) * self.b.tickSeconds + 0.5)
+    local v = ship.vein
+    local result = { mined = { [ore] = gained }, hold_pct = math.floor(ship.cargo * 100 / ship.cargoCap + 0.5),
+      vein_reserve_pct = v and math.floor(v.reserve * 100 / v.max) or 0, duration_s = seconds,
+      stopped_because = ship.stopBecause or "recalled", crowded_by = { table.unpack(ship.crowdedBy or {}) } }
+    ship.stopBecause = nil
+    Feed.finish(self, e, ("+%d %s (%d s)"):format(gained, ore, seconds), true, result)
     ship.feedEntry = nil
   end
 end
 
-function Sim:finishDock(ship, text)
+-- A trip, scan or wait ended: the feed line (or, for an automatic call, the history row) gets its result.
+function Sim:finishDock(ship, text, result)
   local e = ship.feedEntry
-  if e and e.status == "running" then Feed.finish(self, e, text) ship.feedEntry = nil end
+  if e and e.status == "running" then Feed.finish(self, e, text, true, result) ship.feedEntry = nil
+  elseif ship.autoHist then self:setResult(ship.owner, ship.autoHist, result) end
+  ship.autoHist = nil
 end
 
 -- The reasoning the provider gave for the decision being applied (feed line detail); read once.
@@ -661,12 +703,15 @@ function Sim:sell(ship, planetId, opts)
     if orbisUnit then Missions.onOrbisSale(self, ship.ore, qty, orbisUnit) end
     self:finishMine(ship)
     local text = ("sold %d %s, +%d cr"):format(qty, ship.ore, gain)
-    if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
+    local result = { sold = qty, unit_price = math.floor(gain / qty * 10 + 0.5) / 10, total = gain }
+    if opts.dock then result.docked_at, result.hold = planetId, { [ship.ore] = ship.cargo } end
+    if not ship.feedEntry then Feed.info(self, ship.owner, text) end
+    self:finishDock(ship, text, result)
     Missions.onSale(self, ship)
     ship.cargo = ship.cargo - qty
     ship.cargoF = ship.cargo
     if ship.cargo <= 0 then ship.ore, ship.cargoVein = nil, nil end
-  else self:finishDock(ship, "docked, hold empty") end
+  else self:finishDock(ship, "docked, hold empty", { docked_at = planetId, hold = {} }) end
   ship.state = "idle"
 end
 
@@ -712,17 +757,23 @@ function Sim:stepShip(ship, sharing)
       if ship.state == "travel_out" then
         ship.state = "mining"
         ship.ore = ship.vein.ore
-        if ship.vein.reserve < 1 then self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true }) end
+        if ship.vein.reserve < 1 then
+          self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true, because = "vein_depleted" })
+        end
       else
         ship.vein = nil
         ship.crowdedBy = {}
         if ship.cargo > 0 and self:storingStation(ship.at) and not ship.sellOnArrival then
           -- a storing dock (warehouse, outpost) keeps the hold: the agent stores or sells it itself
           self:finishMine(ship)
-          self:finishDock(ship, ("docked at %s, %d %s in the hold"):format(ship.at, ship.cargo, ship.ore))
+          self:finishDock(ship, ("docked at %s, %d %s in the hold"):format(ship.at, ship.cargo, ship.ore),
+            { docked_at = ship.at, hold = holdMap(ship) })
           ship.state = "idle"
-        elseif ship.cargo > 0 then self:sell(ship, ship.at)
-        else self:finishDock(ship, ("docked at %s, hold empty"):format(ship.at)); ship.state = "idle" end
+        elseif ship.cargo > 0 then self:sell(ship, ship.at, { dock = not ship.sellOnArrival })
+        else
+          self:finishDock(ship, ("docked at %s, hold empty"):format(ship.at), { docked_at = ship.at, hold = {} })
+          ship.state = "idle"
+        end
       end
     end
   elseif ship.state == "scanning" or ship.state == "waiting" then
@@ -731,8 +782,12 @@ function Sim:stepShip(ship, sharing)
       if ship.state == "scanning" then
         for _, v in ipairs(self.planets[ship.scanPlanet].veins) do v.scanned = true end
         self:log("INFO", "scan " .. ship.scanPlanet)
-        self:finishDock(ship, ("%d veins revealed"):format(#self.planets[ship.scanPlanet].veins))
-      else self:finishDock(ship, "done waiting") end
+        local veins = {}
+        for _, v in ipairs(self.planets[ship.scanPlanet].veins) do
+          veins[v.id] = ("%s/%.1f/%d%%"):format(v.ore, v.richness, math.floor(v.reserve * 100 / v.max))
+        end
+        self:finishDock(ship, ("%d veins revealed"):format(#self.planets[ship.scanPlanet].veins), { veins = veins })
+      else self:finishDock(ship, "done waiting", {}) end
       ship.state = "idle"
     end
   elseif ship.state == "mining" then
@@ -750,8 +805,9 @@ function Sim:stepShip(ship, sharing)
     ship.cargo = math.floor(ship.cargoF + 1e-9)
     local stopAt = math.ceil(ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
     if ship.cargo >= stopAt or v.reserve < 1 then
+      local because = ship.cargo >= ship.cargoCap and "hold_full" or v.reserve < 1 and "vein_depleted" or "hold_target"
       if ship.cargo >= ship.cargoCap then ship.cargo, ship.cargoF = ship.cargoCap, ship.cargoCap end
-      self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true })
+      self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true, because = because })
     end
   end
 end
@@ -1117,7 +1173,7 @@ function Sim:stepAgent(id, agent)
     setAgentState(self, agent, "thinking")
     return
   end
-  self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
+  self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call, prompt = prompt.text }
   local d = self.b.ai
   agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, rec = rec.id, started = status == "running",
     delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }

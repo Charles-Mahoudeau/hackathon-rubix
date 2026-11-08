@@ -45,6 +45,9 @@ local function cell(v, sep)
   return table.concat(parts, ",")
 end
 
+-- One value as a table cell would show it: `k=v,k=v` for a map, `a,b` for a list.
+function Renderer.inline(v) return cell(v, "=") end
+
 local function mapLine(prefix, m)
   local parts = {}
   for _, p in ipairs(m) do parts[#parts + 1] = p[1] .. "=" .. cell(p[2], ":") end
