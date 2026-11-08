@@ -4,6 +4,7 @@ local DebugConfig = require("@scripts/config/debug")
 local Json = require("./json")
 local Ai = require("./ai")
 local Persistence = require("./persistence")
+local Offline = require("./offline")
 
 local Debug = {}
 
@@ -50,19 +51,16 @@ end
 
 -- The market (M6) must expose forceEvent(kind, marketId, ore); until it exists there is nothing to trigger.
 function actions.triggerShortage(sim, args)
-  if not sim.market then return false, "unavailable: no market yet (M6)" end
+  if not sim.market then return false, "unavailable: no market" end
   return sim.market:forceEvent("shortage", args.market, args.ore)
 end
 
--- Same code path as the offline summary will use (M5): AI-mode agents do nothing while away, so the decider is detached.
+-- The same code path as a real load after an absence (spec §14): returns the "While you were away" report.
 function actions.simulateAway(sim, args)
   local hours = args.hours or DebugConfig.awayHours
   if not positiveNumber(hours) or hours > DebugConfig.maxAwayHours then return false, "bad hours" end
-  local before, decide = sim.resources.credits, sim.decide
-  sim.decide = nil
-  sim:run(math.floor(hours * 3600 / sim.b.tickSeconds + 0.5))
-  sim.decide = decide
-  return true, { hours = hours, credits = sim.resources.credits - before }
+  local report = Offline.run(sim, hours * 3600)
+  return true, { hours = hours, credits = report.credits, report = report }
 end
 
 function actions.setProvider(sim, args)

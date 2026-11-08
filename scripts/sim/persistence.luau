@@ -4,6 +4,8 @@
 local Json = require("./json")
 local Sim = require("./sim")
 local Upgrades = require("./upgrades")
+local Market = require("./market")
+local Offline = require("./offline")
 
 local Persistence = {}
 
@@ -53,6 +55,7 @@ function Persistence.serialize(sim, savedAt)
       records = sim.records,
       recordSeq = sim.recordSeq,
       missions = sim.missions,
+      market = Market.serialize(sim.market),
     }),
     veins = veins,
     ships = ships,
@@ -68,7 +71,11 @@ function Persistence.restore(data, opts)
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
   for k, v in pairs(st.warehouse) do sim.warehouse[k] = v end
-  for id, saved in pairs(st.agents) do sim.agents[id] = saved end
+  for id, saved in pairs(st.agents) do
+    if saved.mode == "default" then saved.mode = "ai" end
+    sim.agents[id] = saved
+  end
+  if st.market then Market.load(sim.market, st.market) end
   for k, v in pairs(data.rng) do sim.rng[k] = v end
   for id, saved in pairs(data.veins) do
     local vein = sim.veins[id]
@@ -85,6 +92,7 @@ function Persistence.restore(data, opts)
     sim.ships[id] = saved
   end
   Upgrades.applyToFleet(sim)
+  sim.savedAt = data.saved_at
   return sim
 end
 
@@ -136,6 +144,13 @@ function Persistence.loadOrNew(storage, path, opts)
   if sim then return sim end
   if e.code == "no_file" then return Sim.new(opts) end
   return nil, e
+end
+
+-- After a load: simulates the time between the save and `now` (real UTC seconds) as offline progression (spec §14).
+-- Returns the "While you were away" report, nil when the absence is ignored (< 60 s) or the save has no timestamp.
+function Persistence.catchUp(sim, now)
+  if type(sim.savedAt) ~= "number" or type(now) ~= "number" then return nil end
+  return Offline.run(sim, now - sim.savedAt)
 end
 
 -- Replaces the save with a fresh game and returns it.

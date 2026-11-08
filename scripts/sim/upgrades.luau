@@ -3,7 +3,7 @@
 local Upgrades = {}
 
 function Upgrades.new()
-  return { drill = 1, hold = 1, engine = 1, scanner = false, archive = 0, ships = 0 }
+  return { drill = 1, hold = 1, engine = 1, scanner = false, archive = 0, ships = 0, warehouse = false, tradingPost = false }
 end
 
 local function item(sim, id) return sim.b.shop.items[id] end
@@ -36,6 +36,8 @@ local function owned(sim, it)
   if it.mark then return up[it.stat] >= it.mark end
   if it.stat == "scanner" then return up.scanner end
   if it.stat == "archive" then return up.archive >= it.max end
+  if it.stat == "warehouse" then return up.warehouse end
+  if it.stat == "tradingPost" then return up.tradingPost end
   return up.ships >= it.max
 end
 
@@ -51,6 +53,7 @@ function Upgrades.blocker(sim, id)
       if o.stat == it.stat and o.mark == it.mark - 1 then return "needs_" .. other end
     end
   end
+  if it.needs and not sim.upgrades[item(sim, it.needs).stat] then return "needs_" .. it.needs end
   if sim.resources.credits < it.cost then return "not_enough_credits" end
   return nil
 end
@@ -99,6 +102,10 @@ function Upgrades.buy(sim, id)
   if it.mark then up[it.stat] = it.mark
   elseif it.stat == "scanner" then up.scanner = true
   elseif it.stat == "archive" then up.archive += 1
+  elseif it.stat == "warehouse" then
+    up.warehouse = true
+    sim:enterTier(3)
+  elseif it.stat == "tradingPost" then up.tradingPost = true
   elseif it.stat == "ship" then
     up.ships += 1
     local n = #sim.shipOrder + 1

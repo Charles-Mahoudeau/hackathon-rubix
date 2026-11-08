@@ -5,6 +5,7 @@ local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local ComputeView = require("@scripts/ui/compute_view")
 local Settings = require("@scripts/sim/context_settings")
+local Skills = require("@scripts/sim/skills")
 
 local Editor = {}
 
@@ -61,7 +62,7 @@ function Editor.model(sim, agentId, draft)
     formats = formats,
     format = p.format,
     tools = Prompt.toolWeights(sim, agentId),
-    skills = { slots = sim:skillSlots(agentId), used = 0 },
+    skills = { slots = sim:skillSlots(agentId), used = Skills.count(sim), active = agent.activeSkill, params = agent.skillParams },
   }
 end
 

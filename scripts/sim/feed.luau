@@ -8,7 +8,13 @@ local Feed = {}
 local function fmtArgs(tool, a)
   if tool == "mine" then return ("%s, %d%%"):format(tostring(a.vein), a.stop_at_hold_pct or 100) end
   if tool == "return" then return a.to or "home" end
-  if tool == "sell" then return a.resource and ("%s, %s"):format(a.resource, tostring(a.qty or "all")) or (a.planet or "") end
+  if tool == "sell" then
+    local where = a.buyer and a.buyer ~= "hmc" and (" @" .. a.buyer) or ""
+    return (a.resource and ("%s, %s"):format(a.resource, tostring(a.qty or "all")) or (a.planet or "")) .. where
+  end
+  if tool == "store" then return ("%s, %s"):format(tostring(a.resource), tostring(a.qty or "all")) end
+  if tool == "ship" then return ("%s, %s -> %s"):format(tostring(a.resource), tostring(a.qty or "all"), tostring(a.destination)) end
+  if tool == "run_skill" then return tostring(a.name) end
   if tool == "wait" then return tostring(a.seconds) end
   if tool == "report" then return "player" end
   if tool == "scan" then return tostring(a.planet) end

@@ -13,6 +13,8 @@ local ComputeView = require("@scripts/ui/compute_view")
 local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
 local MissionsView = require("@scripts/ui/missions_view")
+local ArchiveView = require("@scripts/ui/archive_view")
+local MarketView = require("@scripts/ui/market_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
 local Shell = {}
@@ -497,6 +499,62 @@ local function missionsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Archive (GR5-10, spec §13/§14): company-wide skills with who runs them, the slot count, the demo "Simulate 1 h away"
+-- button and the "While you were away" box.
+local function archiveScreen(font, r, m)
+  local c = Screens.archive
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "ARCHIVE  " .. m.slots.text .. "  skills run with zero Compute", T.small, "dim"))
+  if m.simulateAway then nodeAt(r.w - L.pad - c.buttonWidth, L.pad, button(font, "Simulate 1 h away", m.simulateAway, "cyan", c.buttonWidth)) end
+  local y = c.rowY
+  for _, s in ipairs(m.skills) do
+    local head = ("%s  (%s%s)  %s"):format(s.name, s.agentType, s.loop and ", loops" or "", table.concat(s.params, " "))
+    nodeAt(L.pad, y, text(font, head, T.body, "cyan"))
+    nodeAt(r.w - L.pad - 70, y, button(font, "Delete", s.delete, "dim", 70))
+    y += c.rowHeight + 4
+    for i, st in ipairs(s.steps) do
+      nodeAt(L.pad + 12, y, text(font, ("%d. %s"):format(i, st), T.small, "text"))
+      y += c.rowHeight
+    end
+    for _, u in ipairs(s.runners) do
+      nodeAt(L.pad + 12, y, text(font, ("run by %s %s%s"):format(u.agent, u.params, u.aborted and ("  ABORTED: " .. u.aborted) or ""), T.small, u.aborted and Theme.semantic.error or "green"))
+      if u.restart then nodeAt(r.w - L.pad - 90, y - 4, button(font, "Restart", u.restart, Theme.semantic.warning, 90)) end
+      y += c.rowHeight
+    end
+    y += c.skillGap
+  end
+  if m.offline then
+    local x = r.w - L.pad - c.offlineWidth
+    local oy = c.offlineY + 40
+    nodeAt(x, oy, text(font, m.offline.title:upper(), T.heading, "green"))
+    for i, line in ipairs(m.offline.lines) do nodeAt(x, oy + 28 + (i - 1) * c.rowHeight, text(font, line, T.small, "text")) end
+    nodeAt(x, oy + 36 + (#m.offline.lines) * c.rowHeight, button(font, "Dismiss", m.offline.dismiss, "cyan", c.dismissWidth))
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
+-- Market (GR5-10, spec §6.3): price now, usual price, trend and best buyer per resource, then the latest notices.
+local function marketScreen(font, r, m)
+  local c = Screens.market
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, "MARKET  who buys what, now (faint: usual price)", T.small, "dim"))
+  local y = c.rowY
+  for _, row in ipairs(m.rows) do
+    local color = row.best and "green" or (row.event and Theme.semantic.warning or "text")
+    nodeAt(L.pad, y, text(font, row.text .. (row.best and "  BEST" or "") .. (row.event and ("  " .. row.event) or ""), T.small, color))
+    nodeAt(c.sparkX - 40, y, text(font, row.trend == "up" and "^" or (row.trend == "down" and "v" or "-"), T.small, "dim"))
+    y += c.rowHeight
+  end
+  y += c.noticeGap
+  for _, n in ipairs(m.notices) do
+    nodeAt(L.pad, y, text(font, n, T.small, "dim"))
+    y += c.rowHeight
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- The two text inputs, in their own tree (see config/screens.luau editor). `draft` gives their starting text.
 function Shell.inputsSpec(draft, opts)
   opts = opts or {}
@@ -554,6 +612,10 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
+  elseif screenId == "archive" and (sim.skills and next(sim.skills) or sim.lastOfflineReport) then
+    children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim))
+  elseif screenId == "market" and sim:hasWarehouse() then
+    children[#children + 1] = marketScreen(font, rects.main, MarketView.model(sim))
   else
     children[#children + 1] = empty(font, rects.main, screenId)
   end

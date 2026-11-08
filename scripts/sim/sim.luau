@@ -12,6 +12,10 @@ local DecisionLog = require("@scripts/sim/decision_log")
 local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 local Missions = require("@scripts/sim/missions")
+local Market = require("@scripts/sim/market")
+local Rng = require("@scripts/sim/rng")
+local Skills = require("@scripts/sim/skills")
+local MarketConfig = require("@scripts/config/market")
 
 local Sim = {}
 Sim.__index = Sim
@@ -27,7 +31,8 @@ function Sim.new(opts)
   opts = opts or {}
   local b = opts.balance or Balance
   local seed = opts.seed or b.seed
-  local self = setmetatable({ b = b, tick = 0, logs = {}, seed = seed, rng = { main = seed, stub = seed * 7 + 1 }, tier = 1,
+  local self = setmetatable({ b = b, tick = 0, logs = {}, seed = seed, rng = { main = seed, stub = seed * 7 + 1, market = Rng.seedFor(seed, MarketConfig.streams.market),
+    events = Rng.seedFor(seed, MarketConfig.streams.events) }, tier = 1,
     debug = { creditBoosts = 0 } }, Sim)
   -- Linear congruential stream; its whole state is rng.main, so a save can resume it exactly.
   self.rand = function()
@@ -71,6 +76,10 @@ function Sim.new(opts)
   for _, kind in ipairs(kinds) do self:addAgent(kind, kind) end
   self:addShip("s1", "miner")
   self.skills = {}
+  self.market = Market.new(self.rng, b.tickSeconds, function(kind, text)
+    self:emit("market_notice", { kind = kind, text = text })
+    self:log("INFO", "market: " .. text)
+  end)
   -- One AI budget authority: the queue (concurrency cap + hourly tokens). Its clock is game time here; the real
   -- provider injects real seconds (GR5-15). The Compute ledger bills in Compute and delegates the budget to it.
   local aiCfg = AiConfig
@@ -91,7 +100,7 @@ end
 function Sim:addAgent(id, kind, opts)
   opts = opts or {}
   local def = self.b.agents[kind]
-  local agent = { id = id, type = kind, tier = opts.tier or def.startTier, tools = {}, pending = nil, mode = "default",
+  local agent = { id = id, type = kind, tier = opts.tier or def.startTier, tools = {}, pending = nil, mode = "ai", wakeAiOnSkillAbort = true,
     state = "idle", station = opts.station or self.home, decisions = {}, throttled = false,
     directive = "", order = "", history = {}, inbox = {}, contextSettings = ContextSettings.defaults() }
   for _, t in ipairs(def.tools) do agent.tools[t] = true end
@@ -157,7 +166,35 @@ end
 
 function Sim:inRange(ship, planetId) return inRange(self, ship, planetId) end
 
-function Sim:marketUnlocked(id) return self.tier >= World.markets[id].unlockTier end
+-- Orbis opens with the trading post (spec §6.5); the other markets follow the tier.
+function Sim:marketUnlocked(id)
+  if id == "orbis" then return self.upgrades.tradingPost == true end
+  return self.tier >= World.markets[id].unlockTier
+end
+
+function Sim:hasWarehouse() return self.upgrades.warehouse == true end
+
+-- Units stored in the warehouse, all ores together (spec §6.5: storage 2,000).
+function Sim:warehouseUsed()
+  local n = 0
+  for _, ore in ipairs(self.b.ores) do n += self.warehouse[ore] end
+  return n
+end
+
+-- Where a docked ship is: the warehouse dock (home, once the warehouse stands) or a plain HMC depot.
+function Sim:dockKind(ship)
+  if ship.state == "idle" and ship.at == self.home and self:hasWarehouse() then return "warehouse" end
+  return "depot"
+end
+
+-- Money in: credits, lifetime revenue, decision-log earnings, and the offline tally.
+function Sim:credit(agentId, recordId, gain)
+  self.resources.credits = self.resources.credits + gain
+  self.lifetimeRevenue = self.lifetimeRevenue + gain
+  if agentId then DecisionLog.earned(self, agentId, recordId, gain) end
+  local t = self.tally
+  if t and agentId then t.credits[agentId] = (t.credits[agentId] or 0) + gain end
+end
 
 -- Equipped tools of an agent in the schema order of config/tools.luau (what its prompt lists).
 function Sim:equippedTools(agentId)
@@ -195,12 +232,16 @@ function Sim:buyUpgrade(id) return Upgrades.buy(self, id) end
 -- Tier 2 starts at the revenue threshold; every agent follows the tier (spec §6.6).
 function Sim:updateTier()
   local need = self.b.tierRevenue[self.tier + 1]
-  if need and self.lifetimeRevenue >= need then
-    self.tier += 1
-    for _, agent in pairs(self.agents) do agent.tier = self.tier end
-    self:log("INFO", ("tier %d reached"):format(self.tier))
-    self:emit("tier_up", { tier = self.tier })
-  end
+  if need and self.lifetimeRevenue >= need then self:enterTier(self.tier + 1) end
+end
+
+-- Moves the company to tier `t` (never down); every agent follows (spec §6.6).
+function Sim:enterTier(t)
+  if t <= self.tier then return end
+  self.tier = t
+  for _, agent in pairs(self.agents) do agent.tier = t end
+  self:log("INFO", ("tier %d reached"):format(t))
+  self:emit("tier_up", { tier = t })
 end
 
 -- Player changes a context setting (§9.3); takes effect from the agent's next decision.
@@ -227,6 +268,8 @@ local function ownedShip(self, agentId)
   end
   return self.ships.s1
 end
+
+function Sim:ownedShip(agentId) return ownedShip(self, agentId) end
 
 -- Logistician sell/ship quantity: an integer >= 1, or "all" (everything in stock).
 local function stockQty(self, args)
@@ -262,7 +305,9 @@ function Sim:validate(agentId, call)
   local shipTool = n == "mine" or n == "return" or n == "sell" or n == "scan"
   if agent.type == "miner" and (shipTool or n == "wait") and not ship then return false, "unknown ship" end
   if agent.type == "logistician" and n == "sell" then
-    if args.buyer ~= nil and args.buyer ~= "hmc" then return false, "buyer_locked" end
+    if args.buyer ~= nil and args.buyer ~= "hmc" and not (args.buyer == "orbis" and self:marketUnlocked("orbis")) then
+      return false, "buyer_locked"
+    end
     local q, qerr = stockQty(self, args)
     if not q then return false, qerr end
     if self.warehouse[args.resource] < q then return false, "not_enough_stock" end
@@ -300,22 +345,39 @@ function Sim:validate(agentId, call)
     for _, v in ipairs(self.planets[args.planet].veins) do if not v.scanned then fresh = true end end
     if not fresh then return false, "already_scanned" end
   elseif n == "sell" then
-    if args.buyer ~= nil and args.buyer ~= "hmc" then return false, "buyer_locked" end
+    local buyer = args.buyer or "hmc"
+    if buyer ~= "hmc" and buyer ~= "orbis" then return false, "buyer_locked" end
+    if buyer == "orbis" and not self:marketUnlocked("orbis") then return false, "buyer_locked" end
     if args.planet ~= nil and (not self.planets[args.planet] or not inRange(self, ship, args.planet)) then
       return false, "bad depot"
     end
     if ship.state ~= "idle" then return false, "not_docked" end
+    if buyer == "orbis" and (ship.at ~= self.home or not self:hasWarehouse()) then return false, "not_docked" end
     if ship.cargo <= 0 or not ship.ore then return false, "not_enough_stock" end
+    if args.resource ~= nil and args.resource ~= ship.ore then return false, "not_enough_stock" end
+    if args.qty ~= nil and args.qty ~= "all" and (type(args.qty) ~= "number" or args.qty ~= math.floor(args.qty) or args.qty < 1) then
+      return false, "bad qty"
+    end
+    if type(args.qty) == "number" and args.qty > ship.cargo then return false, "not_enough_stock" end
   elseif n == "wait" then
     local s = args.seconds
     if type(s) ~= "number" or s < self.b.waitMinSeconds or s > self.b.waitMaxSeconds then return false, "bad seconds" end
     if ship and ship.state ~= "idle" then return false, "ship busy" end
   elseif n == "store" then
-    if not self.warehouse[args.resource or ""] or type(args.amount) ~= "number" or args.amount <= 0 then
-      return false, "bad store args"
-    end
+    if self.warehouse[args.resource or ""] == nil then return false, "bad resource" end
+    local q = args.qty
+    if q ~= nil and q ~= "all" and (type(q) ~= "number" or q ~= math.floor(q) or q < 1) then return false, "bad qty" end
+    if not self:hasWarehouse() then return false, "no_warehouse" end
+    if ship.state ~= "idle" or ship.at ~= self.home then return false, "not_docked" end
+    if ship.cargo <= 0 or ship.ore ~= args.resource then return false, "not_enough_stock" end
+    if type(q) == "number" and q > ship.cargo then return false, "not_enough_stock" end
+    if self:warehouseUsed() >= self.b.warehouse.capacity then return false, "warehouse_full" end
   elseif n == "run_skill" then
-    if not self.skills[args.name or ""] then return false, "unknown skill" end
+    local ok, err = Skills.canStart(self, agentId, args.name, args.params)
+    if not ok then
+      if err == "unknown_skill" and self.skills[args.name or ""] then err = "wrong_agent_type" end
+      return false, err
+    end
   end
   return true
 end
@@ -356,14 +418,17 @@ function Sim:apply(agentId, call, opts)
   local ship = self.ships[args.ship or ownedShip(self, agentId).id]
   if agent.type == "logistician" and n == "sell" then
     local q = stockQty(self, args)
-    local price = self.planets[agent.station].depotRate * World.ores[args.resource].basePrice
-    local gain = math.floor(q * price)
+    local gain
+    if args.buyer == "orbis" then
+      local _, total = Market.sell(self.market, "orbis", args.resource, q)
+      gain = math.floor(total)
+    else
+      gain = math.floor(q * self.planets[agent.station].depotRate * World.ores[args.resource].basePrice)
+    end
     self.warehouse[args.resource] = self.warehouse[args.resource] - q
-    self.resources.credits = self.resources.credits + gain
-    self.lifetimeRevenue = self.lifetimeRevenue + gain
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
     Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
-    DecisionLog.earned(self, agentId, rid, gain)
+    self:credit(agentId, rid, gain)
     return true, { sold = q, total = gain }
   elseif agent.type == "logistician" and n == "ship" then
     -- stock is taken at call time, so a second Logistician on the same stock or freighter gets the error (spec §8.6)
@@ -378,6 +443,12 @@ function Sim:apply(agentId, call, opts)
     return true, { freighter_id = f.id, eta_s = oneWay }
   end
   local shipCall = agent.type == "miner" and (n == "mine" or n == "return" or n == "sell" or n == "scan" or n == "wait")
+  if n == "run_skill" then
+    local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
+    Skills.assign(self, agentId, args.name, args.params)
+    Feed.finish(self, entry, "running skill " .. args.name)
+    return true
+  end
   if shipCall and n == "return" then self:finishMine(ship) end
   local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
   if shipCall and entry then ship.feedEntry, ship.recordId = entry, rid end
@@ -396,7 +467,8 @@ function Sim:apply(agentId, call, opts)
     local dest = args.planet or ship.at
     if ship.at ~= dest then
       ship.state, ship.dest, ship.timer = "travel_back", dest, travelTicks(self, ship, ship.at, dest, 0)
-    else self:sell(ship, dest) end
+      ship.sellOnArrival = true
+    else self:sell(ship, dest, { buyer = args.buyer, qty = args.qty }) end
   elseif n == "scan" then
     ship.scanPlanet = args.planet
     if ship.at ~= args.planet then
@@ -407,19 +479,20 @@ function Sim:apply(agentId, call, opts)
   elseif n == "wait" then
     if ship then ship.state, ship.timer = "waiting", self:ticks(args.seconds) end
   elseif n == "store" then
-    local have = self.resources[args.resource]
-    local amt = math.min(args.amount, have, self.b.warehouse.capacity - self.warehouse[args.resource])
-    self.resources[args.resource] = have - amt
+    local want = (args.qty == nil or args.qty == "all") and ship.cargo or args.qty
+    local amt = math.min(want, ship.cargo, self.b.warehouse.capacity - self:warehouseUsed())
+    self:finishMine(ship)
     self.warehouse[args.resource] = self.warehouse[args.resource] + amt
+    ship.cargo = ship.cargo - amt
+    ship.cargoF = ship.cargo
+    if ship.cargo <= 0 then ship.ore, ship.cargoVein = nil, nil end
+    self:log("INFO", ("%s stored %d %s"):format(agentId, amt, args.resource))
     Feed.finish(self, entry, ("%d %s stored"):format(amt, args.resource))
+    ship.feedEntry = nil
   elseif n == "report" then
     self:log("INFO", agentId .. " report: " .. tostring(args.message))
     Feed.finish(self, entry, "sent")
     Feed.info(self, agentId, tostring(args.message))
-  elseif n == "run_skill" then
-    self:log("INFO", "run_skill " .. args.name)
-    Feed.finish(self, entry, "running skill")
-    return self:apply(agentId, self.skills[args.name], { skill = args.name })
   end
   return true
 end
@@ -448,19 +521,28 @@ function Sim:takeReasoning()
 end
 
 -- Sell the hold at the depot (HMC) of planet `planetId`. Empties the hold and its accumulator.
-function Sim:sell(ship, planetId)
+-- opts.buyer "orbis" (trading post, docked at the warehouse) sells at the Orbis price; opts.qty sells part of the hold.
+function Sim:sell(ship, planetId, opts)
+  opts = opts or {}
+  ship.sellOnArrival = nil
   if ship.cargo > 0 and ship.ore then
-    local price = self.planets[planetId].depotRate * World.ores[ship.ore].basePrice
-    local gain = math.floor(ship.cargo * price)
-    self.resources.credits = self.resources.credits + gain
-    self.lifetimeRevenue = self.lifetimeRevenue + gain
-    self:log("INFO", ("sold %d %s for %d"):format(ship.cargo, ship.ore, gain))
-    DecisionLog.earned(self, ship.owner, ship.recordId, gain)
+    local qty = (type(opts.qty) == "number") and math.min(opts.qty, ship.cargo) or ship.cargo
+    local gain
+    if opts.buyer == "orbis" then
+      local _, total = Market.sell(self.market, "orbis", ship.ore, qty)
+      gain = math.floor(total)
+    else
+      gain = math.floor(qty * self.planets[planetId].depotRate * World.ores[ship.ore].basePrice)
+    end
+    self:log("INFO", ("sold %d %s for %d"):format(qty, ship.ore, gain))
+    self:credit(ship.owner, ship.recordId, gain)
     self:finishMine(ship)
-    local text = ("sold %d %s, +%d cr"):format(ship.cargo, ship.ore, gain)
+    local text = ("sold %d %s, +%d cr"):format(qty, ship.ore, gain)
     if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
     Missions.onSale(self, ship)
-    ship.cargo, ship.cargoF, ship.ore, ship.cargoVein = 0, 0, nil, nil
+    ship.cargo = ship.cargo - qty
+    ship.cargoF = ship.cargo
+    if ship.cargo <= 0 then ship.ore, ship.cargoVein = nil, nil end
   else self:finishDock(ship, "docked, hold empty") end
   ship.state = "idle"
 end
@@ -511,7 +593,12 @@ function Sim:stepShip(ship, sharing)
       else
         ship.vein = nil
         ship.crowdedBy = {}
-        if ship.cargo > 0 then self:sell(ship, ship.at)
+        if ship.cargo > 0 and ship.at == self.home and self:hasWarehouse() and not ship.sellOnArrival then
+          -- the warehouse dock keeps the hold: the agent stores or sells it itself
+          self:finishMine(ship)
+          self:finishDock(ship, ("docked at %s, %d %s in the hold"):format(ship.at, ship.cargo, ship.ore))
+          ship.state = "idle"
+        elseif ship.cargo > 0 then self:sell(ship, ship.at)
         else self:finishDock(ship, ("docked at %s, hold empty"):format(ship.at)); ship.state = "idle" end
       end
     end
@@ -535,6 +622,8 @@ function Sim:stepShip(ship, sharing)
     local want = math.min(rate * b.tickSeconds, v.reserve, ship.cargoCap - ship.cargoF)
     ship.cargoF = ship.cargoF + want
     v.reserve = v.reserve - want
+    local tally = self.tally
+    if tally then tally.units[ship.owner] = (tally.units[ship.owner] or 0) + want end
     ship.cargo = math.floor(ship.cargoF + 1e-9)
     local stopAt = math.ceil(ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
     if ship.cargo >= stopAt or v.reserve < 1 then
@@ -614,14 +703,15 @@ function Sim:setDirective(agentId, text) return setText(self, agentId, "directiv
 
 function Sim:setOrder(agentId, text) return setText(self, agentId, "order", text, self.compute.cfg.editor.orderMaxTokens) end
 
--- Skill slots of an agent at its tier (spec D1: 1 slot from T1). Assigning skills is GR5-10.
-function Sim:skillSlots(agentId)
-  local slots = self.b.skillSlots
-  local agent = self.agents[agentId]
+-- Skills the company Archive can hold (spec D1: 1 from T1, +1 per Archive upgrade, +2 with the warehouse). The Archive is
+-- shared, so the agent only decides which type it may run.
+function Sim:archiveCapacity()
   local n = 0
-  for tier, count in pairs(slots) do if tier <= agent.tier and count > n then n = count end end
-  return n + self.upgrades.archive
+  for tier, count in pairs(self.b.skillSlots) do if tier <= self.tier and count > n then n = count end end
+  return n + self.upgrades.archive + (self:hasWarehouse() and self.b.warehouse.extraSkillSlots or 0)
 end
+
+function Sim:skillSlots(agentId) return self:archiveCapacity() end
 
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,
 -- otherwise apply() re-validates every precondition against the live state.
@@ -651,11 +741,10 @@ function Sim:stepFreighters()
       if f.timer <= 0 then
         if f.state == "out" then
           local l = f.load
-          local gain = math.floor(l.qty * World.ores[l.resource].basePrice * World.markets[l.destination].demand[l.resource])
-          self.resources.credits = self.resources.credits + gain
-          self.lifetimeRevenue = self.lifetimeRevenue + gain
+          local _, total = Market.sell(self.market, l.destination, l.resource, l.qty)
+          local gain = math.floor(total)
           self:log("INFO", ("Delivery %s: %d %s sold on %s -> %d cr"):format(f.id, l.qty, l.resource, l.destination, gain))
-          if f.owner then DecisionLog.earned(self, f.owner, f.recordId, gain) end
+          self:credit(f.owner, f.recordId, gain)
           f.state, f.load = "back", nil
           f.timer = self:ticks(World.freighterRoutes[f.station][l.destination])
         else
@@ -824,6 +913,10 @@ function Sim:stepAgent(id, agent)
     end
     return
   end
+  if agent.mode == "skill" then
+    Skills.step(self, id, agent)
+    return
+  end
   if not self.decide then return end
   if not self:needsDecision(id) then
     if agent.type == "miner" and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
@@ -881,16 +974,24 @@ function Sim:step()
     for _, resp in ipairs(self.provider:drain()) do self:onAiResponse(resp) end
   end
   self:stepVeins()
+  Market.step(self.market)
   local byVein = self:minersByVein()
+  local offline = self.offline
   for _, sid in ipairs(self.shipOrder) do
     local ship = self.ships[sid]
-    self:stepShip(ship, ship.vein and byVein[ship.vein.id] or nil)
+    -- offline only the ships of skill-mode agents move (spec §14); the others stay where they were
+    if not offline or (ship.owner and self.agents[ship.owner].mode == "skill") then
+      self:stepShip(ship, ship.vein and byVein[ship.vein.id] or nil)
+    end
   end
   self:stepFreighters()
   self:updateTier()
   Upgrades.claimShips(self)
-  for _, id in ipairs(self.agentOrder) do self:stepAgent(id, self.agents[id]) end
-  self:updateBailout()
+  for _, id in ipairs(self.agentOrder) do
+    local agent = self.agents[id]
+    if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
+  end
+  if not offline then self:updateBailout() end
   Missions.update(self)
 end
 

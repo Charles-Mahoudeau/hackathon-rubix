@@ -3,6 +3,7 @@
 local World = require("@scripts/config/world")
 local Ai = require("@scripts/config/ai")
 local Renderer = require("./context_renderer")
+local Market = require("./market")
 
 local Builder = {}
 
@@ -87,10 +88,10 @@ local function priceSubs(sim, ship, s)
   for _, mid in ipairs(World.marketOrder) do
     if wanted[mid] and sim:marketUnlocked(mid) then
       local p = {}
-      for ore, demand in pairs(World.markets[mid].demand) do
-        local price = round1(demand * World.ores[ore].basePrice)
-        -- Price trends add the baseline next to the price so the agent can tell a spike from a trend.
-        p[ore] = s.price_trends and ("%s~%s"):format(Renderer.fmtNum(price), Renderer.fmtNum(price)) or price
+      for ore in pairs(World.markets[mid].demand) do
+        local price = round1(Market.price(sim.market, mid, ore))
+        -- Price trends add the usual price next to the price so the agent can tell a spike from a trend.
+        p[ore] = s.price_trends and ("%s~%s"):format(Renderer.fmtNum(price), Renderer.fmtNum(round1(Market.usual(sim.market, mid, ore)))) or price
       end
       subs[#subs + 1] = { mid, oreMap(p) }
     end
@@ -118,7 +119,7 @@ function builders.miner(sim, agent, s)
       rows = veinRows(sim, ship, s.veins) },
     { key = "prices", kind = "maps", subs = priceSubs(sim, ship, s) },
   }
-  local warehouseOn = s.warehouse and sim.tier >= sim.b.warehouse.unlockTier
+  local warehouseOn = s.warehouse and sim:hasWarehouse()
   if warehouseOn then
     data[#data + 1] = { key = "station", kind = "object",
       fields = { { "id", "main@" .. sim.home }, { "cap", sim.b.warehouse.capacity } } }
