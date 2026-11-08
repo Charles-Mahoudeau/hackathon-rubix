@@ -1,16 +1,16 @@
 -- Background.new(screenId, size, position?) builds the layered procedural space backdrop (see assets/shaders/background.glsl).
 -- Returns a list of entity descriptions, back to front, to pass one by one to ctx.commands:spawn(). Client only.
--- Every colour is a palette name (config/planets.luau), so a background cannot leave the 8-colour theme.
+-- Every colour is a theme name (config/theme.luau), so a background cannot leave the 8-colour theme.
 -- Big stars are not drawn here: call Star.new (client/bodies.luau) for those.
 
-local planets = require("@scripts/config/planets")
+local Theme = require("@scripts/config/theme")
 local config = require("@scripts/config/background")
 
 local Background = {}
 
 local function paletteColor(name: string)
-	local hex = planets.palette[name]
-	assert(hex, "Background: colour '" .. tostring(name) .. "' is not in planets.palette")
+	local hex = Theme.palette[name]
+	assert(hex, "Background: colour '" .. tostring(name) .. "' is not in the theme palette")
 	return {
 		x = bit32.extract(hex, 16, 8) / 255,
 		y = bit32.extract(hex, 8, 8) / 255,
@@ -24,7 +24,7 @@ local shader, texture
 local function material(name: string, def, r)
 	shader = shader or engine.assets.shader(r.shaderPath)
 	texture = texture or engine.assets.texture(r.texturePath)
-	local stars = def.stars or { "bone", "bone" }
+	local stars = def.stars or { "text", "text" }
 	return engine.assets.material({
 		name = name,
 		shader = shader,

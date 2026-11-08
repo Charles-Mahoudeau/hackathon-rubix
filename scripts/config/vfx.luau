@@ -18,8 +18,8 @@ return {
 		allowedSources = { ai_error = true }, -- the ONLY trigger (art direction, GR5-3)
 	},
 	route = {
-		safe = { 0.25, 0.65, 1.0, 1.0 }, -- blue
-		risky = { 1.0, 0.55, 0.15, 1.0 }, -- orange
+		safe = "cyan", -- palette name (config/theme.luau): the cool, safe route
+		risky = "amber", -- the warm, risky route
 		idleAlpha = 0.35,
 		activeAlpha = 1.0,
 		dashLength = 12,
@@ -28,15 +28,15 @@ return {
 		riskyThreshold = 0.5, -- risk in [0,1] at or above this draws orange
 	},
 	halo = {
-		idle = { color = { 0.4, 0.6, 0.8, 1.0 }, alpha = 0.2, pulseHz = 0.0, radius = 1.0 },
-		pending = { color = { 1.0, 0.75, 0.2, 1.0 }, alpha = 0.6, pulseHz = 1.5, radius = 1.15 },
-		executing = { color = { 0.2, 1.0, 0.7, 1.0 }, alpha = 0.9, pulseHz = 0.0, radius = 1.25 },
+		idle = { color = "dim", alpha = 0.2, pulseHz = 0.0, radius = 1.0 },
+		pending = { color = "amber", alpha = 0.6, pulseHz = 1.5, radius = 1.15 },
+		executing = { color = "green", alpha = 0.9, pulseHz = 0.0, radius = 1.25 },
 	},
 	trail = {
 		maxPoints = 12,
 		sampleInterval = 0.05, -- seconds between trail points
 		lifetime = 0.6,
-		color = { 0.5, 0.85, 1.0, 1.0 },
+		color = "cyan",
 		startWidth = 3,
 	},
 }

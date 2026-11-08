@@ -1,18 +1,11 @@
 -- Planet look: the theme palette, and one fixed entry per MVP planet. Balance/art numbers live here only.
 
+local Theme = require("@scripts/config/theme")
+
 local config = {}
 
--- The 8-colour theme (GR5-3), as 0xRRGGBB. PLACEHOLDER values until GR5-3 fixes the real ones: change them here only.
-config.palette = {
-	void = 0x0B0E1A,
-	deep = 0x1F2A44,
-	steel = 0x3E5C76,
-	ice = 0x9FD3E6,
-	sand = 0xD9B26F,
-	rust = 0xB5543A,
-	moss = 0x5F8F5A,
-	bone = 0xF2EBDD,
-}
+-- The 8-colour theme (config/theme.luau) is the only palette: looks below name its colours, lit to shadow.
+config.palette = Theme.palette
 
 config.planetRender = {
 	pixels = 64, -- pixel grid of a planet
@@ -26,58 +19,61 @@ config.planetRender = {
 	lightBorders = { x = 0.4, y = 0.6 },
 }
 
--- Stable seeds: picked once, never regenerated. Colours are palette names, lit to shadow.
+-- Stable seeds: picked once, never regenerated. Colours are theme names, lit to shadow: a neon accent on the lit side,
+-- falling off through dim and panel into bg. A locked planet uses `locked` instead (greyed, no neon).
 -- waterLevel 0 = all land; cloudCover >= 1 = no clouds. Trade planets get the same treatment as harvest ones.
+config.locked = { land = { "dim", "panel", "panel", "bg" }, water = { "panel", "bg" }, cloud = { "dim", "panel" } }
+
 config.planets = {
-	kessa = { -- harvest (Kessa): barren rock
+	kessa = { -- harvest (Kessa): barren rock, the player's home: cyan
 		seed = 3.17,
 		tilt = 0.4,
 		phase = 11,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "sand", "rust", "steel", "deep" },
-		water = { "steel", "deep" },
-		cloud = { "bone", "ice" },
+		land = { "cyan", "dim", "panel", "bg" },
+		water = { "dim", "panel" },
+		cloud = { "text", "dim" },
 	},
-	varn = { -- harvest (Varn): dark, cooled lava
+	varn = { -- harvest (Varn): cobalt world, pale and cold
 		seed = 7.61,
 		tilt = -0.3,
 		phase = 47,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "rust", "deep", "deep", "void" },
-		water = { "rust", "void" },
-		cloud = { "bone", "ice" },
+		land = { "text", "dim", "panel", "bg" },
+		water = { "dim", "panel" },
+		cloud = { "text", "dim" },
 	},
-	ashfall = { -- harvest: volcanic, lava seams
+	ashfall = { -- harvest: volcanic, amber seams
 		seed = 4.29,
 		tilt = 0.25,
 		phase = 59,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "sand", "rust", "rust", "void" },
-		water = { "rust", "void" },
-		cloud = { "bone", "ice" },
+		land = { "amber", "dim", "panel", "bg" },
+		water = { "amber", "bg" },
+		cloud = { "text", "dim" },
 	},
-	lumen = { -- harvest: crystal world, pale and cold
+	lumen = { -- harvest: data-crystal world, acid green
 		seed = 8.12,
 		tilt = -0.35,
 		phase = 83,
 		waterLevel = 0,
 		cloudCover = 1,
-		land = { "ice", "steel", "deep", "void" },
-		water = { "steel", "deep" },
-		cloud = { "bone", "ice" },
+		land = { "green", "dim", "panel", "bg" },
+		water = { "dim", "panel" },
+		cloud = { "text", "dim" },
 	},
-	meridian = { -- trade (Meridian Institute): temperate, oceans and clouds
+	meridian = { -- trade (Meridian Institute): oceans and clouds
 		seed = 5.43,
 		tilt = 0.15,
 		phase = 23,
 		waterLevel = 0.45,
 		cloudCover = 0.55,
-		land = { "sand", "moss", "moss", "deep" },
-		water = { "ice", "steel" },
-		cloud = { "bone", "ice" },
+		land = { "text", "dim", "panel", "bg" },
+		water = { "cyan", "panel" },
+		cloud = { "text", "dim" },
 	},
 	halcyon = { -- trade (Halcyon Shipyards): ice world
 		seed = 9.08,
@@ -85,9 +81,9 @@ config.planets = {
 		phase = 71,
 		waterLevel = 0.38,
 		cloudCover = 0.7,
-		land = { "bone", "ice", "steel", "deep" },
-		water = { "steel", "deep" },
-		cloud = { "bone", "ice" },
+		land = { "text", "dim", "panel", "bg" },
+		water = { "dim", "panel" },
+		cloud = { "text", "dim" },
 	},
 }
 
