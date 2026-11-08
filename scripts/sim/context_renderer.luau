@@ -74,7 +74,8 @@ function Renderer.compact(data)
   for _, sec in ipairs(data) do
     if not isEmpty(sec) then
       if sec.kind == "scalar" then
-        lines[#lines + 1] = sec.key .. ": " .. cell(sec.value, ":")
+        local value = sec.key == "compute" and type(sec.value) == "number" and string.format("%.1f", sec.value) or cell(sec.value, ":")
+        lines[#lines + 1] = sec.key .. ": " .. value
       elseif sec.kind == "object" then
         local parts = {}
         for _, f in ipairs(sec.fields) do parts[#parts + 1] = f[1] .. "=" .. cell(f[2], ":") end
