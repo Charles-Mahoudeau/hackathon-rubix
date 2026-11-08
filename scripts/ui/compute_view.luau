@@ -4,6 +4,7 @@
 local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local Settings = require("@scripts/sim/context_settings")
+local Screens = require("@scripts/config/screens")
 
 local View = {}
 
@@ -42,7 +43,7 @@ function View.agentRows(sim)
   local rows, total = {}, sim.compute:teamRatePerHour()
   for id, agent in pairs(sim.agents) do
     local rate = sim.compute:agentRatePerHour(id)
-    rows[#rows + 1] = { id = id, state = agent.state, blockedReason = agent.blockedReason,
+    rows[#rows + 1] = { id = id, state = agent.state, blockReason = agent.blockReason,
       computePerHour = round1(rate), creditsPerHour = round1(Compute.creditsFor(Ai, rate)),
       share = total > 0 and rate / total or 0, spent = round1(sim.compute.lifetime[id] or 0) }
   end
@@ -61,7 +62,8 @@ function View.buyOptions(sim, maxPacks)
   for packs = 1, maxPacks or 3 do
     local price = Compute.packPrice(Ai, packs)
     out[#out + 1] = { packs = packs, compute = packs * Ai.compute.packSize, price = price,
-      affordable = sim.resources.credits >= price }
+      affordable = sim.resources.credits >= price, action = "compute.buy." .. packs,
+      text = ("Buy %d Compute (%d cr)"):format(packs * Ai.compute.packSize, price) }
   end
   return out
 end
@@ -82,13 +84,24 @@ function View.contextPanel(sim, agentId)
       options[#options + 1] = { value = value, weight = p.sections.context - base.sections.context, total = p.input }
     end
     local weight = current.sections.context - base.sections.context
-    rows[#rows + 1] = { key = key, value = agent.contextSettings[key], weight = weight, options = options,
-      available = available, unlockTier = unlockTier }
+    local row = { key = key, label = Screens.context.labels[key], value = agent.contextSettings[key], weight = weight,
+      options = options, available = available, unlockTier = unlockTier,
+      kind = key == "recent_results" and "stepper" or "choice" }
+    if row.kind == "stepper" then
+      row.stepActions = { down = ("context.%s.step.-1"):format(key), up = ("context.%s.step.1"):format(key) }
+    end
+    for i, o in ipairs(options) do
+      o.text = Screens.context.values[tostring(o.value)] or tostring(o.value)
+      o.action = ("context.%s.%d"):format(key, i)
+      o.selected = o.value == row.value
+    end
+    rows[#rows + 1] = row
   end
-  local formats = {}
+  local formats, formatList = {}, {}
   for _, f in ipairs(Settings.options.format) do
     local p = Prompt.build(sim, agentId, { settings = assert(Settings.with(agent.contextSettings, "format", f)) })
     formats[f] = { context = p.sections.context, total = p.input }
+    formatList[#formatList + 1] = { format = f, context = p.sections.context, total = p.input, active = f == current.format }
   end
   local estimateTokens = current.input + Ai.estimatedOutputTokens
   local compute = Compute.cost(Ai, estimateTokens)
@@ -96,6 +109,7 @@ function View.contextPanel(sim, agentId)
     agentId = agentId,
     rows = rows,
     formats = formats,
+    formatList = formatList,
     sections = current.sections,
     inputTokens = current.input,
     outputTokens = Ai.estimatedOutputTokens,
@@ -103,6 +117,33 @@ function View.contextPanel(sim, agentId)
     cost = { compute = compute, credits = Compute.creditsFor(Ai, compute), text = View.costText(sim, compute) },
     budget = View.topBar(sim).budget,
   }
+end
+
+-- A click from the Compute / Context UI -> handled, ok, err. Pure sim calls, so the whole path is testable headless.
+--   "compute.buy.<packs>"        buy packs of Compute
+--   "context.<key>.<option #>"   pick that option of a setting
+--   "context.<key>.step.<+-n>"   move a number setting (recent results) by n
+function View.act(sim, agentId, action)
+  if type(action) ~= "string" then return false end
+  local packs = action:match("^compute%.buy%.(%d+)$")
+  if packs then return true, sim:buyCompute(tonumber(packs)) end
+  local key, step = action:match("^context%.([%w_]+)%.step%.(%-?%d+)$")
+  if key then
+    local agent = sim.agents[agentId]
+    local opts = Settings.options[key]
+    if not agent or not opts or type(agent.contextSettings[key]) ~= "number" then return true, false, "bad_setting" end
+    local value = math.max(opts[1], math.min(opts[#opts], agent.contextSettings[key] + tonumber(step)))
+    return true, sim:setContextSetting(agentId, key, value)
+  end
+  local index
+  key, index = action:match("^context%.([%w_]+)%.(%d+)$")
+  if key then
+    local opts = Settings.options[key]
+    if not opts or opts[tonumber(index)] == nil then return true, false, "bad_setting" end
+    if not Settings.available(sim, key) then return true, false, "locked" end
+    return true, sim:setContextSetting(agentId, key, opts[tonumber(index)])
+  end
+  return false
 end
 
 return View
