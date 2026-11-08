@@ -24,11 +24,15 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
+local FleetMap = require("@scripts/client/fleet_map")
 local Audio = require("@scripts/client/audio")
 local Sounds = require("@scripts/client/sounds")
 
+-- One entity per sprite of a ship on the map (client/fleet_map.luau); `slot` finds its pose, which game.MapSprites writes.
+engine.ecs.component("game.MapSprite", { fields = { slot = "u32" }, presence = "clientOnly" })
+
 local state = {
-	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
+	fleet = FleetMap.new(), sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
@@ -135,6 +139,7 @@ engine.ecs.system("game.Shell", {
 		Audio.beginFrame(state.audio, now)
 		for _, event in ipairs(state.sim:drainEvents()) do
 			-- The AI-error sound plays only when the glitch accepted the same event, so sound and flicker stay one trigger.
+			FleetMap.onEvent(state.fleet, event)
 			local glitched = Shell.onSimEvent(state.shell, event)
 			if glitched then changed = true end
 			local play = Audio.onEvent(state.audio, event, { speed = state.sim.speed, glitch = glitched })
@@ -191,6 +196,8 @@ engine.ecs.system("game.Shell", {
 			rebuildWorld(ctx.commands)
 		end
 
+		FleetMap.sync(state.fleet, state.sim, now, ctx.commands, state.shell.screen == Screens.defaultScreen)
+
 		local extra = ""
 		if state.shell.screen == "agents" and state.sim.agents[Screens.editor.agent] then
 			local m = Editor.model(state.sim, Screens.editor.agent, state.draft)
@@ -222,5 +229,18 @@ engine.ecs.system("game.Shell", {
 		end
 		syncInputs(ctx.commands)
 		flushRetired(ctx.commands)
+	end,
+})
+
+-- Update, after the shell has spawned and posed the sprites: moves each ship sprite and plays its strip frame.
+engine.ecs.system("game.MapSprites", {
+	phase = "Update",
+	side = "client",
+	query = { read = { "game.MapSprite" }, write = { "rtype.Transform", "rtype.SpriteRenderer" } },
+	after = { "game.Shell" },
+	run = function(ctx)
+		for _, mark, transform, renderer in ctx.query do
+			FleetMap.apply(state.fleet, mark.slot, transform, renderer)
+		end
 	end,
 })
