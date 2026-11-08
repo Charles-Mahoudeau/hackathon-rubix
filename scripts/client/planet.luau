@@ -19,12 +19,15 @@ end
 
 local shader, texture
 
+-- Tests set Planet.assets to a stub: the Luau CLI has no `engine` global.
+local function assets() return Planet.assets or engine.assets end
+
 -- Builds the material of one planet: its shader with the planet's seed, palette and rotation.
 local function material(id: string, def, render)
 	local r = render or config.planetRender
-	shader = shader or engine.assets.shader(r.shaderPath)
-	texture = texture or engine.assets.texture(r.texturePath)
-	return engine.assets.material({
+	shader = shader or assets().shader(r.shaderPath)
+	texture = texture or assets().texture(r.texturePath)
+	return assets().material({
 		name = "planet." .. id,
 		shader = shader,
 		values = {
@@ -47,6 +50,9 @@ local function material(id: string, def, render)
 			water2 = paletteColor(def.water[2]),
 			cloud1 = paletteColor(def.cloud[1]),
 			cloud2 = paletteColor(def.cloud[2]),
+			rimWidth = def.rim and r.rimWidth or 0,
+			rim1 = paletteColor(def.rim and def.rim[1] or "text"),
+			rim2 = paletteColor(def.rim and def.rim[2] or "dim"),
 		},
 	})
 end
@@ -59,7 +65,7 @@ function Planet.fromDef(id: string, def, radius: number, position)
 	return {
 		["rtype.Transform"] = { position = position or { x = 0, y = 0 }, scale = { x = scale, y = scale } },
 		["rtype.SpriteRenderer"] = {
-			texture = texture or engine.assets.texture(r.texturePath),
+			texture = texture or assets().texture(r.texturePath),
 			source = { x = 0, y = 0, z = r.textureSize, w = r.textureSize }, -- the whole texture: UV 0..1
 			origin = { x = r.textureSize / 2, y = r.textureSize / 2 },
 			material = material(id, def, r),
