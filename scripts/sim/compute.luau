@@ -47,11 +47,18 @@ local function prune(list, cutoff)
   while #list > 0 and list[1].t < cutoff do table.remove(list, 1) end
 end
 
+-- Cost for `agentId` after its blueprint discount (`self.discountOf(agentId)` = share saved, 0 when unset).
+function Compute:_cost(agentId, tokens)
+  local d = self.discountOf and agentId and self.discountOf(agentId) or 0
+  if d <= 0 then return Compute.cost(self.cfg, tokens) end
+  return Compute.cost(self.cfg, tokens * (1 - d))
+end
+
 function Compute:_prune() prune(self.spend, self.clock() - self.cfg.compute.rateWindowSeconds) end
 
 -- Can a decision of `inputTokens` (plus the assumed output) be sent now? -> ok, reason ("budget" | "no_compute"), cost
-function Compute:canSend(inputTokens)
-  local cost = Compute.cost(self.cfg, inputTokens + self.cfg.estimatedOutputTokens)
+function Compute:canSend(inputTokens, agentId)
+  local cost = self:_cost(agentId, inputTokens + self.cfg.estimatedOutputTokens)
   if self.budget:budgetReached() then return false, "budget", cost end
   if self.resources.compute + 1e-9 < cost then return false, "no_compute", cost end
   return true, nil, cost
@@ -62,7 +69,7 @@ local function bump(list, e) list[#list + 1] = e end
 -- Bill a request on send, using the estimate. Returns chargeId, cost. The caller must have checked canSend.
 function Compute:charge(agentId, inputTokens, outputTokens)
   local tokens = inputTokens + (outputTokens or self.cfg.estimatedOutputTokens)
-  local cost = Compute.cost(self.cfg, tokens)
+  local cost = self:_cost(agentId, tokens)
   local id, now = self.nextId, self.clock()
   self.nextId = id + 1
   self.resources.compute = math.max(0, snap(self.cfg, self.resources.compute - cost))
@@ -80,7 +87,7 @@ function Compute:settle(chargeId, inputTokens, outputTokens)
   if not c then return nil end
   self.charges[chargeId] = nil
   local tokens = inputTokens + outputTokens
-  local cost = Compute.cost(self.cfg, tokens)
+  local cost = self:_cost(c.agent, tokens)
   local diff = cost - c.cost
   self.resources.compute = math.max(0, snap(self.cfg, self.resources.compute - diff))
   for _, e in ipairs(self.spend) do

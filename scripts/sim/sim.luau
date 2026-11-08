@@ -21,6 +21,7 @@ local Monitor = require("@scripts/sim/monitor")
 local Clock = require("@scripts/sim/clock")
 local Raiding = require("@scripts/sim/raiding")
 local Refining = require("@scripts/sim/refining")
+local Salvage = require("@scripts/sim/salvage")
 local Registry = require("@scripts/sim/branches/registry")
 local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
@@ -83,6 +84,7 @@ function Sim.new(opts)
   self.branchesOpen = {}
   Raiding.init(self)
   Refining.init(self)
+  Salvage.init(self)
   Logistics.init(self)
   Alerts.init(self)
   Monitor.init(self)
@@ -108,6 +110,7 @@ function Sim.new(opts)
   self.aiQueue = AiQueue.new(aiCfg, opts.aiClock or function() return self.realTicks * b.tickSeconds end)
   self.aiConfig = aiCfg
   self.compute = Compute.new(self.resources, aiCfg, function() return self.tick * b.tickSeconds end, self.aiQueue)
+  self.compute.discountOf = function(agentId) return Salvage.computeDiscount(self, agentId) end
   self.missions = Missions.new()
   Missions.update(self)
   return self
@@ -203,6 +206,9 @@ function Sim:dockKind(ship)
 end
 
 -- Money in: credits, lifetime revenue, decision-log earnings, and the offline tally.
+-- Re-derives the stats of every ship from the marks and bonuses owned (after a hold blueprint).
+function Sim:refreshFleet() Upgrades.applyToFleet(self) end
+
 function Sim:credit(agentId, recordId, gain)
   self.resources.credits = self.resources.credits + gain
   self.lifetimeRevenue = self.lifetimeRevenue + gain
@@ -346,6 +352,7 @@ function Sim:validate(agentId, call)
   local n = call.name
   if agent.type == "privateer" and n ~= "run_skill" then return Raiding.validate(self, agent, n, args) end
   if agent.type == "refiner" and n ~= "run_skill" then return Refining.validate(self, agent, n, args) end
+  if agent.type == "scavenger" and n ~= "run_skill" then return Salvage.validate(self, agent, n, args) end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.validate then return branchTool.validate(self, agent, args) end
   local isMiner = agent.type == "miner"
@@ -483,6 +490,9 @@ function Sim:apply(agentId, call, opts)
   end
   if agent.type == "refiner" and n ~= "run_skill" then
     return Refining.apply(self, agentId, call, { record = rid, auto = opts and opts.auto })
+  end
+  if agent.type == "scavenger" and n ~= "run_skill" then
+    return Salvage.apply(self, agentId, call, { record = rid, auto = opts and opts.auto })
   end
   local branchTool = self.registry:toolDef(n)
   if branchTool and branchTool.apply then
@@ -1051,12 +1061,12 @@ function Sim:stepAgent(id, agent)
   end
   if not self.decide then return end
   if not self:needsDecision(id) then
-    if (agent.type == "miner" or agent.type == "logistician" or agent.type == "privateer" or agent.type == "refiner") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
+    if (agent.type == "miner" or agent.type == "logistician" or agent.type == "privateer" or agent.type == "refiner" or agent.type == "scavenger") and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
     return
   end
   if not self:paceAllowed(agent) then return end
   local prompt = Prompt.build(self, id)
-  local canSend, reason = self.compute:canSend(prompt.input)
+  local canSend, reason = self.compute:canSend(prompt.input, id)
   if not canSend then
     setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or "not enough Compute")
     return
@@ -1125,6 +1135,7 @@ function Sim:step()
   Upgrades.claimShips(self)
   Raiding.step(self)
   Refining.step(self)
+  Salvage.step(self)
   for _, id in ipairs(self.agentOrder) do
     local agent = self.agents[id]
     if not offline or agent.mode == "skill" then self:stepAgent(id, agent) end
@@ -1142,6 +1153,7 @@ function Sim:needsDecision(agentId)
   if agent.type == "monitor" then return Monitor.needsDecision(self, agent) end
   if agent.type == "privateer" then return Raiding.needsDecision(self, agent) end
   if agent.type == "refiner" then return Refining.needsDecision(self, agent) end
+  if agent.type == "scavenger" then return Salvage.needsDecision(self, agent) end
   return false
 end
 
@@ -1161,6 +1173,7 @@ function Sim:context(agentId)
   if agent.type == "monitor" then return Monitor.context(self) end
   if agent.type == "privateer" then return Raiding.context(self, agent) end
   if agent.type == "refiner" then return Refining.context(self, agent) end
+  if agent.type == "scavenger" then return Salvage.context(self, agent) end
   if agent.type == "logistician" then
     local st = self.stations[agent.station]
     local markets = {}

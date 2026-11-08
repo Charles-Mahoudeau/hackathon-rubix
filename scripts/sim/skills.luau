@@ -10,9 +10,9 @@ local Skills = {}
 
 -- Which arg is turned into which parameter ("make this a parameter"), and which parameter kinds exist (spec §13.2b).
 local PARAM_OF_ARG = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", stop_at_hold_pct = "pct",
-  route = "route", convoy = "convoy_filter", recipe = "recipe" }
+  route = "route", convoy = "convoy_filter", recipe = "recipe", site = "site" }
 local PARAM_NAMES = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", pct = "pct", station = "station",
-  route = "route", convoy_filter = "convoy_filter", recipe = "recipe" }
+  route = "route", convoy_filter = "convoy_filter", recipe = "recipe", site = "site" }
 
 local function isParam(v) return type(v) == "string" and v:sub(1, 1) == "$" end
 

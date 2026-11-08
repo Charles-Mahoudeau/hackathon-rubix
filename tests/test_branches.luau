@@ -7,6 +7,7 @@ local Branches = require("@scripts/sim/branches/index")
 local Mining = require("@scripts/sim/branches/mining")
 local RaidingBranch = require("@scripts/sim/branches/raiding")
 local RefiningBranch = require("@scripts/sim/branches/refining")
+local SalvageBranch = require("@scripts/sim/branches/salvage")
 local Persistence = require("@scripts/sim/persistence")
 local BranchesView = require("@scripts/ui/branches_view")
 local AlertsView = require("@scripts/ui/alerts_view")
@@ -21,14 +22,14 @@ end
 do
   local s = Sim.new()
   local r = s.registry
-  assert(#Branches.all == 3 and Branches.all[1] == Mining and Branches.all[2] == RaidingBranch and Branches.all[3] == RefiningBranch and r.byId.mining and r.byId.raiding and r.byId.refining)
+  assert(#Branches.all == 4 and Branches.all[1] == Mining and Branches.all[2] == RaidingBranch and Branches.all[3] == RefiningBranch and Branches.all[4] == SalvageBranch and r.byId.mining and r.byId.raiding and r.byId.refining and r.byId.salvage)
   assert(Registry.isOpen(s, "mining") and s.agents.miner and s.ships.s1 and s.ships.s1.owner == "miner")
   local miner = r.agentTypes.miner
   eq(miner.tools, { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" })
   assert(miner.toolSlots == 5 and miner.startTier == 1 and miner.branch == "mining")
   assert(r.toolTier.mine == 1 and r.toolTier["return"] == 1 and r.toolTier.scan == 2 and r.toolTier.store == 3)
   assert(r.toolTier.sell == 1 and r.toolTier.ship == 4 and r.toolTier.set_order == 5)
-  eq(r.alertTypes, { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle", "notoriety_high", "retaliation" })
+  eq(r.alertTypes, { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle", "notoriety_high", "retaliation", "ship_damaged", "site_expiring", "site_spawned" })
   eq(Registry.scopes(s), { "company", "mining", "logistics" })
   assert(r.alertGroup.crowding == "mining" and r:scopeOfAgentType("miner") == "mining" and r:scopeOfAgentType("logistician") == "logistics")
   for _, k in ipairs({ "vein", "resource", "pct", "site", "recipe", "route", "convoy_filter", "destination", "buyer", "station" }) do
@@ -40,7 +41,7 @@ end
 do
   local s = Sim.new()
   local m = BranchesView.model(s)
-  assert(#m.rows == 3 and m.rows[2].id == "raiding" and m.rows[2].state == "locked" and m.rows[3].id == "refining" and m.rows[3].state == "locked")
+  assert(#m.rows == 4 and m.rows[4].id == "salvage" and m.rows[2].id == "raiding" and m.rows[2].state == "locked" and m.rows[3].id == "refining" and m.rows[3].state == "locked")
   assert(m.rows[1].id == "mining" and m.rows[1].state == "open" and #m.rows[1].agents == 1 and m.rows[1].agents[1] == "miner")
   assert(m.used == 1 and m.capacity == s:commandCapacity())
   assert(s:openBranch("mining") == false and select(2, s:openBranch("mining")) == "already_open")

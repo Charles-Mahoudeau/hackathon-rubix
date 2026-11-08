@@ -16,7 +16,7 @@ return {
     ["return"] = { description = "Fly back to a dock.",
       args = { to = str("default home", { enum = { "home", "local_depot" } }) } },
     sell = { description = "Sell the hold (Miner, docked) or a warehouse stock (Logistician) at a buyer.",
-      args = { buyer = str("default hmc", { enum = { "hmc", "orbis" } }), planet = str("planet id"),
+      args = { buyer = str("default hmc", { enum = { "hmc", "orbis", "meridian" } }), planet = str("planet id"),
         resource = str("ore id (Logistician)"), qty = { type = "any", desc = "int>=1|all (Logistician)" } } },
     store = { description = "Move a resource into the warehouse.",
       args = { resource = str("ore id", { required = true }), qty = { type = "any", desc = "int>=1|all, default all" } } },

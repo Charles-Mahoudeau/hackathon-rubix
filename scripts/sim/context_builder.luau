@@ -216,6 +216,29 @@ function builders.privateer(sim, agent, s)
   return data
 end
 
+-- Scavenger (spec §15b.6): time, ship, hold, sites, recent, inbox, credits, compute.
+function builders.scavenger(sim, agent, s)
+  local c = sim.registry.agentTypes.scavenger.context(sim, agent)
+  local sh = c.ship
+  local sites = {}
+  for _, r in ipairs(c.sites) do
+    local layers = {}
+    for i, l in ipairs(r.layers) do layers[i] = ("L%d=%s%s"):format(i, l, r.bands and (":" .. r.bands[i]) or "") end
+    sites[#sites + 1] = { r.id, r.planet, r.left_s, r.type or "?", r.danger or "?", table.concat(layers, ","), r.reach and "y" or "n" }
+  end
+  return {
+    { key = "time", kind = "scalar", value = clock(sim) },
+    { key = "ship", kind = "object", fields = { { "id", sh.id }, { "state", sh.state }, { "at", sh.at }, { "hull", sh.hull .. "/" .. sh.hull_max },
+      { "hold", sh.hold_total .. "/" .. sh.cap }, { "repair_cost", sh.repair_cost } } },
+    { key = "hold", kind = "map", map = sortedPairs(sh.hold) },
+    { key = "sites", kind = "table", cols = { "id", "planet", "left_s", "type", "danger", "layers", "reach" }, rows = sites },
+    { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" }, rows = recentRows(agent, s.recent_results) },
+    { key = "inbox", kind = "strings", items = inboxList(agent, s) },
+    { key = "credits", kind = "scalar", value = sim.resources.credits },
+    { key = "compute", kind = "scalar", value = round1(sim.resources.compute) },
+  }
+end
+
 -- Refiner (spec §15b.6): time, refinery, stock, recipes, margins (setting), prices, recent, inbox, credits, compute.
 function builders.refiner(sim, agent, s)
   local c = sim.registry.agentTypes.refiner.context(sim, agent)

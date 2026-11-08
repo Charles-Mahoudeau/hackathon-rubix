@@ -2,6 +2,7 @@
 -- (also one bought later) gets its stats from here. Pure sim logic: the shop screen only calls buy() and reads catalog().
 local Raiding = require("./raiding")
 local Refining = require("./refining")
+local Salvage = require("./salvage")
 
 local Upgrades = {}
 
@@ -24,10 +25,12 @@ function Upgrades.applyToShip(sim, ship)
       elseif it.stat == "engine" then ship.engineMult, ship.engineMark = it.value, it.mark end
     end
   end
+  ship.cargoCap = math.floor(ship.cargoCap * Salvage.holdMult(sim) + 0.5)
 end
 
 function Upgrades.applyToFleet(sim)
   for _, id in ipairs(sim.shipOrder) do Upgrades.applyToShip(sim, sim.ships[id]) end
+  Salvage.applyHold(sim)
 end
 
 function Upgrades.commandCapacity(sim)
@@ -57,6 +60,7 @@ end
 function Upgrades.blocker(sim, id)
   if Raiding.shopIndex(id) then return Raiding.shopBlocker(sim, id) end
   if Refining.shopItem(id) then return Refining.shopBlocker(sim, id) end
+  if Salvage.shopIndex(id) then return Salvage.shopBlocker(sim, id) end
   local it = item(sim, id)
   if not it then return "unknown_item" end
   if sim.tier < (it.tier or sim.b.shop.tier) then return "tier_locked" end
@@ -89,6 +93,7 @@ function Upgrades.catalog(sim)
   end
   for _, row in ipairs(Raiding.shopRows(sim)) do rows[#rows + 1] = row end
   for _, row in ipairs(Refining.shopRows(sim)) do rows[#rows + 1] = row end
+  for _, row in ipairs(Salvage.shopRows(sim)) do rows[#rows + 1] = row end
   return rows
 end
 
@@ -111,6 +116,7 @@ end
 function Upgrades.buy(sim, id)
   if Raiding.shopIndex(id) then return Raiding.shopBuy(sim, id) end
   if Refining.shopItem(id) then return Refining.shopBuy(sim, id) end
+  if Salvage.shopIndex(id) then return Salvage.shopBuy(sim, id) end
   local why = Upgrades.blocker(sim, id)
   if why then
     sim:log("ERROR", ("shop: cannot buy %s (%s)"):format(tostring(id), why))

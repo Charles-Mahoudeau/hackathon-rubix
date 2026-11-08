@@ -5,6 +5,7 @@
 --   mission = { status, units } }. job = { recipe, qty, left, total, pending, blocked }.
 local World = require("@scripts/config/world")
 local Cfg = require("@scripts/config/branches").refining
+local SalvageCfg = require("@scripts/config/branches").salvage
 local Feed = require("./feed")
 local Market = require("./market")
 local Logistics = require("./logistics")
@@ -23,8 +24,10 @@ local function open(sim) return sim.branchesOpen.refining == true end
 function Refining.isOpen(sim) return open(sim) end
 
 -- Seconds one output unit takes at this refinery (Mk2 is faster).
-local function unitSeconds(ref, recipe)
-  return Cfg.recipes[recipe].time / (ref.mk2 and Cfg.mk2.speed or 1)
+-- Salvage blueprints each add a speed bonus (read straight from sim.salvage: this module must not require sim/salvage).
+local function unitSeconds(sim, ref, recipe)
+  local bp = sim.salvage and sim.salvage.bonuses.refinerySpeed or 0
+  return Cfg.recipes[recipe].time / ((ref.mk2 and Cfg.mk2.speed or 1) * (1 + bp * SalvageCfg.blueprint.refinerySpeed))
 end
 
 -- Base value of the inputs of one output unit.
@@ -325,7 +328,7 @@ function Refining.apply(sim, agentId, call, opts)
     used[ore] = per * args.qty
     st.stock[ore] -= used[ore]
   end
-  local total = math.max(1, sim:ticks(args.qty * unitSeconds(ref, args.recipe)))
+  local total = math.max(1, sim:ticks(args.qty * unitSeconds(sim, ref, args.recipe)))
   ref.job = { recipe = args.recipe, qty = args.qty, left = total, total = total, inputs = used }
   ref.feedEntry, ref.recordId = Feed.begin(sim, agentId, call, sim:takeReasoning(), rid), rid
   sim:log("INFO", ("%s refines %d %s at %s"):format(agentId, args.qty, args.recipe, ref.station))
@@ -406,7 +409,7 @@ function Refining.context(sim, agent)
     local r = Cfg.recipes[good]
     local inputs = {}
     for ore, per in pairs(r.inputs) do inputs[ore] = per end
-    recipes[#recipes + 1] = { name = good, inputs = inputs, output = good, time_s = unitSeconds(ref, good), can_make = makeable(st, good) }
+    recipes[#recipes + 1] = { name = good, inputs = inputs, output = good, time_s = unitSeconds(sim, ref, good), can_make = makeable(st, good) }
   end
   local job
   if ref.job then
