@@ -97,6 +97,14 @@ local function topBar(font, r, bar)
     background = { color = UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(buyColor, 0.6), borderWidth = 1 },
     button = { action = bar.buy.action, hovered = UiTheme.hover(buyColor), pressed = UiTheme.pressed(buyColor) },
     children = { text(font, bar.buy.text, T.small, buyColor) } }
+  local speed = { style = { direction = "row", gap = 4, alignItems = "center" }, children = {} }
+  for _, c in ipairs(bar.speed) do
+    local color = c.active and "cyan" or "dim"
+    speed.children[#speed.children + 1] = { style = { width = 38, height = 28, justify = "center", alignItems = "center" },
+      background = { color = c.active and UiTheme.hover("cyan") or UiTheme.color("panel"), radius = L.radius, borderColor = UiTheme.color(color, 0.6), borderWidth = 1 },
+      button = { action = c.action, hovered = UiTheme.hover(color), pressed = UiTheme.pressed(color) },
+      children = { text(font, c.label, T.small, color) } }
+  end
   local children = {
     text(font, "GRIDMIND", T.heading, "cyan", { marginRight = 16 }),
     cell("Credits", bar.creditsText, "text"),
@@ -104,6 +112,7 @@ local function topBar(font, r, bar)
     buy,
     cell("Reputation", repLine, "text"),
     cell("Tier", bar.tierText, "green"),
+    speed,
   }
   if bar.budgetReached then children[#children + 1] = text(font, bar.budgetMessage, T.small, Theme.semantic.warning) end
   return withChildren(panel(r, { direction = "row", alignItems = "center", gap = 24, paddingX = L.pad }), children)

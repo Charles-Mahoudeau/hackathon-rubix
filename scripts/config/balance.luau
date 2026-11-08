@@ -65,6 +65,10 @@ return {
   -- Offline progress (spec §14): at most maxHours simulated, an absence under minAwaySeconds is ignored.
   offline = { maxHours = 8, minAwaySeconds = 60 },
   reputationLevels = { 25000, 75000, 200000, 500000, 1200000 }, -- spec §6.7: lifetime revenue for Rep 1..5
+  -- Game speed (spec §3). `aiMinRealSeconds`: above x1 a real AI provider may not get a new request from the same agent
+  -- sooner than this many real seconds (the x1 steady state of the thrashing guard: 30 s / 5 decisions), so x16 cannot
+  -- raise the real request rate. `maxStepsPerFrame` bounds the catch-up after a stall (the excess game time is dropped).
+  speed = { levels = { 1, 4, 16 }, default = 1, aiMinRealSeconds = 6, maxStepsPerFrame = 400 },
   logMax = 200,
   seed = 1234,
 }

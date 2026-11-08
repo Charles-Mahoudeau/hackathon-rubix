@@ -5,6 +5,7 @@
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
 local Sim = require("@scripts/sim/sim")
+local Clock = require("@scripts/sim/clock")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
@@ -20,7 +21,7 @@ local Background = require("@scripts/client/background")
 local SystemMap = require("@scripts/client/system_map")
 
 local state = {
-	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil, acc = 0,
+	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
@@ -93,12 +94,7 @@ engine.ecs.system("game.Shell", {
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
-		state.acc += dt
-		local step = state.sim.b.tickSeconds
-		while state.acc >= step do
-			state.sim:step()
-			state.acc -= step
-		end
+		Clock.advance(state.sim, dt)
 		local changed = false
 		for _, event in ipairs(state.sim:drainEvents()) do
 			if Shell.onSimEvent(state.shell, event) then changed = true end
@@ -123,6 +119,7 @@ engine.ecs.system("game.Shell", {
 			if MissionsView.act(state.sim, click.action) then changed = true end
 			if ArchiveView.act(state.sim, click.action) then changed = true end
 			if OfflineView.act(state.sim, click.action) then changed = true end
+			if Clock.act(state.sim, click.action) then changed = true end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
 				state.shell.screen, state.uiSig, state.worldSig, changed = screen, nil, nil, true
