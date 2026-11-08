@@ -3,6 +3,10 @@ local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
 local AiQueue = require("@scripts/sim/ai_queue")
+local ToolsConfig = require("@scripts/config/tools")
+local Compute = require("@scripts/sim/compute")
+local Prompt = require("@scripts/sim/prompt")
+local ContextSettings = require("@scripts/sim/context_settings")
 
 local Sim = {}
 Sim.__index = Sim
@@ -53,10 +57,17 @@ function Sim.new(opts)
   for _, kind in ipairs(kinds) do self:addAgent(kind, kind) end
   self:addShip("s1", "miner")
   self.skills = {}
-  -- Clock for the hourly token budget: game time here; the real provider injects real time (GR5-15).
-  local aiCfg = opts.aiConfig or AiConfig
+  -- One AI budget authority: the queue (concurrency cap + hourly tokens). Its clock is game time here; the real
+  -- provider injects real seconds (GR5-15). The Compute ledger bills in Compute and delegates the budget to it.
+  local aiCfg = AiConfig
+  if opts.aiConfig then -- overrides (tests) laid over the defaults
+    aiCfg = {}
+    for k, v in pairs(AiConfig) do aiCfg[k] = v end
+    for k, v in pairs(opts.aiConfig) do aiCfg[k] = v end
+  end
   self.aiQueue = AiQueue.new(aiCfg, opts.aiClock or function() return self.tick * b.tickSeconds end)
   self.aiConfig = aiCfg
+  self.compute = Compute.new(self.resources, aiCfg, function() return self.tick * b.tickSeconds end, self.aiQueue)
   return self
 end
 
@@ -65,7 +76,8 @@ function Sim:addAgent(id, kind, opts)
   opts = opts or {}
   local def = self.b.agents[kind]
   local agent = { id = id, type = kind, tier = opts.tier or def.startTier, tools = {}, pending = nil, mode = "default",
-    state = "idle", station = opts.station or self.home, decisions = {}, throttled = false }
+    state = "idle", station = opts.station or self.home, decisions = {}, throttled = false,
+    directive = "", order = "", history = {}, inbox = {}, contextSettings = ContextSettings.defaults() }
   for _, t in ipairs(def.tools) do agent.tools[t] = true end
   self.agents[id] = agent
   self.agentOrder[#self.agentOrder + 1] = id
@@ -120,6 +132,36 @@ end
 local function inRange(self, ship, planetId)
   local p = self.planets[planetId]
   return p ~= nil and p.engineMark <= ship.engineMark and (not p.needsDeepNav or self.deepNav)
+end
+
+function Sim:inRange(ship, planetId) return inRange(self, ship, planetId) end
+
+function Sim:marketUnlocked(id) return self.tier >= World.markets[id].unlockTier end
+
+-- Equipped tools of an agent in the schema order of config/tools.luau (what its prompt lists).
+function Sim:equippedTools(agentId)
+  local agent = self.agents[agentId]
+  local out = {}
+  for _, name in ipairs(ToolsConfig.order) do
+    if agent.tools[name] and tierHasTool(self, agent, name) then out[#out + 1] = name end
+  end
+  return out
+end
+
+-- Player changes a context setting (§9.3); takes effect from the agent's next decision.
+function Sim:setContextSetting(agentId, key, value)
+  local agent = self.agents[agentId]
+  if not agent then return false, "unknown agent" end
+  local updated, err = ContextSettings.with(agent.contextSettings, key, value)
+  if not updated then return false, err end
+  agent.contextSettings = updated
+  return true
+end
+
+function Sim:buyCompute(packs)
+  local ok, err = self.compute:buy(packs)
+  if ok then self:log("INFO", ("bought %d Compute for %d cr"):format(packs * self.compute.cfg.compute.packSize, Compute.packPrice(self.compute.cfg, packs))) end
+  return ok, err
 end
 
 local function veinKnown(vein) return (not vein.hidden) or vein.scanned end
@@ -225,8 +267,17 @@ local function travelTicks(self, ship, from, to, jumps)
 end
 
 -- Apply a validated call. Invalid => logged ERROR, ignored.
+local function remember(agent, call, ok, err)
+  if not agent or type(call) ~= "table" or type(call.name) ~= "string" then return end
+  local h = agent.history
+  h[#h + 1] = { tool = call.name, args = type(call.args) == "table" and call.args or {}, ok = ok,
+    result = ok and {} or { error = err } }
+  if #h > 20 then table.remove(h, 1) end
+end
+
 function Sim:apply(agentId, call)
   local ok, err = self:validate(agentId, call)
+  remember(self.agents[agentId], call, ok, err)
   if not ok then
     self:log("ERROR", agentId .. ": rejected " .. tostring(type(call) == "table" and call.name) .. " (" .. err .. ")")
     return false, err
@@ -465,8 +516,8 @@ local function setAgentState(self, agent, state, why)
   end
 end
 
-local function finishRequest(self, agent, reqId)
-  for _, startedId in ipairs(self.aiQueue:complete(reqId, self.b.ai.stubTokensPerDecision)) do
+local function finishRequest(self, reqId, tokens)
+  for _, startedId in ipairs(self.aiQueue:complete(reqId, tokens)) do
     local r = self.reqs[startedId]
     if r then r.started = true end
   end
@@ -480,7 +531,10 @@ function Sim:stepAgent(id, agent)
     if pend.started then pend.delay = pend.delay - 1 end
     if pend.started and pend.delay <= 0 then
       agent.pending = nil
-      finishRequest(self, agent, pend.reqId)
+      local outTokens = Prompt.outputTokens(pend.call)
+      self.compute:settle(pend.charge, pend.input, outTokens)
+      finishRequest(self, pend.reqId, pend.input + outTokens)
+      setAgentState(self, agent, "idle")
       self:resolveDecision(id, pend.call, pend.ctx)
     end
     return
@@ -490,12 +544,10 @@ function Sim:stepAgent(id, agent)
     if agent.type == "miner" and agent.state ~= "no_compute" then setAgentState(self, agent, "acting") end
     return
   end
-  if self.aiQueue:budgetReached() then
-    setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
-    return
-  end
-  if self.resources.compute < self.b.ai.computePerDecision then
-    setAgentState(self, agent, "no_compute", "not enough Compute")
+  local prompt = Prompt.build(self, id)
+  local canSend, reason = self.compute:canSend(prompt.input)
+  if not canSend then
+    setAgentState(self, agent, "no_compute", reason == "budget" and self.aiConfig.budgetMessage or "not enough Compute")
     return
   end
   setAgentState(self, agent, "idle")
@@ -516,11 +568,11 @@ function Sim:stepAgent(id, agent)
     setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
     return
   end
-  self.resources.compute = self.resources.compute - self.b.ai.computePerDecision
+  local charge = self.compute:charge(id, prompt.input)
   agent.decisions[#agent.decisions + 1] = self.tick
   self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
   local d = self.b.ai
-  agent.pending = { call = call, ctx = ctx, reqId = reqId, started = status == "running",
+  agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, started = status == "running",
     delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }
   self.reqs[reqId] = agent.pending
   setAgentState(self, agent, "thinking")
@@ -551,6 +603,8 @@ local function band(richness)
   if richness >= bands.mediumFrom then return "medium" end
   return "low"
 end
+
+function Sim:richnessBand(richness) return band(richness) end
 
 -- Detached snapshot: shares no table with live sim state, so holders cannot mutate it through it.
 -- Hidden veins are omitted and unscanned veins expose only a richness band (spec §4.3).

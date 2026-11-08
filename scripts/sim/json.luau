@@ -1,5 +1,5 @@
 -- Minimal JSON codec (the engine gives scripts none: docs/Http.md). Pure Luau, deterministic output (sorted keys).
--- encode(value) -> string, errors on NaN/inf, functions and mixed tables. decode(text) -> value, errors on bad input.
+-- encode(value) -> string (a Json.map table keeps its key order), nil encodes as null; errors on NaN/inf, functions and mixed tables. decode(text) -> value, errors on bad input.
 local Json = {}
 
 local ESCAPES = { ['"'] = '\\"', ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f", ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t" }
@@ -25,11 +25,20 @@ end
 
 function encodeValue(v, out)
   local t = type(v)
-  if t == "string" then out[#out + 1] = encodeString(v)
+  if v == nil then out[#out + 1] = "null"
+  elseif t == "string" then out[#out + 1] = encodeString(v)
   elseif t == "number" then out[#out + 1] = encodeNumber(v)
   elseif t == "boolean" then out[#out + 1] = v and "true" or "false"
   elseif t == "table" then
-    if isArray(v) then
+    if v.__map then
+      out[#out + 1] = "{"
+      for i, p in ipairs(v) do
+        if i > 1 then out[#out + 1] = "," end
+        out[#out + 1] = encodeString(p[1]) .. ":"
+        encodeValue(p[2], out)
+      end
+      out[#out + 1] = "}"
+    elseif isArray(v) then
       out[#out + 1] = "["
       for i = 1, #v do
         if i > 1 then out[#out + 1] = "," end
@@ -58,6 +67,12 @@ function Json.encode(value)
   local out = {}
   encodeValue(value, out)
   return table.concat(out)
+end
+
+-- Ordered object: Json.map({ {"a", 1}, {"b", 2} }) encodes with the keys in the given order (prompts need a stable layout).
+function Json.map(pairs_)
+  pairs_.__map = true
+  return pairs_
 end
 
 local UNESCAPES = { ['"'] = '"', ["\\"] = "\\", ["/"] = "/", b = "\b", f = "\f", n = "\n", r = "\r", t = "\t" }
