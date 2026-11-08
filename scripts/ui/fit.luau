@@ -195,6 +195,22 @@ function Fit.check(root, view)
       local inner = outer and (outer - padX(s) - 2 * (s.border or 0)) or ctx.inner
       local child = { inner = inner, x = ox, y = oy, fixedHeight = height ~= nil, height = height and (height - padY(s)) or nil }
       for i, kid in ipairs(node.children) do walk(kid, child, path .. "/" .. i) end
+      -- single-line texts placed on the same row must not run into each other
+      local runs = {}
+      for i, kid in ipairs(node.children) do
+        local ks, kt = flat(kid.style), kid.text
+        if ks.position == "absolute" and ks.left and ks.top and kt and not kid.input and not kt.wrap and kt.text ~= "" then
+          runs[#runs + 1] = { left = ks.left, top = ks.top, right = ks.left + Fit.textWidth(kt.text, kt.size or 24), size = kt.size or 24, label = path .. "/" .. i .. " '" .. string.sub(kt.text, 1, 24) .. "'" }
+        end
+      end
+      table.sort(runs, function(a, b) return a.left < b.left end)
+      for i = 1, #runs do
+        for j = i + 1, #runs do
+          local a, b = runs[i], runs[j]
+          if b.left >= a.right - 0.5 then break end
+          if math.abs(a.top - b.top) < math.min(a.size, b.size) * 0.5 then report(a.label, "runs into the text at x=" .. b.left .. " (ends at " .. math.floor(a.right) .. ")") end
+        end
+      end
     end
   end
 

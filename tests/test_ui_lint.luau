@@ -22,6 +22,29 @@ assert(#bad == 2, table.concat(bad, "\n"))
 local fixed = Fit.apply({ style = { width = 100 }, children = { { text = { text = "two words and more words", size = 12 } } } }, view.w)
 assert(fixed.children[1].text.wrap and #Fit.check(fixed, view) == 0, "apply wraps and bounds a flow text")
 
+-- GR5-54: two single-line texts on one row may not run into each other (the Market "BEST" / trend glyph collision)
+local function abs(left, top, str) return { style = { position = "absolute", left = left, top = top, width = 300 }, text = { text = str, size = 12 } } end
+local clash = Fit.check({ style = { width = 400, height = 100 }, children = { abs(0, 10, "0123456789"), abs(60, 10, "x"), abs(60, 40, "y") } }, view)
+assert(#clash == 1 and string.find(clash[1], "runs into", 1, true), table.concat(clash, "\n"))
+assert(#Fit.check({ style = { width = 400, height = 100 }, children = { abs(0, 10, "0123456789"), abs(80, 10, "x") } }, view) == 0, "a gap is not an overlap")
+
+-- GR5-54: the Credits and Reputation cells of the top bar keep a minimum width, so the cells after them (speed buttons) do
+-- not shift as the numbers grow a digit
+do
+  local spec = Shell.spec(Sim.new(), "map", {})
+  local minWidths = {}
+  local function walk(n)
+    for _, k in ipairs(n.children or {}) do
+      local head = k.children and k.children[1]
+      local label = head and head.children and head.children[2] and head.children[2].text and head.children[2].text.text
+      if (label == "Credits" or label == "Reputation") and k.style then minWidths[label] = k.style.minWidth end
+      walk(k)
+    end
+  end
+  walk(spec)
+  assert(minWidths.Credits and minWidths.Credits >= 120 and minWidths.Reputation and minWidths.Reputation >= 240, "top bar cells have a minimum width")
+end
+
 local long = string.rep("a very long feed line that keeps going ", 8)
 local function stress(sim)
   sim.feed = sim.feed or {}
