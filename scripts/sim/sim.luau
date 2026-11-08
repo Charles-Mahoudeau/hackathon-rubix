@@ -574,7 +574,6 @@ end
 
 -- opts.auto: the sim itself issues the call (a full hold sends the ship home); it gets no feed line of its own.
 -- opts.record: the decision-log record of the AI decision being applied; opts.skill: a skill step (its own record);
--- opts.fallback: the stub stands in for a failed provider.
 function Sim:apply(agentId, call, opts)
   local who = self.agents[agentId]
   if who and who.type == "logistician" then who.waitUntil = self.tick + self:ticks(self.b.logistics.cooldownSeconds) end
@@ -589,7 +588,7 @@ function Sim:apply(agentId, call, opts)
     Missions.onError(self, agentId, err)
     return false, err
   end
-  DecisionLog.accepted(self, rec, call, opts and opts.fallback)
+  DecisionLog.accepted(self, rec, call)
   local rid = rec and rec.id
   local args, n = call.args or {}, call.name
   local agent = self.agents[agentId]
@@ -931,10 +930,11 @@ function Sim:pauseAgent(agentId, why)
   self:emit("agent_paused_error", { agent = agentId, reason = why })
 end
 
--- kind: "invalid" (reply or call refused) | "provider" (network/provider failure). key identifies a refused call.
+-- kind: "invalid" (malformed provider reply) | "provider" (network/provider failure) | "sim" (a valid call the sim refused:
+-- only the same call refused twice in a row pauses). key identifies a refused call.
 function Sim:noteFailure(agentId, kind, key)
   local e, rules = errs(self.agents[agentId]), self.aiConfig.errorRules
-  e[kind] = e[kind] + 1
+  if kind ~= "sim" then e[kind] = e[kind] + 1 end
   if key then
     e.same = (key == e.lastKey) and e.same + 1 or 1
     e.lastKey = key
@@ -995,7 +995,6 @@ function Sim:skillSlots(agentId) return self:archiveCapacity() end
 
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,
 -- otherwise apply() re-validates every precondition against the live state.
--- opts.fallback: the stub stands in for a failed provider, so its success must not clear that provider's error streak.
 -- opts.record: the decision-log record of this decision.
 function Sim:resolveDecision(agentId, call, ctx, opts)
   local ship = ownedShip(self, agentId)
@@ -1011,12 +1010,12 @@ function Sim:resolveDecision(agentId, call, ctx, opts)
     local rec = opts and opts.record
     if rec and not rec.reasoning then rec.reasoning = own end
   end
-  local ok, err = self:apply(agentId, call, { record = opts and opts.record, fallback = opts and opts.fallback })
+  local ok, err = self:apply(agentId, call, { record = opts and opts.record })
   self.nextReasoning = nil
   if ok then
-    if not (opts and opts.fallback) then self:noteSuccess(agentId) end
+    self:noteSuccess(agentId)
   else
-    self:noteFailure(agentId, "invalid", Host.json.encode(Host.json.map({ { "n", type(call) == "table" and call.name or "?" },
+    self:noteFailure(agentId, "sim", Host.json.encode(Host.json.map({ { "n", type(call) == "table" and call.name or "?" },
       { "a", type(call) == "table" and call.args or {} } })))
   end
   return ok, err
@@ -1165,8 +1164,8 @@ function Sim:setProvider(provider)
   if provider then provider.budget = self.aiQueue end
 end
 
--- A provider answer for the decision `resp.id`. Failures (error, timeout, invalid) are logged and the sync decider (the
--- stub) takes the decision instead, so the game never stalls on the network. Compute was charged on the estimate at
+-- A provider answer for the decision `resp.id`. Failures (error, timeout, invalid) are logged and count toward the pause
+-- (§8.4); the agent goes back to idle and decides again, no stub stands in. Compute was charged on the estimate at
 -- send and is corrected to the real token count when the provider reports one (a failed request stays charged).
 function Sim:onAiResponse(resp)
   local agentId, agent
@@ -1206,14 +1205,6 @@ function Sim:onAiResponse(resp)
   Feed.error(self, agentId, ("%s (%s)"):format(shown, tostring(resp.error)))
   DecisionLog.failed(self, rec, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
   self:noteFailure(agentId, resp.kind == "invalid" and "invalid" or "provider")
-  if agent.state == "paused_error" then return end
-  if self.decide then
-    local ok, call = pcall(self.decide, self, agentId, pend.ctx)
-    if ok then
-      self:log("WARN", agentId .. ": fell back to stub")
-      self:resolveDecision(agentId, call, pend.ctx, { fallback = true, record = rec })
-    else self:log("ERROR", "decide failed: " .. tostring(call)) end
-  end
 end
 
 -- Step 6 of the tick (spec §3): decide for every agent that is allowed to.

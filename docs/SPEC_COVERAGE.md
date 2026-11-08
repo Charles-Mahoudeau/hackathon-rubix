@@ -21,7 +21,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 7 | GR5-77 | Save/load, autosave, offline catch-up not wired | Gameplay | in review |
 | 8 | GR5-83 | M1/M6/M8 acceptance tests the spec asks for | Gameplay | todo |
 | 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | done |
-| 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | backlog |
+| 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | done |
 | 11 | GR5-86 | Extended T5 demo: prepared save + deplete-vein action | Gameplay | backlog |
 | 12 | GR5-89 | Real-runtime check of UI screens the audit could not verify | Gameplay | in review (checklist below) |
 | 13 | GR5-79 | Per-agent home station, dismiss/rename/set_tools | Gameplay | backlog |
@@ -78,12 +78,12 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 8.1 team, types | PARTIAL | One Monitor per company | GR5-81 |
 | 8.2 agent state | DONE (deviation recorded) | camelCase fields; prompt version in `sim/versions.luau`, metrics from `sim.records` | DECISIONS GR5-85 |
 | 8.3 AI triggers | DONE | `stepAgent`, `thrashAllowed`, `bailoutConditions` | Stub latency 2-4 game s vs 1-3 s real (GR5-78) |
-| 8.4 errors and fallbacks | PARTIAL | `noteFailure`, `onAiResponse` | GR5-78 |
+| 8.4 errors and fallbacks | DONE | `noteFailure`, `onAiResponse` | stub latency 2-4 game s, timeout 20 s kept (DECISIONS.md) |
 | 8.5 anti-softlock | PARTIAL | `acceptEmergencyAdvance`, `balance.bailout` | No UI (GR5-74) |
 | 8.6 conflicts and locks | DONE | `monitorLock`, `agent_locked` | |
 | 8.7 messages and feed | PARTIAL | Monitor feed tag, inbox max 5 | Cyan Monitor tag verified in the runtime (`docs/qa/alerts-monitor-tag.png`); inbox has no `sender` field, deliberate (DECISIONS GR5-85) |
 | 8.8 team view | DONE | `shell.luau` team screen, `docs/qa/team.png` | Net column lost its sign on 3-digit negatives (`-,504`), fixed in GR5-89 |
-| 8.9 Monitor tools, alerts | PARTIAL | `monitor.luau`, `alerts.luau`, heartbeat 60-600 | `assign_skill none`, null `set_order`, `previous_error` (GR5-78, GR5-75) |
+| 8.9 Monitor tools, alerts | PARTIAL | `monitor.luau`, `alerts.luau`, heartbeat 60-600 | `previous_error` (GR5-75) |
 | 9.1 prompt assembly | DONE (deviation recorded) | `prompt.luau` order correct | Tools section is a summary, not JSON schema (DECISIONS GR5-85) |
 | 9.2 builders, renderers, goldens | PARTIAL | Goldens for Miner (`compute_test.luau:50-89`) and Monitor (`test_monitor.luau:248-263`) | Results blank (GR5-75); Logistician/branch goldens missing, `62` vs `62.0` (GR5-84) |
 | 9.3 context settings, 9.4 editor live cost | DONE | `context_settings.luau`, `agent_editor.luau`, `compute_view.luau` | |
