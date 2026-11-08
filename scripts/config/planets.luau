@@ -30,7 +30,7 @@ GameConfig.planetRender = {
 -- Stable seeds: picked once, never regenerated. Colours are palette names, lit to shadow.
 -- waterLevel 0 = all land; cloudCover >= 1 = no clouds. Trade planets get the same treatment as harvest ones.
 GameConfig.planets = {
-	kessel = { -- harvest: barren rock
+	kessa = { -- harvest (Kessa): barren rock
 		seed = 3.17,
 		tilt = 0.4,
 		phase = 11,
@@ -40,7 +40,7 @@ GameConfig.planets = {
 		water = { "steel", "deep" },
 		cloud = { "bone", "ice" },
 	},
-	vanta = { -- harvest: dark, cooled lava
+	varn = { -- harvest (Varn): dark, cooled lava
 		seed = 7.61,
 		tilt = -0.3,
 		phase = 47,
@@ -50,7 +50,27 @@ GameConfig.planets = {
 		water = { "rust", "void" },
 		cloud = { "bone", "ice" },
 	},
-	meridian_base = { -- trade: temperate, oceans and clouds
+	ashfall = { -- harvest: volcanic, lava seams
+		seed = 4.29,
+		tilt = 0.25,
+		phase = 59,
+		waterLevel = 0,
+		cloudCover = 1,
+		land = { "sand", "rust", "rust", "void" },
+		water = { "rust", "void" },
+		cloud = { "bone", "ice" },
+	},
+	lumen = { -- harvest: crystal world, pale and cold
+		seed = 8.12,
+		tilt = -0.35,
+		phase = 83,
+		waterLevel = 0,
+		cloudCover = 1,
+		land = { "ice", "steel", "deep", "void" },
+		water = { "steel", "deep" },
+		cloud = { "bone", "ice" },
+	},
+	meridian = { -- trade (Meridian Institute): temperate, oceans and clouds
 		seed = 5.43,
 		tilt = 0.15,
 		phase = 23,
@@ -60,7 +80,7 @@ GameConfig.planets = {
 		water = { "ice", "steel" },
 		cloud = { "bone", "ice" },
 	},
-	halcyon_port = { -- trade: ice world
+	halcyon = { -- trade (Halcyon Shipyards): ice world
 		seed = 9.08,
 		tilt = -0.2,
 		phase = 71,
