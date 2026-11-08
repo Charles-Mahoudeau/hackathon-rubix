@@ -4,7 +4,6 @@
 -- replicates the sim, the client runs a local stand-in Sim at 10 Hz so the shell shows real numbers.
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
-local Sim = require("@scripts/sim/sim")
 local Clock = require("@scripts/sim/clock")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
@@ -20,7 +19,9 @@ local SkillStudio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local OfflineView = require("@scripts/ui/offline_view")
 local DebugPanel = require("@scripts/ui/debug")
-local Persistence = require("@scripts/sim/persistence")
+local Save = require("@scripts/client/save")
+local Storage = require("@scripts/client/storage")
+local SaveView = require("@scripts/ui/save_view")
 local MarketView = require("@scripts/ui/market_view")
 local StationView = require("@scripts/ui/station_view")
 local UiTheme = require("@scripts/ui/theme")
@@ -44,9 +45,10 @@ local state = {
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
 	debug = DebugPanel.new(), -- Debug screen toast / last prompt / reset confirmation (GR5-72)
-	-- No file API yet [ENGINE]: "Reset save" writes the fresh game to memory, which is all the stand-in sim has.
-	storage = Persistence.memoryStorage(),
+	-- Save / load (GR5-77): the engine's rtype.Persistence plugin behind the Persistence module, driven by client/save.luau.
+	storage = Storage.engine(), save = nil,
 }
+state.save = Save.new(state.storage)
 
 local function despawnAll(commands, list)
 	for _, e in ipairs(list) do commands:despawn(e) end
@@ -94,7 +96,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio, debug = state.debug, save = state.save, mapStations = state.shell.screen == Screens.defaultScreen and SystemMap.stationLabels(state.sim) or nil })
 	state.shell.screen = shown
 end
 
@@ -139,11 +141,19 @@ engine.ecs.system("game.Shell", {
 	phase = "Update",
 	side = "client",
 	query = { read = { "rtype.UiText", "rtype.UiTextInput" } },
-	events = { read = { "rtype.UiClicked", "rtype.UiTextChanged" }, send = { "rtype.PlayMusic" } },
-	calls = { "rtype.audio.playSound" },
+	events = { read = { "rtype.UiClicked", "rtype.UiTextChanged", "rtype.Closed" }, send = { "rtype.PlayMusic" } },
+	calls = { "rtype.audio.playSound", table.unpack(Storage.calls) },
 	run = function(ctx)
 		local now = ctx.time.elapsed
-		state.sim = state.sim or Sim.new()
+		local utc = os.time()
+		state.storage.ctx = ctx
+		-- First frame: load the save, simulate the time away, show the summary (or the error screen).
+		if not state.sim then
+			local report
+			state.sim, report = Save.boot(state.save, now, utc)
+			print(("save: boot %s, tick %d, credits %d, away %s"):format(state.save.error and ("ERROR " .. state.save.error.code) or "ok",
+				state.sim.tick, state.sim.resources.credits, report and (report.simulated_seconds .. " s simulated") or "none"))
+		end
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
@@ -193,8 +203,12 @@ engine.ecs.system("game.Shell", {
 				state.shell.screen, state.uiSig, state.worldSig = openScreen, nil, nil
 			end
 			if OfflineView.act(state.sim, click.action) then changed = true end
-			local debugHandled, freshSim = DebugPanel.act(state.sim, state.debug, click.action, { storage = state.storage, path = "gridmind.save", savedAt = 0 })
+			local debugHandled, freshSim = DebugPanel.act(state.sim, state.debug, click.action, { storage = state.storage, path = state.save.cfg.file, savedAt = utc })
 			if debugHandled then changed = true end
+			if freshSim then Save.reset(state.save, now) end
+			local saveHandled, erased = Save.act(state.save, state.sim, click.action, now, utc)
+			if saveHandled then changed = true end
+			freshSim = freshSim or erased
 			if freshSim then
 				state.sim, state.draft, state.toast, state.inputsDirty = freshSim, nil, nil, true
 				state.uiSig, state.worldSig = nil, nil
@@ -214,6 +228,12 @@ engine.ecs.system("game.Shell", {
 				end
 			end
 		end
+
+		-- The window is closing: save before the frame ends (the engine finishes this frame, then exits).
+		for _ in ctx.events.read("rtype.Closed") do
+			print(("save: quit, saved=%s, tick %d, credits %d"):format(tostring(Save.quit(state.save, state.sim, utc)), state.sim.tick, state.sim.resources.credits))
+		end
+		if Save.tick(state.save, state.sim, now, utc) then print(("save: autosave at %d s, ok=%s"):format(now, tostring(state.save.lastError == nil))) end
 
 		local worldSig = state.shell.screen .. "|" .. SystemMap.signature(state.sim)
 		if worldSig ~= state.worldSig then
@@ -252,6 +272,7 @@ engine.ecs.system("game.Shell", {
 		if state.shell.screen == Screens.defaultScreen then extra = tostring(state.shell.focus) end
 		if state.shell.screen == "debug" then extra = DebugPanel.signature(state.sim, state.debug) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end
+		extra = extra .. "|" .. Save.signature(state.save) .. "|" .. SaveView.signature(state.save, state.sim)
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		-- The map animates (planet pulse, moving route dashes), so it redraws on its own faster beat.
 		local onMap = state.shell.screen == Screens.defaultScreen
