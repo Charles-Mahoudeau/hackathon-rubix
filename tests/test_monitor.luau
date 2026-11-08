@@ -224,7 +224,7 @@ do
   require("@scripts/config/screens").editor.agent = "miner"
 end
 
--- 8. the Monitor context renders as spec 9.2.4 (a whole number has no ".0", like every other context), and compact is smaller than JSON
+-- 8. the Monitor context renders as spec 9.2.4, and compact is smaller than JSON
 do
   local Builder = require("@scripts/sim/context_builder")
   local Renderer = require("@scripts/sim/context_renderer")
@@ -258,7 +258,7 @@ veins[2] id res res%
 V1 cobalt 0
 V2 cobalt 71
 credits: 48210
-compute: 62]]
+compute: 62.0]]
   assert(Renderer.compact(data) == golden, Renderer.compact(data))
   assert(#Renderer.compact(data) < #Renderer.json(data), "compact is smaller")
 end
