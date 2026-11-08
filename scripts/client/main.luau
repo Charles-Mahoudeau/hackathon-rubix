@@ -185,6 +185,8 @@ engine.ecs.system("game.Shell", {
 		end
 
 		for click in ctx.events.read("rtype.UiClicked") do
+			local tick = Audio.onEvent(state.audio, { name = "ui_click" }, { speed = 1 })
+			if tick then Sounds.play(ctx, tick) end
 			if editorClick(click.action) then changed = true end
 			if Shell.act(state.shell, click.action) then changed = true end
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
