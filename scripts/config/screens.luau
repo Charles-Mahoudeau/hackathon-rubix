@@ -93,6 +93,10 @@ return {
   -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
   shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
 
+  -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
+  archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },
+  market = { rowY = 48, rowHeight = 20, sparkX = 520, sparkWidth = 160, sparkHeight = 14, noticeGap = 16 },
+
   -- Missions screen (GR5-9): y offsets inside the main panel, in view pixels.
   missions = { nameY = 30, goalY = 66, hintY = 120, barY = 170, barHeight = 12, barWidth = 420, rewardY = 250, buttonY = 282,
     buttonWidth = 140, listY = 340, rowHeight = 20, rewardX = 360 },

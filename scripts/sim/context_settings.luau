@@ -66,9 +66,9 @@ function Settings.available(sim, key)
   local marketOf = { prices_orbis = "orbis", prices_halcyon = "halcyon", prices_meridian = "meridian" }
   if marketOf[key] then
     local m = World.markets[marketOf[key]]
-    return sim.tier >= m.unlockTier, m.unlockTier
+    return sim:marketUnlocked(marketOf[key]), m.unlockTier
   end
-  if key == "warehouse" then return sim.tier >= Balance.warehouse.unlockTier, Balance.warehouse.unlockTier end
+  if key == "warehouse" then return sim:hasWarehouse(), Balance.warehouse.unlockTier end
   return true, 1
 end
 

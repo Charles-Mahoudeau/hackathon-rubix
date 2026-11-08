@@ -170,6 +170,9 @@ do
   buy(s, "archive"); buy(s, "archive"); buy(s, "archive")
   assert(s:skillSlots("miner") == 4)
   refused(s, "archive", "already_owned")
+  s.resources.credits = 20000
+  buy(s, "warehouse")
+  assert(s:skillSlots("miner") == 6, "the warehouse adds 2 skill slots")
 end
 
 -- 10. save round trip keeps upgrades, both ships and the new agent
@@ -196,7 +199,7 @@ do
   local m = ShopView.model(s)
   local by = {}
   for _, r in ipairs(m.rows) do by[r.id] = r end
-  assert(#m.rows == 9 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
+  assert(#m.rows == 11 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
   assert(by.drill_mk3.note == "Needs Drill Mk2" and by.engine_mk2.action == "shop.buy.engine_mk2" and by.engine_mk2.costText == "1000 cr")
   local handled, ok = ShopView.act(s, "shop.buy.engine_mk2")
   assert(handled and ok and s.upgrades.engine == 2 and s.resources.credits == 0)

@@ -20,7 +20,8 @@ return {
   -- stat: drill (units/s at richness 1), hold (units), engine (travel multiplier; the mark sets range), scanner, archive, ship.
   shop = {
     tier = 2,
-    order = { "drill_mk2", "drill_mk3", "hold_mk2", "hold_mk3", "engine_mk2", "engine_mk3", "scanner", "archive", "ship2" },
+    order = { "drill_mk2", "drill_mk3", "hold_mk2", "hold_mk3", "engine_mk2", "engine_mk3", "scanner", "archive", "ship2",
+      "warehouse", "trading_post" },
     items = {
       drill_mk2 = { name = "Drill Mk2", stat = "drill", mark = 2, cost = 1200, value = 3, desc = "Drill 2 -> 3 u/s" },
       drill_mk3 = { name = "Drill Mk3", stat = "drill", mark = 3, cost = 4000, value = 5, desc = "Drill 3 -> 5 u/s" },
@@ -31,6 +32,9 @@ return {
       scanner = { name = "Scanner", stat = "scanner", cost = 800, desc = "Unlocks the scan tool (takes 1 tool slot)" },
       archive = { name = "Archive slot", stat = "archive", cost = 1000, max = 3, desc = "+1 skill slot per agent" },
       ship2 = { name = "Mining ship #2", stat = "ship", cost = 6000, max = 1, desc = "+1 ship and an empty Miner agent" },
+      -- spec §6.5: the warehouse is bought at T2 and starts T3; the trading post needs it.
+      warehouse = { name = "Warehouse", stat = "warehouse", cost = 10000, desc = "Home dock, storage 2,000, store tool, +2 skill slots" },
+      trading_post = { name = "Trading post", stat = "tradingPost", cost = 4000, needs = "warehouse", desc = "Sell to Orbis, Orbis prices in context" },
     },
   },
   waitMinSeconds = 10,
@@ -43,8 +47,8 @@ return {
     [4] = { "ship" },
   },
   agents = {
-    miner = { tools = { "mine", "return", "sell", "report", "wait", "scan", "run_skill" }, startTier = 1 },
-    logistician = { tools = { "store", "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
+    miner = { tools = { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" }, startTier = 1 },
+    logistician = { tools = { "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
   },
   ai = {
     delaySecondsMin = 2, delaySecondsMax = 4, vagueErrorRate = 0.5, -- Compute cost per decision: config/ai.luau
@@ -55,7 +59,11 @@ return {
   -- spec §8.5: the only free Compute in the game
   bailout = { computeBelow = 2, creditsBelow = 200, grantCompute = 3, cooldownSeconds = 300 },
   freighter = { cargo = 500 }, -- spec §5.2
-  warehouse = { capacity = 2000, unlockTier = 3 },
+  warehouse = { capacity = 2000, unlockTier = 3, extraSkillSlots = 2 },
+  -- Skills (spec §13): name length, recording length, steps per skill, the shortest loop and the Compute needed to wake the AI.
+  skills = { nameMax = 24, recordMin = 2, recordMax = 8, stepsMax = 12, minLoopSeconds = 5, wakeMinCompute = 1 },
+  -- Offline progress (spec §14): at most maxHours simulated, an absence under minAwaySeconds is ignored.
+  offline = { maxHours = 8, minAwaySeconds = 60 },
   reputationLevels = { 25000, 75000, 200000, 500000, 1200000 }, -- spec §6.7: lifetime revenue for Rep 1..5
   logMax = 200,
   seed = 1234,

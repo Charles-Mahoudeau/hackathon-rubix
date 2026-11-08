@@ -135,6 +135,7 @@ assert(not okBad)
 local _, okIdx = View.act(w, "miner", "context.format.9")
 assert(not okIdx)
 w.tier = 3
+w.upgrades.tradingPost = true
 assert(buttons(Shell.spec(w, "agents", { tab = "context" }))["context.prices_orbis.2"], "unlocked toggles get buttons")
 
 -- the Context tab fits the panel: the last row ends inside the main panel

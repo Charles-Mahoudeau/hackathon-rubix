@@ -62,4 +62,28 @@ assert(Persistence.loadOrNew(st, "nope.json").tick == 0, "no save => new game")
 -- reset replaces even an unreadable save, on purpose
 local fresh = assert(Persistence.reset(st, "f.json", 5))
 assert(fresh.tick == 0 and Persistence.load(st, "f.json").tick == 0)
+-- GR5-10: warehouse, skills, params and the market survive a save and evolve identically afterwards
+do
+  local Skills = require("@scripts/sim/skills")
+  local g = Sim.new({ seed = 4 })
+  g.tier = 3
+  for _, ag in pairs(g.agents) do ag.tier = 3 end
+  g.resources.credits = 50000
+  g.upgrades.warehouse, g.upgrades.tradingPost = true, true
+  g.upgrades.archive = 2
+  assert(Skills.save(g, { name = "ore-run", agent_type = "miner", loop = true, params = { vein = { kind = "vein" } },
+    steps = { { tool = "mine", args = { vein = "$vein" } }, { tool = "return" }, { tool = "store", args = { resource = "titanium" } } } }))
+  assert(Skills.assign(g, "miner", "ore-run", { vein = "K1" }))
+  g:run(g:ticks(900))
+  assert(g.warehouse.titanium > 0)
+  local st2 = Persistence.memoryStorage()
+  assert(Persistence.save(g, st2, "g.json", 42))
+  local h = assert(Persistence.load(st2, "g.json"))
+  assert(h.savedAt == 42 and h.warehouse.titanium == g.warehouse.titanium and h.skills["ore-run"].params.vein.kind == "vein")
+  assert(h.agents.miner.mode == "skill" and h.agents.miner.skillParams.vein == "K1")
+  assert(snapshot(g) == snapshot(h))
+  g:run(g:ticks(1800)); h:run(h:ticks(1800))
+  assert(snapshot(g) == snapshot(h), "skill game diverged after load")
+end
+
 print("persistence OK")

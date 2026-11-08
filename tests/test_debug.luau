@@ -24,11 +24,10 @@ local ok, n = Debug.run(s, "revealVeins")
 assert(ok and n == 12)
 assert(s:validate("miner", { name = "mine", args = { vein = "K4" } }))
 
--- shortage needs the M6 market; with one, it is forwarded
-assert(select(2, Debug.run(s, "triggerShortage", {})):find("unavailable"))
-local got
-s.market = { forceEvent = function(_, kind, market, ore) got = { kind, market, ore }; return true end }
-assert(Debug.run(s, "triggerShortage", { market = "orbis", ore = "cobalt" }) and got[1] == "shortage" and got[3] == "cobalt")
+-- shortage is forwarded to the market
+assert(not Debug.run(s, "triggerShortage", { market = "nowhere" }))
+assert(Debug.run(s, "triggerShortage", { market = "orbis", ore = "cobalt" }))
+assert(s.market.markets.orbis.res.cobalt.kind == "shortage", "the market started the shortage")
 
 -- simulate away: 1 h of game time, AI agents idle, decider restored, cap enforced
 local away = Sim.new()
