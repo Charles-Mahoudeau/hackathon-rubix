@@ -20,7 +20,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 6 | GR5-74 | Emergency advance has no notification/button | Gameplay | todo |
 | 7 | GR5-77 | Save/load, autosave, offline catch-up not wired | Gameplay | todo |
 | 8 | GR5-83 | M1/M6/M8 acceptance tests the spec asks for | Gameplay | todo |
-| 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | todo |
+| 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | done |
 | 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | backlog |
 | 11 | GR5-86 | Extended T5 demo: prepared save + deplete-vein action | Gameplay | backlog |
 | 12 | GR5-89 | Real-runtime check of UI screens the audit could not verify | Gameplay | backlog |
@@ -97,8 +97,8 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 13.1-13.4 skills | DONE | `skills.luau`, `checkParams`, `Skills.record`, wake-AI on abort | |
 | 13.5 studio UI | UNVERIFIED | `test_studio.luau` | GR5-89 |
 | 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Only reachable from debug (GR5-72, GR5-77) |
-| 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M2/M4 trigger deviations, hint text (GR5-80) |
-| 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | Missions 6-8 ignore other branches (GR5-80) |
+| 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M4 counts a skill saved before the mission opened (accepted, DECISIONS.md GR5-80) |
+| 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | |
 | 15b.1 ladders | DONE | `config/branches.luau` | |
 | 15b.2 refining, 15b.3 salvage, 15b.4 raiding | DONE | `test_refining.luau`, `test_salvage.luau`, `test_raiding.luau` | Refiner cap 4 not enforced as far as read |
 | 15b.5 V1-V3 missions, 15b.6 stubs | DONE | `missions_view.luau`, branch tests | |

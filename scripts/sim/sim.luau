@@ -778,6 +778,7 @@ function Sim:stepShip(ship, sharing)
     if ship.timer <= 0 then
       if ship.state == "scanning" then
         for _, v in ipairs(self.planets[ship.scanPlanet].veins) do v.scanned = true end
+        self.scanCalls = (self.scanCalls or 0) + 1
         self:log("INFO", "scan " .. ship.scanPlanet)
         local veins = {}
         for _, v in ipairs(self.planets[ship.scanPlanet].veins) do
