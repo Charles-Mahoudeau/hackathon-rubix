@@ -18,13 +18,21 @@ local function rewardText(r)
   return table.concat(parts, " + ")
 end
 
+-- The currencies a reward pays, as icon keys (credits, Compute), for the icons drawn before the reward text.
+local function rewardIcons(r)
+  local out = {}
+  if r.credits then out[#out + 1] = "resource.credits" end
+  if r.compute then out[#out + 1] = "resource.compute" end
+  return out
+end
+
 function View.model(sim)
   local cur, def, index = Missions.current(sim)
   local rows = {}
   for i, e in ipairs(sim.missions) do
     local d = Missions.def(e.id)
     local state = e.status == "claimed" and "claimed" or (e == cur and "current" or "locked")
-    rows[#rows + 1] = { id = e.id, name = ("%d. %s"):format(i, d.name), state = state, reward = rewardText(d.reward) }
+    rows[#rows + 1] = { id = e.id, name = ("%d. %s"):format(i, d.name), state = state, reward = rewardText(d.reward), icons = rewardIcons(d.reward) }
   end
   local out = { rows = rows, total = #Config.missions, allDone = cur == nil, optional = {} }
   -- The raiding branch's own mission (spec §15b.5, V3): optional, listed under the main path once the first interceptor is owned.
@@ -32,7 +40,7 @@ function View.model(sim)
     local v = Raiding.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
     local progress = v.failed and "failed: Notoriety reached 3" or ("%d / %d wins"):format(v.wins, v.target)
-    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }),
+    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }), icons = rewardIcons({ credits = v.reward }),
       goal = v.goal, progressText = progress, failed = v.failed,
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil,
       retry = (v.status == "active" and v.failed) and ("missions.retry." .. v.id) or nil }
@@ -41,7 +49,7 @@ function View.model(sim)
   if Refining.isOpen(sim) then
     local v = Refining.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
-    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }),
+    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ credits = v.reward }), icons = rewardIcons({ credits = v.reward }),
       goal = v.goal, progressText = ("%d / %d units"):format(math.min(v.units, v.target), v.target), hint = v.hint,
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
@@ -49,7 +57,7 @@ function View.model(sim)
   if Salvage.isOpen(sim) then
     local v = Salvage.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
-    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ blueprint = 1 }),
+    out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ blueprint = 1 }), icons = {},
       goal = v.goal, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
@@ -58,7 +66,7 @@ function View.model(sim)
   out.current = {
     id = def.id, index = index, name = def.name, goal = def.goal, hint = def.hint, status = cur.status,
     fraction = p.fraction, percent = math.floor(p.fraction * 100), progressText = p.text, lines = p.lines,
-    rewardText = "Reward: " .. rewardText(def.reward),
+    rewardText = "Reward: " .. rewardText(def.reward), rewardIcons = rewardIcons(def.reward),
     claim = cur.status == "complete" and ("missions.claim." .. def.id) or nil,
     retry = (cur.status == "active" and p.failed) and ("missions.retry." .. def.id) or nil,
     locked = cur.status == "locked",

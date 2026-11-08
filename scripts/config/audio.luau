@@ -20,6 +20,7 @@ return {
 		mine = { file = "audio/sfx_mine.ogg", volume = 0.45, pitchJitter = 0.06, cooldown = 0.35, maxSpeed = 4 },
 		sell = { file = "audio/sfx_sell.ogg", volume = 0.7, pitchJitter = 0.03, cooldown = 0.25, maxSpeed = 4 },
 		scan = { file = "audio/sfx_scan.ogg", volume = 0.6, pitchJitter = 0, cooldown = 0.5, maxSpeed = 4 },
+		click = { file = "audio/sfx_click.ogg", volume = 0.4, pitchJitter = 0.03, cooldown = 0.04 },
 		confirm = { file = "audio/sfx_confirm.ogg", volume = 0.5, pitchJitter = 0.04, cooldown = 0.15, maxSpeed = 4 },
 		error = { file = "audio/sfx_error.ogg", volume = 0.85, pitchJitter = 0, cooldown = 0.4, needsGlitch = true },
 		purchase = { file = "audio/sfx_purchase.ogg", volume = 0.75, pitchJitter = 0, cooldown = 0.2 },
@@ -36,6 +37,7 @@ return {
 
 	-- Sim events that play a cue. agent_paused_error is the AI-error sound (needsGlitch).
 	events = {
+		ui_click = "click", -- not a sim event: client/main.luau raises it for every button press (UiClicked)
 		agent_paused_error = "error",
 		agent_no_compute = "alert",
 		alert_raised = "alert",
