@@ -20,6 +20,7 @@ local SkillStudio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local OfflineView = require("@scripts/ui/offline_view")
 local MarketView = require("@scripts/ui/market_view")
+local StationView = require("@scripts/ui/station_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Background = require("@scripts/client/background")
@@ -31,6 +32,7 @@ local state = {
 	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
+	station = StationView.new(), -- Station screen: the station tab (GR5-73)
 	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 	studio = SkillStudio.new(), -- Archive screen: record / form / assign state (GR5-26)
 	audio = Audio.new(), musicStarted = false, -- sound cues and the ambient loop (GR5-23)
@@ -73,7 +75,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	retire(state.ui)
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, studio = state.studio })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, time = state.lastTime, focus = state.shell.focus, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs, station = state.station, studio = state.studio })
 	state.shell.screen = shown
 end
 
@@ -159,6 +161,7 @@ engine.ecs.system("game.Shell", {
 			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
 			if FleetView.act(state.sim, click.action) then changed = true end
+			if StationView.act(state.station, click.action) then changed = true end
 			if MissionsView.act(state.sim, click.action) then changed = true end
 			if AlertsView.act(state.sim, click.action) then changed = true end
 			if BranchesView.act(state.sim, click.action) then changed = true end
@@ -204,6 +207,7 @@ engine.ecs.system("game.Shell", {
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
+		if state.shell.screen == "station" then extra = StationView.signature(state.sim, state.station) end
 		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
 		if state.shell.screen == "team" then extra = TeamView.signature(state.sim) end
 		if state.shell.screen == "alerts" then extra = AlertsView.signature(state.sim) end
