@@ -5,26 +5,31 @@ Ai = Ai or {}
 Ai.mode = "stub" -- "stub" | "vague"
 
 local function stub(sim, agentId, ctx)
-  if agentId ~= "miner" then return { name = "report", args = { text = "idle" } } end
+  if agentId ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local ship = ctx.ship
   if ship.cargo > 0 then return { name = "sell", args = { ship = ship.id } } end
-  -- pick best known vein across harvest planets (unscanned = assume avg => index 1)
-  local best, bp, bv = -1, nil, nil
-  for id, p in pairs(ctx.planets) do
-    if p.kind == "harvest" then
-      for i, v in ipairs(p.veins) do
-        local score = (v.scanned and v.richness or 1) / (p.jumps + 1)
-        if score > best then best, bp, bv = score, id, i end
+  -- best known vein on a reachable planet: richness (band midpoint if unscanned) x hardness x depot price, per trip jump
+  local mid = { low = 1.0, medium = 1.5, high = 2.0 }
+  local best, bv = -1, nil
+  for _, p in pairs(ctx.planets) do
+    if p.reachable then
+      for _, v in ipairs(p.veins) do
+        local ore = World.ores[v.ore]
+        local depleted = v.reserve ~= nil and v.reserve < 1
+        local score = (v.richness or mid[v.band]) * ore.hardness * ore.basePrice * p.depotRate / (v.jumps + 1)
+        if not depleted and score > best then best, bv = score, v.id end
       end
     end
   end
-  return { name = "mine", args = { planet = bp, vein = bv, ship = ship.id } }
+  if not bv then return { name = "wait", args = { seconds = sim.b.waitMinSeconds } } end
+  return { name = "mine", args = { vein = bv, ship = ship.id } }
 end
 
 -- Deliberately vague: sometimes emits invalid calls, to exercise validation.
 local function vague(sim, agentId, ctx)
   if sim.rand() < sim.b.ai.vagueErrorRate then
-    local bad = { { name = "dig", args = {} }, { name = "mine", args = { planet = "kessel", vein = 99 } }, { name = "scan", args = { planet = "kessel" } } }
+    local bad = { { name = "dig", args = {} }, { name = "mine", args = { vein = "K99" } }, { name = "scan", args = { planet = "kessa" } },
+      { name = "mine", args = { vein = "A1" } } }
     return bad[1 + math.floor(sim.rand() * #bad)]
   end
   return stub(sim, agentId, ctx)
