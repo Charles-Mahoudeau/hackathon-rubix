@@ -6,6 +6,7 @@ local Renderer = require("./context_renderer")
 local Market = require("./market")
 local Logistics = require("./logistics")
 local Refined = require("@scripts/config/branches").refining
+local Tools = require("@scripts/config/tools")
 
 local Builder = {}
 
@@ -110,11 +111,35 @@ local function priceSubs(sim, ship, s, planet)
   return subs
 end
 
+-- A table as an ordered map: the keys of `order` first (renamed by `alias`), then the rest sorted.
+local function orderedMap(t, order, alias)
+  local out, seen = {}, {}
+  local function add(k)
+    local v = t[k]
+    if v == nil then return end
+    seen[k] = true
+    if type(v) == "table" then v = sortedPairs(v) end
+    out[#out + 1] = { alias and alias[k] or k, v }
+  end
+  for _, k in ipairs(order or {}) do add(k) end
+  local rest = {}
+  for k in pairs(t) do if not seen[k] then rest[#rest + 1] = k end end
+  table.sort(rest)
+  for _, k in ipairs(rest) do add(k) end
+  return map(out)
+end
+
+-- The result of a call as a `k=v,k=v` cell (spec §11), shared by the `recent` rows and the Logs detail.
+function Builder.resultText(tool, result)
+  return Renderer.inline(orderedMap(result or {}, Tools.resultOrder[tool]))
+end
+
 local function recentRows(agent, n)
   local rows, h = {}, agent.history
   for i = math.max(1, #h - n + 1), #h do
     local e = h[i]
-    rows[#rows + 1] = { e.tool, sortedPairs(e.args or {}), e.ok, sortedPairs(e.result or {}) }
+    rows[#rows + 1] = { e.tool, orderedMap(e.args or {}, Tools.argOrder[e.tool], Tools.argAlias),
+      e.ok, orderedMap(e.result or {}, Tools.resultOrder[e.tool]) }
   end
   return rows
 end
