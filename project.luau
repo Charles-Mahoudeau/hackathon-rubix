@@ -48,7 +48,7 @@ if engine.isClient then
 		-- Sound (GR5-23): numbers are in config/audio.luau, keep in step with its `volume`.
 		engine.settings.audio.backend = "miniaudio"
 		engine.settings.audio.volume.master = 0.8
-		engine.settings.audio.volume.music = 0.45
+		engine.settings.audio.volume.music = 0.22
 		engine.settings.audio.volume.effects = 1.0
 	end
 end
