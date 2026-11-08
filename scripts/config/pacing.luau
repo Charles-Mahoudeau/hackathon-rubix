@@ -13,6 +13,6 @@ return {
     directive = "Mine {vein} until the hold is 100%, then sell at HMC.",
     reserve = 400, -- credits kept back after a purchase (two Compute packs), so the player never buys itself broke
     computeBelow = 3, computePacks = 1, -- buys a pack of Compute whenever the stock falls below this
-    buy = { "drill_mk2", "hold_mk2", "engine_mk2", "warehouse", "ship2", "drill_mk3", "hold_mk3", "engine_mk3", "trading_post" },
+    buy = { "drill_mk2", "hold_mk2", "engine_mk2", "warehouse", "ship2", "drill_mk3", "hold_mk3", "engine_mk3", "trading_post", "logistics_hub", "command_center" },
   },
 }

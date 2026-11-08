@@ -12,7 +12,7 @@ local function ready()
   s.tier = 4
   for _, a in pairs(s.agents) do a.tier = 4 end
   s.lifetimeRevenue = s.b.reputationLevels[2]
-  s.resources.credits = 100000
+  s.resources.credits = 250000
   s.resources.compute = 200
   Market.quiet(s.market)
   s:setDecider(Ai.decide)
@@ -45,7 +45,7 @@ do
   s.resources.credits = 100
   assert(select(2, s:buyUpgrade("command_center")) == "not_enough_credits")
   assert(select(2, s:hireMonitor()) == "command_center_locked")
-  s.resources.credits = 100000
+  s.resources.credits = 250000
   assert(s:buyUpgrade("command_center") and s.tier == 5 and s.agents.miner.tier == 5, "T5")
   local ok, id = s:hireMonitor()
   assert(ok and id == "monitor" and s.agents.monitor.type == "monitor")
