@@ -4,6 +4,7 @@
 -- replicates the sim, the client runs a local stand-in Sim at 10 Hz so the shell shows real numbers.
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
+local SimHost = require("@scripts/client/sim_host")
 local Clock = require("@scripts/sim/clock")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
@@ -141,6 +142,7 @@ engine.ecs.system("game.Shell", {
 		if not state.sim then
 			local report
 			state.sim, report = Save.boot(state.save, now, utc)
+			SimHost.attach(state.sim)
 			print(("save: boot %s, tick %d, credits %d, away %s"):format(state.save.error and ("ERROR " .. state.save.error.code) or "ok",
 				state.sim.tick, state.sim.resources.credits, report and (report.simulated_seconds .. " s simulated") or "none"))
 		end
@@ -202,7 +204,7 @@ engine.ecs.system("game.Shell", {
 			if saveHandled then changed = true end
 			freshSim = freshSim or erased
 			if freshSim then
-				state.sim, state.draft, state.toast, state.inputsDirty = freshSim, nil, nil, true
+				state.sim, state.draft, state.toast, state.inputsDirty = SimHost.attach(freshSim), nil, nil, true
 				state.uiSig, state.worldSig = nil, nil
 			end
 			if Clock.act(state.sim, click.action) then changed = true end
