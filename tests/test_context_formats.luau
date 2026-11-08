@@ -51,7 +51,7 @@ assert(s:buyUpgrade("logistics_hub") and s:hireLogistician("kessa"))
 assert(s:openBranch("refining") and s:openBranch("salvage") and s:openBranch("raiding"))
 s.lifetimeRevenue = s.b.reputationLevels[2]
 assert(s:buyUpgrade("command_center") and s:hireMonitor())
-for _, role in ipairs({ "miner", "logistician", "monitor", "refiner", "scavenger", "privateer" }) do
+for _, role in ipairs({ "miner", "logistician", "monitor_1", "refiner", "scavenger", "privateer" }) do
   local data = Builder.build(s, role)
   local compact, json = Renderer.compact(data), Renderer.json(data)
   local compactSize, jsonSize = Compute.estimateTokens(Ai, compact), Compute.estimateTokens(Ai, json)

@@ -6,7 +6,7 @@ local DebugConfig = require("@scripts/config/debug")
 assert(DebugConfig.qaTour == false, "the QA tour is off in the repo")
 local s, notes = Tour.prepare()
 assert(#notes == 0, "prepare refused: " .. table.concat(notes, "; "))
-assert(s.tier == 5 and s.agents.monitor and #s.versions.miner >= 3 and s.skills["Titanium loop"], "company is T5 with a Monitor, a skill, 3 versions")
+assert(s.tier == 5 and s.agents.monitor_1 and #s.versions.miner >= 3 and s.skills["Titanium loop"], "company is T5 with a Monitor, a skill, 3 versions")
 
 local t = Tour.new()
 local seen = {}
