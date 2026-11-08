@@ -132,7 +132,7 @@ return {
 
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
-    listY = 160, rowHeight = 20, maxRows = 14, noteX = 190 },
+    listY = 220, rowHeight = 20, maxRows = 14, noteX = 190 },
 
   -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
   branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },

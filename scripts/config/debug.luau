@@ -2,6 +2,7 @@
 -- Module: `local DebugConfig = require("@scripts/config/debug")`. The returned table is read-only.
 return {
   enabled = true,
+  qaTour = false,       -- GR5-89: walk every screen on a prepared T5 company (client/qa_tour.luau); for screenshots only
   creditBoost = 1000,   -- default for "add credits"
   computeBoost = 20,    -- default for "add Compute"
   maxTier = 5,          -- spec §6.6: T1..T5

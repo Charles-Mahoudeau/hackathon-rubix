@@ -23,7 +23,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 9 | GR5-80 | Missions 6-8 ignore non-Miner agents; trigger deviations | Gameplay | done |
 | 10 | GR5-78 | §8.4 failure counting + Monitor tool gaps | Gameplay | backlog |
 | 11 | GR5-86 | Extended T5 demo: prepared save + deplete-vein action | Gameplay | backlog |
-| 12 | GR5-89 | Real-runtime check of UI screens the audit could not verify | Gameplay | backlog |
+| 12 | GR5-89 | Real-runtime check of UI screens the audit could not verify | Gameplay | in review (checklist below) |
 | 13 | GR5-79 | Per-agent home station, dismiss/rename/set_tools | Gameplay | backlog |
 | 14 | GR5-87 | Real AI (Axis) reachable from the running game | Gameplay | backlog |
 | 15 | GR5-88 | `[Engine]` net/protocol client<->server transport | Engine | backlog |
@@ -81,8 +81,8 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 8.4 errors and fallbacks | PARTIAL | `noteFailure`, `onAiResponse` | GR5-78 |
 | 8.5 anti-softlock | PARTIAL | `acceptEmergencyAdvance`, `balance.bailout` | No UI (GR5-74) |
 | 8.6 conflicts and locks | DONE | `monitorLock`, `agent_locked` | |
-| 8.7 messages and feed | PARTIAL | Monitor feed tag, inbox max 5 | Cyan tag unverified (GR5-89); inbox has no `sender` field, deliberate (DECISIONS GR5-85) |
-| 8.8 team view | UNVERIFIED | Not inspected | GR5-89 |
+| 8.7 messages and feed | PARTIAL | Monitor feed tag, inbox max 5 | Cyan Monitor tag verified in the runtime (`docs/qa/alerts-monitor-tag.png`); inbox has no `sender` field, deliberate (DECISIONS GR5-85) |
+| 8.8 team view | DONE | `shell.luau` team screen, `docs/qa/team.png` | Net column lost its sign on 3-digit negatives (`-,504`), fixed in GR5-89 |
 | 8.9 Monitor tools, alerts | PARTIAL | `monitor.luau`, `alerts.luau`, heartbeat 60-600 | `assign_skill none`, null `set_order`, `previous_error` (GR5-78, GR5-75) |
 | 9.1 prompt assembly | DONE (deviation recorded) | `prompt.luau` order correct | Tools section is a summary, not JSON schema (DECISIONS GR5-85) |
 | 9.2 builders, renderers, goldens | PARTIAL | Goldens for Miner (`compute_test.luau:50-89`) and Monitor (`test_monitor.luau:248-263`) | Results blank (GR5-75); Logistician/branch goldens missing, `62` vs `62.0` (GR5-84) |
@@ -92,10 +92,10 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 10.3 Axis provider | PARTIAL | `ai/axis.luau`, timeout 20 s | Named "axis" vs "rubix", deliberate (DECISIONS GR5-85); 20 s vs GR5-15's 10 s (GR5-78); unreachable from game (GR5-87) |
 | 11 tools | PARTIAL | All tools exist with error codes | Results not returned, extra/missing error codes (GR5-75, GR5-82) |
 | 12.1 DecisionRecord | DONE | `decision_log.luau`, 500 records/agent | `result` empty on success (GR5-75) |
-| 12.2 Logs screen | UNVERIFIED | `Log.stats` window 600 s | GR5-89 |
-| 12.3 prompt versions, compare | DONE | `versions.luau`, `test_versions.luau` | Compare UI unverified (GR5-89) |
+| 12.2 Logs screen | DONE | `Log.stats` window 600 s, `docs/qa/logs-rates-filters.png`, `logs-list.png` | |
+| 12.3 prompt versions, compare | DONE | `versions.luau`, `test_versions.luau` | Compare UI verified, `docs/qa/logs-compare.png` |
 | 13.1-13.4 skills | DONE | `skills.luau`, `checkParams`, `Skills.record`, wake-AI on abort | |
-| 13.5 studio UI | UNVERIFIED | `test_studio.luau` | GR5-89 |
+| 13.5 studio UI | DONE | `test_studio.luau`, `docs/qa/studio-*.png` | Record list paging fixed in GR5-101 (#72); screenshots predate the fix |
 | 14 offline | PARTIAL | `offline.luau` cap 8 h, skill-mode only, report | Now run at launch from `client/save.luau`, summary shown as a modal over any screen (GR5-77) |
 | 15 missions 1-8 | DONE | `config/missions.luau`, `sim/missions.luau`, `missions_view.luau`, `test_missions.luau` | M4 counts a skill saved before the mission opened (accepted, DECISIONS.md GR5-80) |
 | 15b.0 hierarchy | DONE | `sim/branches/*`, `test_branches.luau` | |
@@ -109,6 +109,28 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 16.5 leave room | DONE (deviation recorded) | `Sim:deliver` | No `sender` field, sender is in the text (DECISIONS GR5-85) |
 | 17 demo path | PARTIAL | Speed buttons, editor presets, Shop, Logs->skill, "Simulate 1 h away", warehouse purchase work | Agents inert (GR5-71), no credit boost (GR5-72), Orbis step needs Station panel (GR5-73) |
 | 17 extended T5 demo | MISSING | No T5 save, no deplete-vein, no load path | GR5-86 |
+
+## GR5-89 real-runtime checklist
+
+Driven in `aylo-runtime` on a prepared T5 company (`qaTour = true` in `scripts/config/debug.luau`, `client/qa_tour.luau`, shot with `tools/qa_capture.sh`; the runtime refuses synthetic clicks without Accessibility trust, so the tour sends the buttons' own action strings). Screenshots are in `docs/qa/`.
+
+| Screen / spec sentence | Result | Evidence |
+|---|---|---|
+| Context settings, token weight of each option, cost of one decision (§9.3) | verified | `context-settings.png` |
+| Logs: per-agent credits/h, Compute/h, net/h; agent, source and errors filters; paging (§12.2) | verified | `logs-rates-filters.png`, `logs-list.png` |
+| Compare versions: A/B pickers, rates, "not enough data", tools, context change, directive side by side (§12.3) | verified | `logs-compare.png` |
+| Studio, record from the feed (§13.5) | verified (list clipping fixed in GR5-101, #72; screenshot predates the fix) | `studio-record.png`, GR5-101 |
+| Studio, manual form with `$` parameter buttons and price guard | verified | `studio-form.png` |
+| Studio, "make it a parameter" proposal for a near-duplicate skill (§13.2b) | verified | `studio-suggestion.png` |
+| Archive: agents running each skill, Stop, assign with parameter values | verified | `studio-running.png` |
+| Team view columns (§8.8) | verified, sign bug fixed | `team.png` |
+| Alerts: per-type toggles, heartbeat -/+/on-off (§8.7) | verified, overlap with the history list fixed (`config/screens.luau` `alerts.listY`) | `alerts-monitor-tag.png` |
+| Cyan Monitor tag in the feed (§8.7) | verified | `alerts-monitor-tag.png` (feed strip) |
+| Branches panel: open and available states, agents, money per hour (§15b.1) | verified; the locked state needs a T1-T4 save, covered by `test_branches.luau` only | `branches.png` |
+| Offline summary "While you were away" and Dismiss (§14) | verified | `offline-summary.png` |
+| Missions, Station, Market, Fleet, Map | seen; Missions bottom row and Station title fixed in GR5-101 (#72), screenshots predate the fix | GR5-101 |
+
+Not repeated here: look and feel (GR5-54) and the demo run (GR5-65).
 
 ## §16.1 layout mapping (spec name -> real file)
 
