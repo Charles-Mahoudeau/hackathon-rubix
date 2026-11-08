@@ -51,6 +51,17 @@ return {
 	},
 	-- Error glitch overlay (drawn behind every text, never over the feed strip where the reason is shown).
 	glitchOverlay = { barHeight = 2, splitHeight = 2, maxBars = 3, flashAlpha = 0.5 },
+	-- One-shot code-drawn pixel cues (cue sheet GR5-98): small palette-coloured quads, durations in real seconds, no assets.
+	-- colors: palette names, picked in turn per quad (accent first, neutral highlight second). size / rise / travel are view pixels.
+	cues = {
+		seed = 31031, -- LCG seed of the particle spread (cosmetic stream, never the sim's RNG)
+		credits = { count = 6, size = { 2, 3 }, rise = { 8, 12 }, life = 0.4, cooldown = 0.5, spread = 14, colors = { "green", "text" } },
+		-- accent = "player": the corporation neon (config/theme.luau corps) of the one who unlocked it.
+		planetUnlock = { count = 12, size = { 2, 4 }, travel = { 12, 24 }, life = 0.8, cooldown = 1.0, colors = { "$corp", "text" }, corp = "player" },
+		-- aimed along the turret's outward direction; `muzzle` = fraction of the drawn turret frame from its centre to the muzzle.
+		turretFire = { count = 4, size = { 2, 3 }, travel = { 4, 8 }, life = 0.15, cooldown = 0.1, cone = 0.35, muzzle = 0.4, colors = { "$corp", "text" } },
+		maxParticles = 96,
+	},
 	trail = {
 		maxPoints = 12,
 		sampleInterval = 0.05, -- seconds between trail points
