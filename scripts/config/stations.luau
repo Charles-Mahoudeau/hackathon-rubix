@@ -86,12 +86,14 @@ return {
 		markets = {
 			-- `side`: where the station stands against its node: "up" (default), "left" or "right", whichever keeps clear of the
 			-- planets and their labels.
-			orbis = { station = "orbis_exchange", scale = 0.3, side = "right" },
-			halcyon = { station = "halcyon_shipyards", scale = 0.24 },
-			meridian = { station = "meridian_institute", scale = 0.26, side = "left" },
+			-- `fit`: like the depot, a market station is shrunk until its whole extent is at most 80 px (GR5-103 density budget).
+			orbis = { station = "orbis_exchange", scale = 0.3, fit = { w = 80, h = 80 }, side = "right" },
+			halcyon = { station = "halcyon_shipyards", scale = 0.24, fit = { w = 80, h = 80 } },
+			meridian = { station = "meridian_institute", scale = 0.26, fit = { w = 80, h = 80 }, side = "left" },
 		},
 		gap = 24, -- px kept clear between any two stations / planets on the map (tests/test_stations)
 		marketGap = 18, -- px between the node centre and the nearest edge of its station
+		labelClear = 6, -- px between the bottom of a market station and the top of its label (a side station stands above the label line)
 		edge = 8, -- px a station keeps from the edge of the main panel
 		dock = { gap = 4, spacing = 9 }, -- the dock line from a planet to its depot: dash spacing, and the clearance at the planet rim
 	},

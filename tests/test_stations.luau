@@ -217,7 +217,11 @@ for _, st in ipairs(SystemMap.stations(sim)) do
     local over = node.x > st.at.x + e.left - 9 and node.x < st.at.x + e.right + 9 and node.y > st.at.y + e.top - 9 and node.y < st.at.y + e.bottom + 9
     assert(not over, st.id .. " does not cover its node")
     if not config.map.markets[mid].side then assert(st.at.y + e.bottom <= node.y - 9, st.id .. " is above its node") end
-    assert(st.scale >= 0.2, st.id .. " is big enough to read")
+    assert(st.scale >= 0.15, st.id .. " is big enough to read") -- 0.15: the 80 px fit shrinks Halcyon to 0.16
+    -- GR5-104: a market station fits the 80 px budget, and its label (14 px under the node) starts below the sprite's box
+    local fit = config.map.markets[mid].fit
+    assert((e.right - e.left) <= fit.w + 0.5 and (e.bottom - e.top) <= fit.h + 0.5, st.id .. " fits " .. fit.w .. " px")
+    assert(st.at.y + e.bottom + config.map.labelClear <= node.y + 14 + 0.01, st.id .. " leaves its label clear of the sprite")
   end
 end
 
