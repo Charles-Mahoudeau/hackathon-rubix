@@ -1,8 +1,8 @@
 -- Debug actions (spec §16.4). Server side, no UI: the panel (ui/debug.luau) and the `debug_*` messages call Debug.run.
 -- run(sim, action, args, ctx) -> ok, result | error string. Disabled builds reject everything.
 local DebugConfig = require("@scripts/config/debug")
-local Json = require("./json")
 local Ai = require("./ai")
+local Host = require("./host")
 local Persistence = require("./persistence")
 local Offline = require("./offline")
 
@@ -83,7 +83,7 @@ end
 function actions.lastPrompt(sim)
   local d = sim.lastDecision
   if not d then return false, "no decision yet" end
-  return true, { agent = d.agent, tick = d.tick, text = d.prompt or Json.encode(d.ctx), call = d.call }
+  return true, { agent = d.agent, tick = d.tick, text = d.prompt or Host.json.encode(d.ctx), call = d.call }
 end
 
 -- ctx = { storage, path, savedAt }. Returns the fresh sim; the caller must swap it in and re-attach the decider.

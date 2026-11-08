@@ -4,7 +4,7 @@
 -- screen shows the rates and the directive diff.
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Persistence = require("@scripts/sim/persistence")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Versions = require("@scripts/sim/versions")

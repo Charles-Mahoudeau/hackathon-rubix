@@ -289,7 +289,7 @@ local function plainChip(font, r, str: string, colorName: string)
 end
 
 -- The choreography layer of the map (opts.mapLife, from client/fleet_map): ship badges and their selection halo, the `+N` of
--- hidden hulls, the legend of numbered markers, ships working off the map, the reachability reveal and the motion switch.
+-- hidden hulls, the legend of numbered markers, ships working off the map, and the motion switch.
 local function mapLifeNodes(font, r, life, points, planetNames, t)
   local nodes = {}
   local function add(list) for _, n in ipairs(list) do nodes[#nodes + 1] = n end end
@@ -321,23 +321,6 @@ local function mapLifeNodes(font, r, life, points, planetNames, t)
       add(badgeChip(font, { x = r.x + L.gap, y = r.y + L.gap + 6 + i * 20, w = Screens.map.badgeAwayW, h = 16 }, a.badge))
       nodes[#nodes + 1] = { style = { position = "absolute", left = r.x + L.gap + Screens.map.badgeAwayW + 6, top = r.y + L.gap + 8 + i * 20, ignorePointer = true },
         children = { text(font, a.where, T.small, "dim") } }
-    end
-  end
-  local cue = life.reveal
-  if cue and points[cue.id] then
-    local c, R = points[cue.id], Screens.map.planetRadius
-    local look = Planets.planets[cue.id]
-    local neon = look and look.rim and look.rim[1] or "cyan"
-    if cue.outline or cue.ring then
-      local radius = R + (cue.ring or 4)
-      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - radius, top = c.y - radius, width = radius * 2, height = radius * 2, ignorePointer = true },
-        background = { color = UiTheme.color(neon, 0), radius = radius, borderColor = UiTheme.color(neon, cue.outline and 1 or (cue.ringAlpha or 1)), borderWidth = 2 } }
-    end
-    if cue.label > 0 then
-      local w = #(planetNames[cue.id] or cue.id) * 8 + 74
-      nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - w / 2, top = c.y - R - 30, width = w, height = 18, justify = "center", alignItems = "center", ignorePointer = true },
-        background = { color = UiTheme.color("bg", 0.85 * cue.label), radius = 3, borderColor = UiTheme.color(neon, cue.label), borderWidth = 1 },
-        children = { { text = { text = (planetNames[cue.id] or cue.id) .. " reachable", font = font, size = T.small, color = UiTheme.color(neon, cue.label) } } } }
     end
   end
   local mw = Screens.map.motionButtonW
@@ -379,17 +362,29 @@ local function mapOverlay(font, r, map, opts)
   end
   -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
-  local function label(center, name, sub, colorName, subColor, below)
+  -- `alpha` (a reveal fading a label in or out) tints the text; `backing` puts a panel behind it so it stays readable over the world.
+  local function label(center, name, sub, colorName, subColor, below, alpha: number?, backing: number?)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
     title.text.align = "center"
     if line then line.text.align = "center" end
+    if alpha then
+      title.text.color = UiTheme.color(colorName, alpha)
+      if line then line.text.color = UiTheme.color(subColor or "dim", alpha) end
+    end
     local left = math.max(r.x + L.gap, math.min(center.x - 90, r.x + r.w - 180 - L.gap))
+    if backing and backing > 0 then
+      local h = math.ceil(T.body * Fit.lineHeight) + 2 * math.ceil(T.small * Fit.lineHeight) + 8
+      nodes[#nodes + 1] = { style = { position = "absolute", left = left - 4, top = center.y + below - 3, width = 188, height = h, ignorePointer = true },
+        background = { color = UiTheme.color("panel", backing), radius = 3 } }
+    end
     return { style = { position = "absolute", left = left, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
       children = { title, line } }
   end
+  local reveal = opts.reveal
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
     local sub = p.lit and table.concat(p.ores, ", ") or ("Locked: " .. p.condition)
+    local revealing = p.lit and reveal ~= nil and reveal.id == p.id
     if p.lit then
       local look = Planets.planets[p.id]
       local neon = look.rim and look.rim[1] or "cyan"
@@ -399,7 +394,27 @@ local function mapOverlay(font, r, map, opts)
       end
       nodes[#nodes + 1] = focusArea(c, cfg.planetRadius * 2, p.id, neon)
     end
-    nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    if revealing then
+      local rv = Vfx.reveal
+      if reveal.dim > 0 then nodes[#nodes + 1] = dot(c, cfg.planetRadius * 2, rv.dim.color, reveal.dim) end
+      local ring = reveal.ring
+      if reveal.outline then ring = { grow = 0, alpha = 1, stroke = rv.ring.stroke } end
+      if ring then
+        local rr = cfg.planetRadius + ring.grow
+        nodes[#nodes + 1] = { style = { position = "absolute", left = c.x - rr, top = c.y - rr, width = rr * 2, height = rr * 2, ignorePointer = true },
+          background = { color = UiTheme.color(rv.ring.color, 0), radius = rr, borderColor = UiTheme.color(rv.ring.color, ring.alpha), borderWidth = ring.stroke } }
+      end
+      -- Locked reason fades out over the first half of the label span, the real name and available state fade in over the second (never both at once: two overlapping lines are unreadable), over one panel backing.
+      if reveal.labelMix < 1 then
+        local locked = "Locked: " .. Model.unlockCondition(p.id)
+        nodes[#nodes + 1] = label(c, p.name, locked, "dim", Theme.semantic.warning, cfg.planetRadius + 8, math.max(0, 1 - 2 * reveal.labelMix), reveal.backing)
+      end
+      if reveal.labelMix > 0 then
+        nodes[#nodes + 1] = label(c, p.name, sub, "text", "dim", cfg.planetRadius + 8, math.max(0, 2 * reveal.labelMix - 1), reveal.labelMix < 1 and 0 or reveal.backing)
+      end
+    else
+      nodes[#nodes + 1] = label(c, p.name, sub, p.lit and "text" or "dim", p.lit and "dim" or Theme.semantic.warning, cfg.planetRadius + 8)
+    end
   end
   for _, m in ipairs(map.markets) do
     local c = points[m.id]

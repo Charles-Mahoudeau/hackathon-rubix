@@ -4,7 +4,6 @@
 --   MapLife.berths(...)         -> stable parking slots around an anchor that keep their distance from labels and stations
 --   MapLife.budget(actors, ...) -> which hulls are drawn (cap, priority) and the `+N` aggregates of the rest
 --   MapLife.place(...)          -> a label rectangle next to an anchor that overlaps nothing reserved
---   MapLife.reveal*             -> the ~2 s reachability reveal, queued in map order
 local Config = require("@scripts/config/ships")
 
 local MapLife = {}
@@ -169,50 +168,6 @@ function MapLife.turretTargets(stations, fights, range: number?)
 		if best then out[i] = { x = best.x, y = best.y } end
 	end
 	return out
-end
-
--- Reachability reveal ----------------------------------------------------------------------------------------------------
-
-function MapLife.newReveal() return { lit = nil, queue = {}, active = nil } end
-
--- `lit` is { [planetId] = bool } for this frame, `order` the planets in map order. The first call hydrates the current state
--- with no cinematic; afterwards a planet whose reachability goes false -> true queues one reveal (duplicates coalesce).
--- Returns the cue to draw now (see MapLife.cue) or nil.
-function MapLife.updateReveal(rv, lit, order, now: number, reduced: boolean)
-	if rv.lit == nil then
-		rv.lit = {}
-		for _, id in ipairs(order) do rv.lit[id] = lit[id] == true end
-		return nil
-	end
-	local queued = {}
-	for _, id in ipairs(rv.queue) do queued[id] = true end
-	if rv.active then queued[rv.active.id] = true end
-	for _, id in ipairs(order) do
-		if lit[id] and not rv.lit[id] and not queued[id] then rv.queue[#rv.queue + 1] = id end
-		rv.lit[id] = lit[id] == true
-	end
-	if rv.active and now - rv.active.start >= (reduced and LIFE.reveal.reduced or LIFE.reveal.total) then rv.active = nil end
-	if not rv.active and #rv.queue > 0 then rv.active = { id = table.remove(rv.queue, 1), start = now } end
-	if not rv.active then return nil end
-	return MapLife.cue(now - rv.active.start, reduced, rv.active.id)
-end
-
--- The reveal at `age` seconds: { id, ring = radius offset or nil, ringAlpha, label = 0..1 alpha, outline = static ring }.
-function MapLife.cue(age: number, reduced: boolean, id: string?)
-	local R = LIFE.reveal
-	if reduced then
-		if age < 0 or age >= R.reduced then return nil end
-		return { id = id, outline = true, label = 1 }
-	end
-	if age < 0 or age >= R.total then return nil end
-	local cue = { id = id, label = 0 }
-	if age >= R.ring[1] and age < R.ring[2] then
-		local u = (age - R.ring[1]) / (R.ring[2] - R.ring[1])
-		cue.ring, cue.ringAlpha = u * R.ringReach, 1 - u
-	end
-	if age >= R.label[1] then cue.label = math.min(1, (age - R.label[1]) / 0.2) end
-	if age >= R.label[2] then cue.label = math.max(0, 1 - (age - R.label[2]) / 0.3) end
-	return cue
 end
 
 return MapLife

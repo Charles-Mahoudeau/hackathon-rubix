@@ -1,7 +1,7 @@
 -- Save/load (spec §16.3): JSON codec, round trip, determinism across a save, schema_version handling.
 local Sim = require("@scripts/sim/sim")
 local Ai = require("@scripts/sim/ai")
-local Json = require("@scripts/sim/json")
+local Json = require("./support/engine_json")
 local Persistence = require("@scripts/sim/persistence")
 
 -- JSON codec

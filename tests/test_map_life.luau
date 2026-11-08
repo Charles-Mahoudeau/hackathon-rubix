@@ -1,6 +1,6 @@
 -- Run from repo root: luau tests/test_map_life.luau
 -- GR5-104: the choreography rules of GR5-103 on the system map: berths, label placement, badges, the hull / quad budgets with
--- their `+N` overflow, the reachability reveal, pause and reduced motion. Headless; the sim is the only source of state.
+-- their `+N` overflow, pause and reduced motion. Headless; the sim is the only source of state.
 local Config = require("@scripts/config/ships")
 local Sim = require("@scripts/sim/sim")
 local Salvage = require("@scripts/sim/salvage")
@@ -94,32 +94,6 @@ do
   local total = 0
   for _, g in ipairs(r.aggregates) do total += g.count end
   assert(total == 4, "every hidden hull is counted in a +N")
-end
-
--- 5. the reachability reveal: no cinematic on hydration, one per false -> true, queued in map order
-do
-  local order = { "kessa", "ashfall", "orbis" }
-  local rv = MapLife.newReveal()
-  assert(MapLife.updateReveal(rv, { kessa = true, ashfall = true }, order, 0, false) == nil, "hydration shows nothing")
-  assert(MapLife.updateReveal(rv, { kessa = true, ashfall = true }, order, 1, false) == nil, "no change, no reveal")
-  local cue = MapLife.updateReveal(rv, { kessa = true, ashfall = true, orbis = true }, order, 2, false)
-  assert(cue and cue.id == "orbis" and cue.label == 0)
-  cue = MapLife.updateReveal(rv, { kessa = true, ashfall = true, orbis = true }, order, 2.7, false)
-  assert(cue.ring and cue.ring > 0 and cue.ring <= LIFE.reveal.ringReach and cue.ringAlpha < 1 and cue.label > 0)
-  assert(MapLife.updateReveal(rv, { kessa = true, ashfall = true, orbis = true }, order, 4.1, false) == nil, "over after ~2 s")
-  -- two at once: map order, one after the other
-  rv = MapLife.newReveal()
-  MapLife.updateReveal(rv, {}, order, 0, false)
-  cue = MapLife.updateReveal(rv, { orbis = true, kessa = true }, order, 1, false)
-  assert(cue.id == "kessa")
-  cue = MapLife.updateReveal(rv, { orbis = true, kessa = true }, order, 3.1, false)
-  assert(cue and cue.id == "orbis", "the second plays after the first")
-  -- reduced motion: a static outline for 0.5 s, no ring
-  rv = MapLife.newReveal()
-  MapLife.updateReveal(rv, {}, order, 0, true)
-  cue = MapLife.updateReveal(rv, { kessa = true }, order, 1, true)
-  assert(cue.outline and not cue.ring)
-  assert(MapLife.updateReveal(rv, { kessa = true }, order, 1.6, true) == nil)
 end
 
 -- 6. working: a miner at its vein hovers 2 px, throws up to 2 cyan 2 px sparks, and has no animated engine

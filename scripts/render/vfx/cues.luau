@@ -54,27 +54,33 @@ function Cues.observeCredits(self, credits: number, now: number, anchor): boolea
 	return true
 end
 
--- `lit` = planet id -> unlocked. A planet going from locked to unlocked bursts once at its centre; each planet has its own
--- cooldown. `positions` = id -> { x, y } in view pixels, `radius` = the planet disc. Returns the ids that fired.
+-- The planet unlock burst at one planet (centre `at`, disc `radius`, view pixels): 12 quads out of its edge. Each planet has its own
+-- cooldown. Returns true when it fired. client/main.luau calls it from the GR5-105 reveal, at the moment the sheet places the burst.
+function Cues.burstPlanet(self, id: string, at, radius: number, now: number, corp: string?): boolean
+	local c = Cfg.planetUnlock
+	if self.planetAt[id] and now - self.planetAt[id] < c.cooldown then return false end
+	self.planetAt[id] = now
+	self.spawned.planetUnlock += 1
+	for i = 1, c.count do
+		local a = (i - 1 + rand(self) * 0.8) / c.count * 2 * math.pi
+		add(self, "planetUnlock", c, i, now, at.x + math.cos(a) * radius, at.y + math.sin(a) * radius, math.cos(a), math.sin(a), c.travel, corp or c.corp)
+	end
+	return true
+end
+
+-- `lit` = planet id -> unlocked. A planet going from locked to unlocked bursts once at its centre. `positions` = id -> { x, y } in
+-- view pixels, `radius` = the planet disc. Returns the ids that fired. (The windowed client does not use this: its burst follows the
+-- reveal timeline, see Cues.burstPlanet.)
 function Cues.observePlanets(self, lit, positions, radius: number, now: number, corp: string?): { string }
 	local fired, last = {}, self.lit
 	self.lit = table.clone(lit)
 	if last == nil then return fired end
-	local c = Cfg.planetUnlock
 	local ids = {}
 	for id in pairs(lit) do ids[#ids + 1] = id end
 	table.sort(ids)
 	for _, id in ipairs(ids) do
 		local at = positions[id]
-		if lit[id] and not last[id] and at and not (self.planetAt[id] and now - self.planetAt[id] < c.cooldown) then
-			self.planetAt[id] = now
-			self.spawned.planetUnlock += 1
-			fired[#fired + 1] = id
-			for i = 1, c.count do
-				local a = (i - 1 + rand(self) * 0.8) / c.count * 2 * math.pi
-				add(self, "planetUnlock", c, i, now, at.x + math.cos(a) * radius, at.y + math.sin(a) * radius, math.cos(a), math.sin(a), c.travel, corp or c.corp)
-			end
-		end
+		if lit[id] and not last[id] and at and Cues.burstPlanet(self, id, at, radius, now, corp) then fired[#fired + 1] = id end
 	end
 	return fired
 end

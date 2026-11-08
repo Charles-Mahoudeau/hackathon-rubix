@@ -9,11 +9,17 @@
 --   { key = "veins",   kind = "table",   cols = { "id", ... }, rows = { { v1, v2, ... }, ... } }
 --   { key = "inbox",   kind = "strings", items = { "text", ... } }
 -- A value is nil ("?"), boolean (y/n), number, string, a plain array (list) or a Renderer.map (ordered pairs).
-local Json = require("./json")
+local Host = require("./host")
 
 local Renderer = {}
 
-Renderer.map = Json.map
+-- Host.json.map marks an entry list without a field, so the renderer keeps its own weak set to tell a map cell from a list.
+local isMap = setmetatable({}, { __mode = "k" })
+
+function Renderer.map(entries)
+  isMap[entries] = true
+  return Host.json.map(entries)
+end
 
 local function fmtNum(n)
   if n == math.floor(n) then return string.format("%d", n) end
@@ -33,7 +39,7 @@ local function cell(v, sep)
     if v == "" or v:find("%s") then return '"' .. v .. '"' end
     return v
   end
-  if v.__map then
+  if isMap[v] then
     if #v == 0 then return "-" end
     local parts = {}
     for _, p in ipairs(v) do parts[#parts + 1] = p[1] .. sep .. cell(p[2], ":") end
@@ -68,7 +74,8 @@ function Renderer.compact(data)
   for _, sec in ipairs(data) do
     if not isEmpty(sec) then
       if sec.kind == "scalar" then
-        lines[#lines + 1] = sec.key .. ": " .. cell(sec.value, ":")
+        local value = sec.key == "compute" and type(sec.value) == "number" and string.format("%.1f", sec.value) or cell(sec.value, ":")
+        lines[#lines + 1] = sec.key .. ": " .. value
       elseif sec.kind == "object" then
         local parts = {}
         for _, f in ipairs(sec.fields) do parts[#parts + 1] = f[1] .. "=" .. cell(f[2], ":") end
@@ -97,10 +104,11 @@ local function jsonKey(name) return (name:gsub("%%", "_pct")) end
 
 -- Cells become JSON values: "k=v" cells stay ordered maps, "?" becomes null.
 local function jsonValue(v)
-  if type(v) == "table" and v.__map then
+  if type(v) == "table" and isMap[v] then
     local out = {}
-    for i, p in ipairs(v) do out[i] = { p[1], jsonValue(p[2]) } end
-    return Json.map(out)
+    -- Keys are stringified: a list shown as a map has numeric keys (1, 2, ...), which engine.json.map refuses.
+    for i, p in ipairs(v) do out[i] = { tostring(p[1]), jsonValue(p[2]) } end
+    return Host.json.map(out)
   end
   return v
 end
@@ -114,24 +122,24 @@ function Renderer.json(data)
       elseif sec.kind == "object" then
         local o = {}
         for i, f in ipairs(sec.fields) do o[i] = { jsonKey(f[1]), jsonValue(f[2]) } end
-        v = Json.map(o)
+        v = Host.json.map(o)
       elseif sec.kind == "map" then v = jsonValue(sec.map)
       elseif sec.kind == "maps" then
         local o = {}
         for i, s in ipairs(sec.subs) do o[i] = { s[1], jsonValue(s[2]) } end
-        v = Json.map(o)
+        v = Host.json.map(o)
       elseif sec.kind == "table" then
         v = {}
         for r, row in ipairs(sec.rows) do
           local o = {}
           for i, c in ipairs(sec.cols) do o[i] = { jsonKey(c), jsonValue(row[i]) } end
-          v[r] = Json.map(o)
+          v[r] = Host.json.map(o)
         end
       elseif sec.kind == "strings" then v = sec.items end
       top[#top + 1] = { sec.key, v }
     end
   end
-  return Json.encode(Json.map(top))
+  return Host.json.encode(Host.json.map(top))
 end
 
 function Renderer.render(data, format)

@@ -3,8 +3,11 @@
 -- transport, so it runs headless:
 --   transport.send({ method, url, headers = {name=value}, body, timeout }) -> id
 --   transport.poll() -> { { id, ok, status, body, error }, ... }     (the engine's rtype.HttpResponse, mapped)
+-- hooks.reserve(turn, tokens) -> bool (optional): the budget authority is told the real input+output estimate of the
+-- assembled prompt just before the model call, and may refuse it.
 -- Keys are never here: headers name them as `{{env:NAME}}` and the engine fills them in when it sends.
-local Json = require("@scripts/sim/json")
+local Compute = require("@scripts/sim/compute")
+local Host = require("@scripts/sim/host")
 
 local Axis = {}
 Axis.__index = Axis
@@ -13,9 +16,9 @@ local function urlEncode(s)
   return (tostring(s):gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", string.byte(c)) end))
 end
 
-function Axis.new(cfg, transport)
+function Axis.new(cfg, transport, hooks)
   local self = setmetatable({}, Axis)
-  self.cfg, self.axis, self.transport = cfg, cfg.axis, transport
+  self.cfg, self.axis, self.transport, self.hooks = cfg, cfg.axis, transport, hooks or {}
   self.turns, self.reqs, self.nextTurn, self.finished = {}, {}, 1, {}
   self.promptCache = nil -- { text, fetchedAt }
   return self
@@ -38,7 +41,7 @@ local TAIL_TIMEOUT = 10 -- memory write and observe outlive the turn's deadline
 local function platformRequest(self, turn, kind, method, path, body, now)
   local tail = kind == "record_assistant" or kind == "observe"
   return send(self, turn, kind, { method = method, url = self.axis.platformUrl .. path, headers = platformHeaders(self),
-    body = body and Json.encode(body) or nil, timeout = tail and TAIL_TIMEOUT or nil }, now)
+    body = body and Host.json.encode(body) or nil, timeout = tail and TAIL_TIMEOUT or nil }, now)
 end
 
 local function recordTurn(self, turn, kind, role, content, now)
@@ -69,17 +72,21 @@ local function callModel(self, turn, block, now)
   if turn.agentPrompt and turn.agentPrompt ~= "" then system = system .. "\n\n" .. turn.agentPrompt end
   if block and block ~= "" then system = system .. "\n\n" .. block end
   turn.phase = "model"
+  turn.assembledTokens = Compute.estimateTokens(self.cfg, system) + Compute.estimateTokens(self.cfg, turn.user)
+  if self.hooks.reserve and not self.hooks.reserve(turn, turn.assembledTokens + turn.maxTokens) then
+    return fail(self, turn, "budget")
+  end
   send(self, turn, "model", {
     method = "POST", url = self.axis.relaisUrl,
     headers = { Authorization = "Bearer {{env:" .. self.axis.secrets.relais .. "}}", ["Content-Type"] = "application/json",
       ["anthropic-version"] = self.axis.anthropicVersion },
-    body = Json.encode({ model = self.axis.model, max_tokens = turn.maxTokens, system = system,
+    body = Host.json.encode({ model = self.axis.model, max_tokens = turn.maxTokens, system = system,
       messages = { { role = "user", content = turn.user } } }),
   }, now)
 end
 
 local function onModel(self, turn, res, now)
-  local data = Json.tryDecode(res.body or "")
+  local data = Host.json.tryDecode(res.body or "")
   if type(data) ~= "table" or type(data.content) ~= "table" then return fail(self, turn, "model_bad_response") end
   local parts = {}
   for _, block in ipairs(data.content) do
@@ -112,7 +119,7 @@ local function advance(self, turn, kind, res, now)
     return fail(self, turn, kind .. "_http_" .. tostring(res.status))
   end
   if kind == "agent_config" then
-    local data = Json.tryDecode(res.body or "")
+    local data = Host.json.tryDecode(res.body or "")
     if type(data) ~= "table" or type(data.system_prompt) ~= "string" then return fail(self, turn, "agent_config_bad_response") end
     turn.agentPrompt = data.system_prompt
     self.promptCache = { text = data.system_prompt, fetchedAt = now }
@@ -120,7 +127,7 @@ local function advance(self, turn, kind, res, now)
   elseif kind == "record_user" then
     turn.prep -= 1
   elseif kind == "session" then
-    local data = Json.tryDecode(res.body or "")
+    local data = Host.json.tryDecode(res.body or "")
     if type(data) ~= "table" then return fail(self, turn, "session_bad_response") end
     return callModel(self, turn, type(data.block) == "string" and data.block or "", now)
   elseif kind == "model" then
@@ -157,6 +164,15 @@ end
 -- Pump: feed in the responses, expire turns past their deadline. Returns the finished results (ok or not).
 function Axis:update(now)
   self.finished = {}
+  -- Expire first: a response that is only read after the deadline (stalled loop) is a timeout, never a decision.
+  local expired = {}
+  for _, turn in pairs(self.turns) do
+    if now >= turn.deadline then expired[#expired + 1] = turn end
+  end
+  for _, turn in ipairs(expired) do
+    turn.elapsed = now - turn.startedAt
+    fail(self, turn, "timeout")
+  end
   for _, res in ipairs(self.transport.poll()) do
     local r = self.reqs[res.id]
     if r then
@@ -166,10 +182,7 @@ function Axis:update(now)
       if not turn.done or r.kind == "record_assistant" or r.kind == "observe" then advance(self, turn, r.kind, res, now) end
     end
   end
-  for _, turn in pairs(self.turns) do
-    turn.elapsed = now - turn.startedAt
-    if now >= turn.deadline then fail(self, turn, "timeout") end
-  end
+  for _, turn in pairs(self.turns) do turn.elapsed = now - turn.startedAt end
   return self.finished
 end
 

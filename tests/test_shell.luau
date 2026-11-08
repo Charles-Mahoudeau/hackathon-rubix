@@ -259,14 +259,13 @@ do
     },
     aggregates = { { id = "kessa", count = 3, x = 100, y = 300, w = 30, h = 16 } },
     hidden = 3, away = { { key = "scav:j1", where = "Tessar", badge = { tone = "green", shape = "square", label = "WORK" } } },
-    reveal = { id = "varn", ring = 10, ringAlpha = 0.5, label = 1 }, reduced = false,
+    reduced = false,
   }
   local sim = Sim.new()
   sim.alertTrack.stations[SystemMap.stations(sim)[1].sid] = true
   walk((Shell.spec(sim, "map", { mapLife = life, mapStations = SystemMap.stationLabels(sim) })), "map life")
   local on = joined((Shell.spec(sim, "map", { mapLife = life })))
   assert(on:find("WORK") and on:find("+3") and on:find("OFF MAP") and on:find("Tessar") and on:find("MOTION: FULL"), "overlay shows chips, +N, off-map list and the motion switch")
-  assert(on:find("reachable"), "the reveal chip is drawn")
   assert(on:find("%\+3 more ships not drawn"), "the legend counts the hidden hulls")
   life.reduced = true
   assert(joined((Shell.spec(sim, "map", { mapLife = life }))):find("MOTION: REDUCED"), "the switch shows reduced motion")
