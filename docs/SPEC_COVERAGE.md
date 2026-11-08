@@ -30,7 +30,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 16 | GR5-81 | One Monitor per scope | Gameplay | backlog |
 | 17 | GR5-82 | Fidelity: mixed hold, vein hop, rounding, error codes | Gameplay | backlog |
 | 18 | GR5-84 | §9.2.5 goldens for all agent types, M10 token ratio | Gameplay | backlog |
-| 19 | GR5-85 | Reconcile deliberate deviations (cost, nav tier, naming, hard-coded numbers) | Gameplay | backlog |
+| 19 | GR5-85 | Reconcile deliberate deviations (cost, nav tier, naming, hard-coded numbers) | Gameplay | in review |
 
 ## Milestones (§17)
 
@@ -59,7 +59,7 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | § | Status | Evidence | Gap / issue |
 |---|---|---|---|
 | 3 tick, speeds, pause | DONE | `balance.luau` tick 0.1 s, speeds {1,4,16}; `clock.luau`; `test_speed.luau` | |
-| 3 tick order | PARTIAL | `Sim:step` | Markets before ships; skills/triggers merged. No gameplay effect (GR5-85 records it) |
+| 3 tick order | DONE (deviation recorded) | `Sim:step` | Veins and markets before ships; skills/triggers merged. No gameplay effect (DECISIONS GR5-85) |
 | 3 autosave / on quit | DONE (window-close path unverified in engine) | `client/save.luau` autosave every 30 s real + save on `rtype.Closed`; `tests/test_save.luau`, engine selftest, real client run (DECISIONS GR5-77) | GR5-77 |
 | 4.1-4.4 resources, planets, veins, markets | DONE | `world.luau`, `test_market.luau` §1 | |
 | 4.5 freighter routes / risk | PARTIAL | Routes match; risk only cosmetic in `config/screens.luau` | Allowed by spec |
@@ -70,26 +70,26 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 6.1 start state, 6.4 Compute | DONE | `config/ai.luau`, `compute.luau` | Compute billing semantics: GR5-66 |
 | 6.2 channels | PARTIAL | HMC, Orbis, freighters | Sale totals use unrounded unit price (GR5-82) |
 | 6.3 saturation, demand, events, trends, rivals | DONE | `config/market.luau`, `sim/market.luau`, `test_market.luau` §1-6 | |
-| 6.5 shop, command capacity | PARTIAL | Costs and prerequisites match | `command_center` 160,000 vs 15,000 (DECISIONS GR5-30; GR5-85, GR5-63) |
-| 6.6 tiers | PARTIAL | Thresholds match | Team nav at T2, spec T5 (GR5-85) |
-| 6.7 reputation | DONE | `reputationLevels` | Dead `sim.resources.reputation` (GR5-85) |
+| 6.5 shop, command capacity | DONE (deviation recorded) | Costs and prerequisites match | `command_center` 160,000 vs 15,000, deliberate (DECISIONS GR5-30, GR5-85; retune is GR5-63) |
+| 6.6 tiers | DONE (deviation recorded) | Thresholds match | Team nav at T2, spec T5, deliberate (DECISIONS GR5-85) |
+| 6.7 reputation | DONE | `reputationLevels` | Dead `sim.resources.reputation` removed (GR5-85) |
 | 7 stations | PARTIAL | Storage, freighter caps, per-station stock, max 2 Logisticians | No per-agent home station (GR5-79) |
 | 7 station panel | MISSING | `config/screens.luau:15` declares it, `shell.luau` routes to `empty()` | GR5-73 |
 | 8.1 team, types | PARTIAL | One Monitor per company | GR5-81 |
-| 8.2 agent state | PARTIAL | camelCase fields; no `prompt_version`/`metrics` on agent | GR5-85 |
+| 8.2 agent state | DONE (deviation recorded) | camelCase fields; prompt version in `sim/versions.luau`, metrics from `sim.records` | DECISIONS GR5-85 |
 | 8.3 AI triggers | DONE | `stepAgent`, `thrashAllowed`, `bailoutConditions` | Stub latency 2-4 game s vs 1-3 s real (GR5-78) |
 | 8.4 errors and fallbacks | PARTIAL | `noteFailure`, `onAiResponse` | GR5-78 |
 | 8.5 anti-softlock | PARTIAL | `acceptEmergencyAdvance`, `balance.bailout` | No UI (GR5-74) |
 | 8.6 conflicts and locks | DONE | `monitorLock`, `agent_locked` | |
-| 8.7 messages and feed | PARTIAL | Monitor feed tag, inbox max 5 | Cyan Monitor tag verified in the runtime (`docs/qa/alerts-monitor-tag.png`); inbox has no `sender` (GR5-85) |
+| 8.7 messages and feed | PARTIAL | Monitor feed tag, inbox max 5 | Cyan Monitor tag verified in the runtime (`docs/qa/alerts-monitor-tag.png`); inbox has no `sender` field, deliberate (DECISIONS GR5-85) |
 | 8.8 team view | DONE | `shell.luau` team screen, `docs/qa/team.png` | Net column lost its sign on 3-digit negatives (`-,504`), fixed in GR5-89 |
 | 8.9 Monitor tools, alerts | PARTIAL | `monitor.luau`, `alerts.luau`, heartbeat 60-600 | `assign_skill none`, null `set_order`, `previous_error` (GR5-78, GR5-75) |
-| 9.1 prompt assembly | PARTIAL | `prompt.luau` order correct | Tools section is a summary, not JSON schema (GR5-85) |
+| 9.1 prompt assembly | DONE (deviation recorded) | `prompt.luau` order correct | Tools section is a summary, not JSON schema (DECISIONS GR5-85) |
 | 9.2 builders, renderers, goldens | PARTIAL | Goldens for Miner (`compute_test.luau:50-89`) and Monitor (`test_monitor.luau:248-263`) | Results blank (GR5-75); Logistician/branch goldens missing, `62` vs `62.0` (GR5-84) |
 | 9.3 context settings, 9.4 editor live cost | DONE | `context_settings.luau`, `agent_editor.luau`, `compute_view.luau` | |
 | 10.1 provider interface, 10.4 server-only key, 10.5 validation, 10.6 queue/budget | DONE | `ai/provider.luau`, `axis_http.luau`, `ai/validator.luau`, `ai_queue.luau` | |
 | 10.2 stub provider / 10.7 interpreter | PARTIAL | `sim/ai.luau` | Thin rules (GR5-76) |
-| 10.3 Axis provider | PARTIAL | `ai/axis.luau`, timeout 20 s | Named "axis" vs "rubix"; 20 s vs GR5-15's 10 s (GR5-78, GR5-85); unreachable from game (GR5-87) |
+| 10.3 Axis provider | PARTIAL | `ai/axis.luau`, timeout 20 s | Named "axis" vs "rubix", deliberate (DECISIONS GR5-85); 20 s vs GR5-15's 10 s (GR5-78); unreachable from game (GR5-87) |
 | 11 tools | PARTIAL | All tools exist with error codes | Results not returned, extra/missing error codes (GR5-75, GR5-82) |
 | 12.1 DecisionRecord | DONE | `decision_log.luau`, 500 records/agent | `result` empty on success (GR5-75) |
 | 12.2 Logs screen | DONE | `Log.stats` window 600 s, `docs/qa/logs-rates-filters.png`, `logs-list.png` | |
@@ -102,11 +102,11 @@ The headless suite is green (37 suites) and the sim covers most of the spec. The
 | 15b.1 ladders | DONE | `config/branches.luau` | |
 | 15b.2 refining, 15b.3 salvage, 15b.4 raiding | DONE | `test_refining.luau`, `test_salvage.luau`, `test_raiding.luau` | Refiner cap 4 not enforced as far as read |
 | 15b.5 V1-V3 missions, 15b.6 stubs | DONE | `missions_view.luau`, branch tests | |
-| 16.1 folder layout | PARTIAL | Real layout `scripts/{config,sim,ai,ui,client,server,render}` | Mapping below; GR5-85 |
+| 16.1 folder layout | DONE (mapping documented) | Real layout `scripts/{config,sim,ai,ui,client,server,render}` | Mapping below; no refactor (GR5-85) |
 | 16.2 messages / net protocol | MISSING | No `net/protocol.luau`; client runs a local sim | GR5-88 (Engine), GR5-87, GR5-79 |
 | 16.3 save | PARTIAL | `persistence.luau` + `client/storage.luau` on `rtype.Persistence`; `test_save.luau`, `server/selftest.luau` | Called at boot, every 30 s and on quit (GR5-77) |
 | 16.4 debug panel | PARTIAL | `sim/debug.luau` has 9 actions; `ui/debug.luau` never spawned; `config/debug.luau` hard-codes enabled | GR5-72, GR5-86 |
-| 16.5 leave room | PARTIAL | `Sim:deliver` | No `sender` field (GR5-85) |
+| 16.5 leave room | DONE (deviation recorded) | `Sim:deliver` | No `sender` field, sender is in the text (DECISIONS GR5-85) |
 | 17 demo path | PARTIAL | Speed buttons, editor presets, Shop, Logs->skill, "Simulate 1 h away", warehouse purchase work | Agents inert (GR5-71), no credit boost (GR5-72), Orbis step needs Station panel (GR5-73) |
 | 17 extended T5 demo | MISSING | No T5 save, no deplete-vein, no load path | GR5-86 |
 
@@ -143,3 +143,9 @@ Not repeated here: look and feel (GR5-54) and the demo run (GR5-65).
 | `net/protocol.luau` | not present (GR5-88) |
 | `ui/*` panels | Mostly folded into `scripts/ui/shell.luau` plus `*_view.luau` files |
 | `config/*.luau` | `scripts/config/*.luau` |
+| `sim/sim.luau` as one module, `sim/*` builders (stations, ships, upgrades) | `Sim` is a single class in `scripts/sim/sim.luau`; the builders live beside it (`upgrades.luau`, `logistics.luau`, `branches/*`) |
+| `ui/shell.luau` panels | `scripts/ui/shell.luau` lays out every screen from the pure models in `scripts/ui/*_view.luau` and `shell_model.luau` |
+| `ai/rubix.luau` (provider) | `scripts/ai/axis.luau` behind `scripts/ai/provider.luau`; HTTP in `scripts/server/axis_http.luau`, host in `scripts/server/ai_host.luau` |
+| `ai/validator` | `scripts/ai/validator.luau` |
+| `client/*` render and input | `scripts/client/*` (local sim stand-in, save, audio, map sprites) and `scripts/render/*` (glow, VFX) |
+| `tests/*` | `tests/*.luau` run by `tools/run_tests.sh` (Luau CLI) and `tools/run_engine_test.sh` (engine self-test) |
