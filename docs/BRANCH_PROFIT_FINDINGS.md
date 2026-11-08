@@ -1,19 +1,19 @@
 # Branch profitability: findings and config proposals (GR5-64)
 
-Numbers: `docs/BRANCH_PROFIT_REPORT.md` (5 seeds, 90 game minutes, deterministic; regenerate with `tools/branch_report.sh`, about 70 s). Unlock costs: Salvage 15,000, Refining 18,000, Raiding 20,000. Mining-only control at the T4 fork earns about 2,030 net worth per minute (`hmc`), 2,490 with stored ore shipped by a Logistician (`ship`).
+Numbers: `docs/BRANCH_PROFIT_REPORT.md` (5 seeds, 90 game minutes, deterministic; regenerate with `tools/branch_report.sh`, about 70 s). Unlock costs: Salvage 15,000, Refining 18,000, Raiding 20,000. Mining-only control at the T4 fork earns about 1,720 net worth per minute (`hmc`), 2,300 with stored ore shipped by a Logistician (`ship`).
 
 ## What the measurements say
 
 | Branch (directive) | Net vs control / min | Failure / disable | Mission | Reading |
 |---|---|---|---|---|
-| Salvage careful | +31 @T4, -3 @T2 | 12% hazards, 0 disabled | not reached (stops at layer 2) | Gross 47-63 cr/min, Scavenger Compute 4,000-4,600 cr per window: Compute eats nearly all of gross. |
-| Salvage reckless | +16 @T2, +21 @T4 | 25% hazards, 2.4 disabled per seed | V2 in 4/5 seeds | Same earnings, more risk and repairs; the V2 blueprint is the real payoff. |
-| Refining shipped (best / naive) | +84 / +138 | none | V1 in 5/5 seeds | Net cash is negative (-394 / -357) because refined stock is still in the warehouse (about 50k cr marked); wide per-seed spread (-640 to +650). Not distinguishable from the logistics control at 5 seeds. |
+| Salvage careful | +12 @T4, -5 @T2 | 12% hazards, 0 disabled | not reached (stops at layer 2) | Gross 47-63 cr/min, Scavenger Compute 4,000-4,600 cr per window: Compute eats nearly all of gross. |
+| Salvage reckless | +15 @T2, +23 @T4 | 25% hazards, 2.4 disabled per seed | V2 in 4/5 seeds | Same earnings, more risk and repairs; the V2 blueprint is the real payoff. |
+| Refining shipped (best / naive) | +151 / +80 | none | V1 in 5/5 seeds | Net cash is negative (-289 / -338) because refined stock is still in the warehouse (about 50k cr marked); wide per-seed spread (-521 to +462). Not distinguishable from the logistics control at 5 seeds. |
 | Refining sold at Orbis | not realizable | none | not reached | Orbis does not buy Catalyst or Processor, the stub Logistician stalls with 75k-150k cr of goods stranded. Unreachable buyer, not a refinery result. |
-| Raiding careful | +16 | 23% attacks lost, 0 disabled | V3 in 3/5 seeds | Gross 103 cr/min against 6,400-8,000 cr Compute per window. Marginal net is about zero. |
-| Raiding reckless | -334 | 50% attacks lost, 2.0 disabled | not reached | Loses 7,000-9,400 cr in repairs per window plus Compute. This is the section 15b intended tradeoff (reckless Privateers lose money) and is preserved. |
+| Raiding careful | +15 | 24% attacks lost, 0 disabled | V3 in 3/5 seeds | Gross 103 cr/min against 6,200-8,000 cr Compute per window. Marginal net is about zero. |
+| Raiding reckless | -293 | 45% attacks lost, 2.0 disabled | not reached | Loses 7,200-9,400 cr in repairs per window plus Compute. This is the section 15b intended tradeoff (reckless Privateers lose money) and is preserved. |
 
-Payback of the unlock cost, measured as sustained marginal net worth: not reached in 90 minutes in any Salvage or Raiding scenario; extrapolated 180-2,760 minutes for Salvage, about 380 for careful Raiding. Refining shipped pays back at 58-87 minutes on 3 of 5 seeds and never on the other 2.
+Payback of the unlock cost, measured as sustained marginal net worth: not reached in 90 minutes in any Salvage or Raiding scenario; extrapolated 150-3,150 minutes for Salvage (one seed effectively never), 510-640 for careful Raiding on the 3 of 5 seeds with positive net. Refining shipped pays back at 40-88 minutes on 3 of 5 seeds (best margin) / 4 of 5 (naive) and never or far out on the rest.
 
 ## Config proposals
 
