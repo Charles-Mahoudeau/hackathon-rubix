@@ -1,7 +1,6 @@
 -- PromptBuilder (spec §9.1): assembles the exact prompt an agent is billed for, and its token weight per section.
 -- The panel, the editor and the ledger all call Prompt.build, so what the player sees is what is billed.
 local Ai = require("@scripts/config/ai")
-local ToolsConfig = require("@scripts/config/tools")
 local Compute = require("./compute")
 local ContextBuilder = require("./context_builder")
 local Renderer = require("./context_renderer")
@@ -37,7 +36,7 @@ end
 local function toolsText(sim, agentId)
   local out = {}
   for _, name in ipairs(sim:equippedTools(agentId)) do
-    local sch = ToolsConfig.schemas[name]
+    local sch = sim.registry.schemas[name]
     if sch then
       local args = {}
       for k, v in pairs(sch.args) do args[k] = argText(v) end
@@ -56,7 +55,7 @@ end
 function Prompt.toolWeights(sim, agentId)
   local out = {}
   for _, name in ipairs(sim:equippedTools(agentId)) do
-    local sch = ToolsConfig.schemas[name]
+    local sch = sim.registry.schemas[name]
     local args = {}
     for k, v in pairs(sch.args) do args[k] = argText(v) end
     out[#out + 1] = { name = name, tokens = Compute.estimateTokens(Ai, Json.encode({ name = name, description = sch.description, args = args })) }
@@ -92,7 +91,7 @@ end
 -- accepts (equipped tools by name); `note` is the short line Axis records as the user turn (memory, not the full prompt).
 function Prompt.forProvider(sim, agentId, built)
   local tools = {}
-  for _, name in ipairs(sim:equippedTools(agentId)) do tools[name] = ToolsConfig.schemas[name] end
+  for _, name in ipairs(sim:equippedTools(agentId)) do tools[name] = sim.registry.schemas[name] end
   local ship
   for _, sid in ipairs(sim.shipOrder) do
     if sim.ships[sid].owner == agentId then ship = sim.ships[sid] break end

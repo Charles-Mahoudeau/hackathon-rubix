@@ -8,16 +8,15 @@ local Compute = require("./compute")
 local DecisionLog = require("./decision_log")
 local World = require("@scripts/config/world")
 local Missions = require("./missions")
+local Registry = require("./branches/registry")
 
 local Monitor = {}
-
-local GROUP_OF_TYPE = { miner = "mining", logistician = "logistics" }
 
 local function cfg(sim) return sim.b.monitor end
 
 function Monitor.init(sim)
   local alertTypes = {}
-  for _, t in ipairs(sim.b.alerts.types) do alertTypes[t] = true end
+  for _, t in ipairs(sim.registry.alertTypes) do alertTypes[t] = true end
   sim.monitorSettings = { scope = cfg(sim).defaultScope, heartbeat = cfg(sim).heartbeat.default, alertTypes = alertTypes }
 end
 
@@ -54,7 +53,7 @@ function Monitor.setSettings(sim, changes)
   local st, c = sim.monitorSettings, cfg(sim)
   if changes.scope ~= nil then
     local found = false
-    for _, s in ipairs(c.scopes) do if s == changes.scope then found = true end end
+    for _, s in ipairs(Registry.scopes(sim)) do if s == changes.scope then found = true end end
     if not found then return false, "bad_scope" end
     st.scope = changes.scope
   end
@@ -99,7 +98,7 @@ end
 
 function Monitor.inScope(sim, target)
   local scope = sim.monitorSettings.scope
-  return scope == "company" or GROUP_OF_TYPE[target.type] == scope
+  return scope == "company" or sim.registry:scopeOfAgentType(target.type) == scope
 end
 
 local function skillAborted(agent) return agent.mode == "skill" and agent.skillRun ~= nil and agent.skillRun.aborted ~= nil end

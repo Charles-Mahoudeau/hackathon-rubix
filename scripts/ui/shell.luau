@@ -15,6 +15,7 @@ local ShopView = require("@scripts/ui/shop_view")
 local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local AlertsView = require("@scripts/ui/alerts_view")
+local BranchesView = require("@scripts/ui/branches_view")
 local ArchiveView = require("@scripts/ui/archive_view")
 local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
@@ -703,6 +704,28 @@ local function alertsScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Branches (B-0, spec §15b.1): one row per branch with its state, agents and money per hour.
+local function branchesScreen(font, r, m)
+  local c = Screens.branches
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  nodeAt(L.pad, L.pad, text(font, ("BRANCHES  command %d / %d"):format(m.used, m.capacity), T.small, "dim"))
+  for i, row in ipairs(m.rows) do
+    local y = c.rowY + (i - 1) * c.rowHeight
+    local color = row.state == "open" and "green" or (row.state == "available" and "cyan" or "dim")
+    nodeAt(L.pad, y, text(font, row.name, T.body, color))
+    nodeAt(L.pad + c.stateX, y, text(font, row.state, T.small, color))
+    nodeAt(c.agentsX, y, text(font, #row.agents > 0 and table.concat(row.agents, ", ") or "no agents", T.small, "text"))
+    if row.state == "open" then
+      nodeAt(c.moneyX, y, text(font, ("%d cr/h   %.1f Compute/h"):format(row.creditsPerHour, row.computePerHour), T.small, "text"))
+    elseif row.action then
+      nodeAt(c.moneyX, y, button(font, ("Open %d cr"):format(row.cost), row.action, "green", c.buttonWidth))
+    end
+    if row.note then nodeAt(L.pad, y + c.noteGap, text(font, row.note, T.small, Theme.semantic.warning)) end
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Archive tab strip and the studio's last message, shared by every Archive mode (GR5-26).
 local function studioHeader(font, r, kids, sm)
   local c = Screens.studio
@@ -895,6 +918,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
+  elseif screenId == "branches" and sim.tier >= 2 then
+    children[#children + 1] = branchesScreen(font, rects.main, BranchesView.model(sim))
   elseif screenId == "alerts" and sim.tier >= 5 then
     children[#children + 1] = alertsScreen(font, rects.main, AlertsView.model(sim))
   elseif screenId == "archive" then

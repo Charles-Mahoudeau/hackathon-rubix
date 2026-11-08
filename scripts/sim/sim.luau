@@ -3,7 +3,6 @@ local Balance = require("@scripts/config/balance")
 local World = require("@scripts/config/world")
 local AiConfig = require("@scripts/config/ai")
 local AiQueue = require("@scripts/sim/ai_queue")
-local ToolsConfig = require("@scripts/config/tools")
 local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local ContextSettings = require("@scripts/sim/context_settings")
@@ -20,6 +19,8 @@ local Logistics = require("@scripts/sim/logistics")
 local Alerts = require("@scripts/sim/alerts")
 local Monitor = require("@scripts/sim/monitor")
 local Clock = require("@scripts/sim/clock")
+local Registry = require("@scripts/sim/branches/registry")
+local Branches = require("@scripts/sim/branches/index")
 local MarketConfig = require("@scripts/config/market")
 
 local Sim = {}
@@ -76,11 +77,14 @@ function Sim.new(opts)
   self.home = World.homePlanet
   self.agents, self.agentOrder, self.ships, self.shipOrder, self.freighters = {}, {}, {}, {}, {}
   self.events, self.offer, self.lastAdvanceTick, self.reqs = {}, nil, nil, {}
+  self.registry = Registry.new(opts.branches or Branches.all, b)
+  self.branchesOpen = {}
   Logistics.init(self)
   Alerts.init(self)
   Monitor.init(self)
-  for _, kind in ipairs(b.startAgents) do self:addAgent(kind, kind) end
-  self:addShip("s1", "miner")
+  for _, def in ipairs(self.registry.list) do
+    if def.unlock and def.unlock.startsOpen then Registry.open(self, def.id, true) end
+  end
   self.skills = {}
   self.market = Market.new(self.rng, b.tickSeconds, function(kind, text)
     self:emit("market_notice", { kind = kind, text = text })
@@ -106,7 +110,7 @@ end
 -- A new agent of `kind` (a key of balance.agents) under `id`. `opts.tier` / `opts.station` override the defaults.
 function Sim:addAgent(id, kind, opts)
   opts = opts or {}
-  local def = self.b.agents[kind]
+  local def = self.registry.agentTypes[kind]
   local agent = { id = id, type = kind, tier = opts.tier or def.startTier, tools = {}, pending = nil, mode = "ai", wakeAiOnSkillAbort = true,
     state = "idle", station = opts.station or self.home, decisions = {}, throttled = false,
     directive = "", order = "", history = {}, inbox = {}, contextSettings = ContextSettings.defaults() }
@@ -160,10 +164,8 @@ end
 
 local function tierHasTool(self, agent, tool)
   if tool == "scan" and not self.upgrades.scanner then return false end -- the Scanner is bought in the shop (T2)
-  for t, list in pairs(self.b.tiers) do
-    if t <= agent.tier then for _, n in ipairs(list) do if n == tool then return true end end end
-  end
-  return false
+  local tier = self.registry.toolTier[tool]
+  return tier ~= nil and tier <= agent.tier
 end
 
 local function inRange(self, ship, planetId)
@@ -204,11 +206,11 @@ function Sim:credit(agentId, recordId, gain)
   if t and agentId then t.credits[agentId] = (t.credits[agentId] or 0) + gain end
 end
 
--- Equipped tools of an agent in the schema order of config/tools.luau (what its prompt lists).
+-- Equipped tools of an agent in the schema order of config/tools.luau, then the branch tools (what its prompt lists).
 function Sim:equippedTools(agentId)
   local agent = self.agents[agentId]
   local out = {}
-  for _, name in ipairs(ToolsConfig.order) do
+  for _, name in ipairs(self.registry.toolOrder) do
     if agent.tools[name] and tierHasTool(self, agent, name) then out[#out + 1] = name end
   end
   return out
@@ -225,7 +227,7 @@ function Sim:toolSlots(agentId)
   for _, name in ipairs(self:equippedTools(agentId)) do
     if not self.b.freeTools[name] then used += 1 end
   end
-  return used, self.b.toolSlots[self.agents[agentId].type] or 0
+  return used, self.registry.agentTypes[self.agents[agentId].type].toolSlots or 0
 end
 
 -- Reputation level from lifetime revenue (spec §6.7).
@@ -236,6 +238,11 @@ function Sim:reputationLevel()
 end
 
 function Sim:buyUpgrade(id) return Upgrades.buy(self, id) end
+function Sim:ownsItem(id) return Upgrades.owns(self, id) end
+
+-- Branches (spec §15b.0): open one (pays its cost) or ask why it cannot open.
+function Sim:openBranch(id) return Registry.open(self, id) end
+function Sim:branchBlocker(id) return Registry.blocker(self, id) end
 
 -- Agents the company can run at once, from its Reputation level (spec §6.5, D17).
 function Sim:commandCapacity() return Upgrades.commandCapacity(self) end
@@ -331,6 +338,8 @@ function Sim:validate(agentId, call)
   if not agent.tools[call.name] then return false, "unknown or disallowed tool: " .. call.name end
   if not tierHasTool(self, agent, call.name) then return false, "tool not equipped: " .. call.name end
   local n = call.name
+  local branchTool = self.registry:toolDef(n)
+  if branchTool and branchTool.validate then return branchTool.validate(self, agent, args) end
   local isMiner = agent.type == "miner"
   local ship = isMiner and self.ships[args.ship or ownedShip(self, agent.id).id] or nil
   local shipTool = n == "mine" or n == "return" or n == "sell" or n == "scan"
@@ -457,6 +466,13 @@ function Sim:apply(agentId, call, opts)
   local rid = rec and rec.id
   local args, n = call.args or {}, call.name
   local agent = self.agents[agentId]
+  local branchTool = self.registry:toolDef(n)
+  if branchTool and branchTool.apply then
+    local entry = Feed.begin(self, agentId, call, self:takeReasoning(), rid)
+    local text, result = branchTool.apply(self, agentId, args, { record = rid, call = call })
+    Feed.finish(self, entry, text or "done")
+    return true, result
+  end
   local ship = agent.type == "miner" and self.ships[args.ship or ownedShip(self, agentId).id] or nil
   if agent.type == "monitor" then return Monitor.apply(self, agentId, call, rid) end
   if agent.type == "logistician" and n == "sell" then

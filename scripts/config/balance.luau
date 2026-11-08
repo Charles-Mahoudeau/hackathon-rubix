@@ -12,12 +12,11 @@ return {
   -- Tier 2 is entered when lifetime revenue reaches this (spec §6.6); other tiers come from their own purchases.
   tierRevenue = { [2] = 1500 },
   -- Tool slots per agent type (spec §8.1). `wait` and `run_skill` are free; every other equipped tool takes one slot.
-  toolSlots = { miner = 5, logistician = 5, monitor = 6 },
+  toolSlots = { logistician = 5, monitor = 6 }, -- the Miner's are in config/branches.luau
   freeTools = { wait = true, run_skill = true },
   -- Command capacity (spec §6.5): agents at once, all types, by Reputation level 0, 1, 2, ... (the last value holds above).
   commandCapacity = { 2, 5, 8, 12, 16 },
-  -- Agents that exist from the start; the others (Logistician, ...) are hired once their building stands.
-  startAgents = { "miner" },
+  -- Agents of a branch that is open from the start come from config/branches.luau; the others (Logistician, ...) are hired once their building stands.
   inboxKeep = 20, -- messages an agent's inbox keeps (its context shows the last Ai.inboxMax)
   -- Shop (spec §6.5, D22): costs in cr. `mark` upgrades are bought in order and apply to every mining ship.
   -- stat: drill (units/s at richness 1), hold (units), engine (travel multiplier; the mark sets range), scanner, archive, ship.
@@ -52,28 +51,26 @@ return {
   waitMaxSeconds = 300,
   tiers = {
     -- tools unlocked per equipment tier
-    [1] = { "mine", "return", "sell", "report", "wait", "run_skill" },
-    [2] = { "scan" },
-    [3] = { "store" },
+    -- tools that belong to a branch (mine, return, scan, store: mining) take their tier from config/branches.luau
+    [1] = { "sell", "report", "wait", "run_skill" },
     [4] = { "ship" },
     [5] = { "set_order", "assign_skill", "pause_agent", "resume_agent" },
   },
   agents = {
-    miner = { tools = { "mine", "return", "sell", "store", "report", "wait", "scan", "run_skill" }, startTier = 1 },
     logistician = { tools = { "ship", "sell", "report", "wait", "run_skill" }, startTier = 1 },
     monitor = { tools = { "set_order", "assign_skill", "pause_agent", "resume_agent", "report", "wait" }, startTier = 5 },
   },
   -- The Monitor (spec §8.7, D18). One per company in the MVP; its scope picks the agents it sees and acts on. The heartbeat
   -- (game seconds, or off) wakes it with no alert; an alert older than queueMaxSeconds leaves the queue (not the panel).
   monitor = {
-    tier = 5, scopes = { "company", "mining", "logistics" }, defaultScope = "company",
+    tier = 5, defaultScope = "company",
     heartbeat = { default = 300, min = 60, max = 600, step = 60 }, queueMaxSeconds = 300, stubWaitSeconds = 60,
     -- An order set by the Monitor, and the text a vague stub Monitor writes (spec §10.5).
     stubOrder = "Previous plan failed: %s. Choose another option.",
   },
   -- Alert detection (spec §8.7). The panel keeps the last logMax alerts; each check runs every checkSeconds of game time.
   alerts = {
-    types = { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "crowding", "station_full", "freighter_idle" },
+    types = { "agent_paused", "skill_aborted", "no_compute", "agent_idle", "losing_money", "station_full", "freighter_idle" },
     logMax = 100, checkSeconds = 1,
     idleSeconds = 120, losingMoneySeconds = 300, crowdingSeconds = 60, stationFullPct = 95, freighterIdleSeconds = 300,
   },
