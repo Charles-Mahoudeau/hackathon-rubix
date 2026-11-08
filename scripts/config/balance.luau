@@ -31,6 +31,7 @@ return {
   bailout = { computeBelow = 2, creditsBelow = 200, grantCompute = 3, cooldownSeconds = 300 },
   freighter = { cargo = 500 }, -- spec §5.2
   warehouse = { capacity = 2000, unlockTier = 3 },
+  reputationLevels = { 25000, 75000, 200000, 500000, 1200000 }, -- spec §6.7: lifetime revenue for Rep 1..5
   logMax = 200,
   seed = 1234,
 }

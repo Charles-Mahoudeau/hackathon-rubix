@@ -1,5 +1,6 @@
 -- Ship/convoy engine trail: ring buffer of fading points. Feed with position each frame.
 local cfg = require("@scripts/config/vfx").trail
+local UiTheme = require("@scripts/ui/theme")
 
 local Trail = {}
 
@@ -30,7 +31,7 @@ function Trail.draw(self)
 	local out = {}
 	for i, p in self.points do
 		local k = 1 - p.age / cfg.lifetime
-		out[i] = { x = p.x, y = p.y, alpha = k, width = cfg.startWidth * k, color = cfg.color }
+		out[i] = { x = p.x, y = p.y, alpha = k, width = cfg.startWidth * k, color = UiTheme.rgba(cfg.color) }
 	end
 	return out
 end

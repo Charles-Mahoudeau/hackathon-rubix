@@ -12,7 +12,7 @@ local function look(base, land)
 	return {
 		seed = base.seed, tilt = base.tilt or 0, phase = base.phase or 0,
 		waterLevel = 0, cloudCover = 1, -- all rock, no clouds
-		land = land, water = land, cloud = { "bone", "ice" },
+		land = land, water = land, cloud = { "text", "dim" },
 		pixels = base.pixels, layer = base.layer,
 	}
 end

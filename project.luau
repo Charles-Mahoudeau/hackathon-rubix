@@ -25,10 +25,17 @@ if engine.isClient then
 		-- The client sends its inputs to the server, so it needs the input plugin even with no window.
 		plugins[#plugins + 1] = "rtype.Input"
 	else
-		plugins[#plugins + 1] = "rtype.graphics"
+		-- Only the windowed client draws the shell; a headless client has no window and no Ui plugin.
+		engine.settings.scripts.client = "client/main"
+		for _, plugin in { "rtype.graphics", "rtype.Sprite", "rtype.Transform", "rtype.Shader", "rtype.Text", "rtype.Ui" } do
+			plugins[#plugins + 1] = plugin
+		end
 		engine.settings.platform = "glfw"
 		engine.settings.renderer = "vulkan"
-		engine.settings.window.title = "My game"
+		engine.settings.window.title = "GRIDMIND"
+		-- Keep in step with config/theme.luau layout.view: the UI shell lays out in these view pixels.
+		engine.settings.window.size = { 1280, 720 }
+		engine.settings.vulkan.virtualResolution = { 1280, 720 }
 	end
 end
 
