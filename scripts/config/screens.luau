@@ -27,7 +27,7 @@ return {
     missions = { title = "No active mission", hint = "Missions teach one idea at a time and appear as you progress." },
     archive = { title = "The Archive is empty", hint = "Skills you save are stored here and keep running with zero Compute." },
     shop = { title = "The shop is closed", hint = "Reach tier 2 to buy upgrades, scanners and engines." },
-    branches = { title = "No branches yet", hint = "Salvage, refining and raiding become buyable from tier 2." },
+    branches = { title = "No branches yet", hint = "Mining is open; new branches become buyable from tier 2." },
     station = { title = "No station", hint = "Build the warehouse (tier 3) to store ore and wait for better prices." },
     market = { title = "No market data", hint = "The warehouse lights the markets and shows who buys what." },
     fleet = { title = "No fleet", hint = "The logistics hub (tier 4) brings freighters and their routes." },
@@ -124,6 +124,9 @@ return {
   -- Alerts screen (GR5-29): the Monitor's controls on top, the alert list below.
   alerts = { controlsY = 36, buttonWidth = 150, smallWidth = 32, gap = 8, typesY = 76, typeWidth = 150, typesPerRow = 4, typeRowHeight = 34,
     listY = 160, rowHeight = 20, maxRows = 14, noteX = 190 },
+
+  -- Branches screen (B-0): one row per branch, y offsets inside the main panel.
+  branches = { rowY = 40, rowHeight = 56, buttonWidth = 120, agentsX = 220, stateX = 120, moneyX = 520, noteGap = 20 },
 
   -- Feed strip: how many of the latest feed lines the bottom strip shows.
   feedLines = 5,

@@ -12,11 +12,8 @@ local provider = "stub"
 
 local logisticianStub, monitorStub
 
-local function optimal(sim, agentId, ctx)
-  local kind = sim.agents[agentId].type
-  if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
-  if kind == "monitor" then return monitorStub(sim, agentId, ctx) end
-  if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
+-- The always-best-call stub of the Miner (declared by the mining branch, sim/branches/mining.luau).
+function Ai.minerOptimal(sim, agentId, ctx)
   local ship = ctx.ship
   if ship.cargo > 0 then return { name = "sell", args = { ship = ship.id } } end
   -- best known vein on a reachable planet: richness (band midpoint if unscanned) x hardness x depot price, per trip jump
@@ -55,11 +52,7 @@ end
 -- Spec §10.5: a deterministic keyword interpreter. What the order and the directive leave open is picked from the
 -- sim's stub stream, so a vague prompt wanders (random ore, random hold %) and a precise one works well.
 -- The order is read first, so it wins over the directive.
-local function directiveStub(sim, agentId, ctx)
-  local kind = sim.agents[agentId].type
-  if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
-  if kind == "monitor" then return monitorStub(sim, agentId, ctx) end
-  if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
+function Ai.minerDirective(sim, agentId, ctx)
   local agent = sim.agents[agentId]
   local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
   local function first(fn)
@@ -277,6 +270,20 @@ function monitorStub(sim, agentId, ctx)
   for _, call in ipairs(options) do if sim:validate(agentId, call) then valid[#valid + 1] = call end end
   return valid[1 + math.floor(sim.randStub() * #valid)]
 end
+
+-- Shared agent types have their stub here; a branch's agent type brings its own (registry.agentTypes[type].stub).
+local function dispatch(sim, agentId, ctx, which)
+  local kind = sim.agents[agentId].type
+  if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
+  if kind == "monitor" then return monitorStub(sim, agentId, ctx) end
+  local t = sim.registry.agentTypes[kind]
+  local hook = t and t.stub and t.stub[which]
+  if hook then return hook(sim, agentId, ctx) end
+  return { name = "report", args = { message = "idle" } }
+end
+
+local function optimal(sim, agentId, ctx) return dispatch(sim, agentId, ctx, "optimal") end
+local function directiveStub(sim, agentId, ctx) return dispatch(sim, agentId, ctx, "directive") end
 
 -- Deliberately vague: sometimes emits invalid calls, to exercise validation.
 local function vague(sim, agentId, ctx)

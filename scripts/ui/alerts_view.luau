@@ -2,6 +2,7 @@
 -- types wake it). Pure reads of the sim; actions are "alerts.<verb>[.<arg>]".
 local Alerts = require("@scripts/sim/alerts")
 local Monitor = require("@scripts/sim/monitor")
+local Registry = require("@scripts/sim/branches/registry")
 
 local View = {}
 
@@ -22,7 +23,7 @@ function View.model(sim)
   local hired = sim.agents.monitor ~= nil
   local hb = st.heartbeat
   local types = {}
-  for _, t in ipairs(b.alerts.types) do
+  for _, t in ipairs(sim.registry.alertTypes) do
     types[#types + 1] = { type = t, on = st.alertTypes[t] == true, action = "alerts.type." .. t }
   end
   local blocker = Monitor.hireBlocker(sim)
@@ -40,7 +41,7 @@ end
 
 function View.signature(sim)
   local parts = { tostring(sim.agents.monitor ~= nil), sim.monitorSettings.scope, tostring(sim.monitorSettings.heartbeat), tostring(#sim.alerts.list) }
-  for _, t in ipairs(sim.b.alerts.types) do parts[#parts + 1] = tostring(sim.monitorSettings.alertTypes[t]) end
+  for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(sim.monitorSettings.alertTypes[t]) end
   for _, r in ipairs(Alerts.rows(sim)) do parts[#parts + 1] = r.id .. r.status end
   return table.concat(parts, ",")
 end
@@ -51,7 +52,7 @@ function View.act(sim, action)
   local c = sim.b.monitor
   if action == "alerts.hire" then return true, sim:hireMonitor() end
   if action == "alerts.scope" then
-    return true, sim:setMonitorSettings({ scope = nextOf(c.scopes, sim.monitorSettings.scope) })
+    return true, sim:setMonitorSettings({ scope = nextOf(Registry.scopes(sim), sim.monitorSettings.scope) })
   end
   local hb = sim.monitorSettings.heartbeat
   local h = c.heartbeat

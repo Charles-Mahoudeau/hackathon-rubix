@@ -19,13 +19,12 @@ function Alerts.monitorOf(sim)
   return nil
 end
 
-local GROUP_OF_TYPE = { miner = "mining", logistician = "logistics" }
-local GROUP_OF_ALERT = { crowding = "mining", station_full = "logistics", freighter_idle = "logistics" }
+local GROUP_OF_ALERT = { station_full = "logistics", freighter_idle = "logistics" }
 
 local function groupOf(sim, kind, agentId)
   local agent = agentId and sim.agents[agentId]
-  if agent then return GROUP_OF_TYPE[agent.type] end
-  return GROUP_OF_ALERT[kind]
+  if agent then return sim.registry:scopeOfAgentType(agent.type) end
+  return GROUP_OF_ALERT[kind] or sim.registry:groupOfAlert(kind)
 end
 
 local function paramsText(params)
@@ -145,22 +144,10 @@ local function stepAgents(sim, c, deep)
   end
 end
 
-local function stepCrowding(sim, c)
-  local tr, byVein = sim.alertTrack.veins, sim:minersByVein()
-  for vid, ships in pairs(byVein) do
-    if #ships >= 2 then
-      local t = tr[vid]
-      if not t then t = { since = sim.tick }; tr[vid] = t end
-      if not t.raised and sim.tick - t.since >= sim:ticks(c.crowdingSeconds) then
-        t.raised = true
-        local ids = {}
-        for _, s in ipairs(ships) do ids[#ids + 1] = s.id end
-        Alerts.raise(sim, "crowding", ships[1].owner, ("vein %s shared by %s"):format(vid, table.concat(ids, ",")))
-      end
-    end
-  end
-  for vid in pairs(tr) do
-    if not byVein[vid] or #byVein[vid] < 2 then tr[vid] = nil end
+-- Detection that belongs to a branch (crowding: mining) runs from the branch's own `alerts.detect`.
+local function stepBranches(sim, c)
+  for _, def in ipairs(sim.registry.list) do
+    if def.alerts and def.alerts.detect and sim.branchesOpen[def.id] then def.alerts.detect(sim, c, Alerts.raise) end
   end
 end
 
@@ -203,7 +190,7 @@ function Alerts.step(sim)
   local every = sim:ticks(c.checkSeconds)
   if sim.tick % every ~= 0 then return end
   stepAgents(sim, c, sim.tick % (every * 10) == 0)
-  stepCrowding(sim, c)
+  stepBranches(sim, c)
   stepStations(sim, c)
   stepFreighters(sim, c)
 end

@@ -45,6 +45,11 @@ local function owned(sim, it)
   return up.ships >= it.n
 end
 
+function Upgrades.owns(sim, id)
+  local it = item(sim, id)
+  return it ~= nil and owned(sim, it)
+end
+
 -- Why `id` cannot be bought now, or nil: tier_locked | already_owned | needs_<previous> | reputation_<n> | not_enough_credits.
 function Upgrades.blocker(sim, id)
   local it = item(sim, id)

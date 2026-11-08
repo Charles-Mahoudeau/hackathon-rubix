@@ -66,6 +66,7 @@ function Persistence.serialize(sim, savedAt)
       missions = sim.missions,
       alerts = sim.alerts,
       monitorSettings = sim.monitorSettings,
+      branchesOpen = sim.branchesOpen,
       stationOrder = sim.stationOrder,
       compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
         lifetime = sim.compute.lifetime, lifetimeTotal = sim.compute.lifetimeTotal, started = sim.compute.started },
@@ -80,9 +81,9 @@ end
 
 -- Rebuilds a Sim from a decoded save. Does not check the version (see load). The caller re-attaches the decider.
 function Persistence.restore(data, opts)
-  local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance })
+  local sim = Sim.new({ seed = data.seed, balance = opts and opts.balance, branches = opts and opts.branches })
   local st = Sim.deepCopy(data.state)
-  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions" }) do
+  for _, key in ipairs({ "tick", "tier", "lifetimeRevenue", "upgrades", "agentOrder", "shipOrder", "deepNav", "home", "skills", "logs", "debug", "lastDecision", "feed", "feedSeq", "records", "recordSeq", "versions", "missions", "branchesOpen" }) do
     if st[key] ~= nil then sim[key] = st[key] end
   end
   for i, fresh in ipairs(Missions.new()) do -- older saves hold fewer missions: the new ones start locked

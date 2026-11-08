@@ -2,7 +2,6 @@
 -- the Archive is shared by the whole company, and the runner (Skills.step) is called once per tick for every agent in
 -- skill mode. Pure sim logic: it talks to the UI only through sim events.
 local World = require("@scripts/config/world")
-local ToolsConfig = require("@scripts/config/tools")
 local Feed = require("./feed")
 local Market = require("./market")
 local Alerts = require("./alerts")
@@ -11,7 +10,6 @@ local Skills = {}
 
 -- Which arg is turned into which parameter ("make this a parameter"), and which parameter kinds exist (spec §13.2b).
 local PARAM_OF_ARG = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", stop_at_hold_pct = "pct" }
-local PARAM_KINDS = { vein = true, resource = true, destination = true, buyer = true, pct = true, station = true }
 local PARAM_NAMES = { vein = "vein", resource = "resource", destination = "destination", buyer = "buyer", pct = "pct", station = "station" }
 
 local function isParam(v) return type(v) == "string" and v:sub(1, 1) == "$" end
@@ -52,23 +50,19 @@ function Skills.checkParams(sim, skill, values)
   for name, decl in pairs(skill.params or {}) do
     local v = values[name]
     if v == nil then return false, "bad_params", "missing parameter " .. name end
-    local kind, f = decl.kind, decl.filter or {}
-    if kind == "vein" then
-      local vein = sim.veins[v]
-      if not vein then return false, "bad_params", name .. ": unknown vein" end
-      if f.resource and vein.ore ~= f.resource then return false, "bad_params", name .. ": must be a " .. f.resource .. " vein" end
-      if f.planet and vein.planet ~= f.planet then return false, "bad_params", name .. ": must be a vein on " .. f.planet end
-    elseif kind == "resource" then
-      if not World.ores[v] then return false, "bad_params", name .. ": unknown resource" end
-    elseif kind == "destination" then
-      if not World.markets[v] then return false, "bad_params", name .. ": unknown market" end
+    local kind = decl.kind
+    local err
+    if kind == "destination" then
+      if not World.markets[v] then err = name .. ": unknown market" end
     elseif kind == "buyer" then
-      if v ~= "hmc" and not World.markets[v] then return false, "bad_params", name .. ": unknown buyer" end
+      if v ~= "hmc" and not World.markets[v] then err = name .. ": unknown buyer" end
     elseif kind == "station" then
-      if not sim.planets[v] then return false, "bad_params", name .. ": unknown station" end
-    elseif kind == "pct" then
-      if type(v) ~= "number" or v < 10 or v > 100 then return false, "bad_params", name .. ": must be 10-100" end
+      if not sim.planets[v] then err = name .. ": unknown station" end
+    else
+      local k = sim.registry.paramKinds[kind]
+      err = k and k.check and k.check(sim, name, v, decl) -- the kinds of a branch (vein, resource, pct: mining)
     end
+    if err then return false, "bad_params", err end
   end
   return true
 end
@@ -80,16 +74,16 @@ function Skills.validate(sim, skill, agentId)
   if type(skill) ~= "table" then return false, "bad_skill" end
   local len = type(skill.name) == "string" and (utf8.len(skill.name) or #skill.name) or 0
   if len < 1 or len > cfg.nameMax then return false, "bad_name" end
-  local def = sim.b.agents[skill.agent_type]
+  local def = sim.registry.agentTypes[skill.agent_type]
   if not def then return false, "bad_agent_type" end
   if type(skill.steps) ~= "table" or #skill.steps < 1 or #skill.steps > cfg.stepsMax then return false, "bad_steps" end
   for name, decl in pairs(skill.params or {}) do
-    if not PARAM_KINDS[type(decl) == "table" and decl.kind or ""] then return false, "bad_param_kind: " .. tostring(name) end
+    if not sim.registry.paramKinds[type(decl) == "table" and decl.kind or ""] or sim.registry.paramKinds[decl.kind].reserved then return false, "bad_param_kind: " .. tostring(name) end
   end
   local allowed = {}
   for _, t in ipairs(def.tools) do allowed[t] = true end
   for i, step in ipairs(skill.steps) do
-    if type(step) ~= "table" or not ToolsConfig.schemas[step.tool] or step.tool == "run_skill" then return false, ("step %d: bad tool"):format(i) end
+    if type(step) ~= "table" or not sim.registry.schemas[step.tool] or step.tool == "run_skill" then return false, ("step %d: bad tool"):format(i) end
     if not allowed[step.tool] or (agentId and not sim:hasTool(agentId, step.tool)) then
       return false, ("step %d: tool not equipped: %s"):format(i, step.tool)
     end
