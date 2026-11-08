@@ -4,7 +4,7 @@
 -- replicates the sim, the client runs a local stand-in Sim at 10 Hz so the shell shows real numbers.
 local Screens = require("@scripts/config/screens")
 local Theme = require("@scripts/config/theme")
-local Sim = require("@scripts/sim/sim")
+local SimHost = require("@scripts/client/sim_host")
 local Clock = require("@scripts/sim/clock")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
@@ -122,7 +122,7 @@ engine.ecs.system("game.Shell", {
 	calls = { "rtype.audio.playSound" },
 	run = function(ctx)
 		local now = ctx.time.elapsed
-		state.sim = state.sim or Sim.new()
+		state.sim = state.sim or SimHost.new()
 		local dt = state.lastTime and (now - state.lastTime) or 0
 		state.lastTime = now
 
