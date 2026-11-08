@@ -53,6 +53,7 @@ do
   local m = s.market
   local seen = 0
   assert(m:forceEvent("shortage", "halcyon", "iridium"))
+  assert(m.notices[#m.notices].text:find("target +50%", 1, true), "event notice describes a target, not an immediate price")
   assert(not m:forceEvent("shortage", "halcyon", "crystal") and not m:forceEvent("nope"))
   local p0 = Market.price(m, "halcyon", "iridium")
   seconds(s, 60)

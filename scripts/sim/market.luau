@@ -121,7 +121,7 @@ local function startEvent(m, mk, ore, kind)
   r.t = r.b * (kind == "shortage" and e.shortageMult or e.glutMult)
   r.untilSec, r.kind = m.sec + e.durationSeconds, kind
   local pct = math.floor((r.t / r.b - 1) * 100 + 0.5)
-  note(m, kind, ("%s %s on %s: %s%d%%"):format(oreName(ore), kind, mk.name:match("^(%S+)"), pct >= 0 and "+" or "", pct))
+  note(m, kind, ("%s %s on %s: target %s%d%%"):format(oreName(ore), kind, mk.name:match("^(%S+)"), pct >= 0 and "+" or "", pct))
 end
 
 local function rollEvent(m, mk)

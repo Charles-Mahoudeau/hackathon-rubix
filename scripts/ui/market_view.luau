@@ -19,7 +19,7 @@ function View.model(sim)
   local rows, bests = {}, {}
   local goods = {}
   for _, ore in ipairs(World.oreOrder) do goods[#goods + 1] = ore end
-  for _, good in ipairs(Refined.recipeOrder) do if Market.has(m, "orbis", good) then goods[#goods + 1] = good end end
+  for _, good in ipairs(Refined.recipeOrder) do goods[#goods + 1] = good end
   for _, ore in ipairs(goods) do
     bests[ore] = Market.best(m, ore, function(mid) return sim:marketUnlocked(mid) end)
   end

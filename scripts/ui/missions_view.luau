@@ -60,7 +60,7 @@ function View.model(sim, view)
     local v = Salvage.mission(sim)
     local state = v.status == "claimed" and "claimed" or (v.status == "locked" and "locked" or "current")
     out.optional[#out.optional + 1] = { id = v.id, name = v.name .. " (optional)", state = state, reward = rewardText({ blueprint = 1 }), icons = {},
-      brief = v.brief, hint = v.hint, progressText = v.status == "active" and "not yet" or "done",
+      brief = v.brief, hint = v.hint, progressText = (v.status == "complete" or v.status == "claimed") and "done" or "not yet",
       claim = v.status == "complete" and ("missions.claim." .. v.id) or nil }
   end
   if view and view.selected then

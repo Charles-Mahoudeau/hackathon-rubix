@@ -419,6 +419,12 @@ do
   end
   scan(m, 0)
   assert(found, "refined goods show in the Market panel")
+  assert(m.bestBuyer.catalyst == "meridian" and m.bestBuyer.processor == "meridian", "best buyers include goods Orbis does not buy")
+  for _, r in ipairs(m.rows) do
+    if r.resource == "catalyst" or r.resource == "processor" then
+      assert(r.market == "meridian" and r.best, "only the eligible buyer is marked best")
+    end
+  end
 end
 
 print("test_refining: ok")
