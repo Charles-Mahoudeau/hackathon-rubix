@@ -528,18 +528,27 @@ function Sim:resumeAgent(agentId)
   return true
 end
 
-function Sim:setDirective(agentId, text)
+-- The player's permanent directive and one-off order (spec §9.4). Over the token limit the text is refused and nothing
+-- changes; both are read by the prompt builder at the agent's next decision. An empty order clears it.
+local function setText(self, agentId, field, text, maxTokens)
   local agent = self.agents[agentId]
   if not agent or type(text) ~= "string" then return false, "bad_args" end
-  agent.directive = text
+  if Compute.estimateTokens(self.compute.cfg, text) > maxTokens then return false, "too_long" end
+  agent[field] = text
   return true
 end
 
-function Sim:setOrder(agentId, text)
+function Sim:setDirective(agentId, text) return setText(self, agentId, "directive", text, self.compute.cfg.editor.directiveMaxTokens) end
+
+function Sim:setOrder(agentId, text) return setText(self, agentId, "order", text, self.compute.cfg.editor.orderMaxTokens) end
+
+-- Skill slots of an agent at its tier (spec D1: 1 slot from T1). Assigning skills is GR5-10.
+function Sim:skillSlots(agentId)
+  local slots = self.b.skillSlots
   local agent = self.agents[agentId]
-  if not agent or type(text) ~= "string" then return false, "bad_args" end
-  agent.order = text
-  return true
+  local n = 0
+  for tier, count in pairs(slots) do if tier <= agent.tier and count > n then n = count end end
+  return n
 end
 
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,

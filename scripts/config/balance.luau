@@ -26,6 +26,7 @@ return {
     delaySecondsMin = 2, delaySecondsMax = 4, vagueErrorRate = 0.5, -- Compute cost per decision: config/ai.luau
     thrashMaxDecisions = 5, thrashWindowSeconds = 30, -- spec §8.3: max decisions per agent per window of game time
   },
+  skillSlots = { [1] = 1 }, -- spec D1: skill slots per agent by tier (1 from T1); assignment is GR5-10
   crowding = { perExtraShip = 0.5 }, -- spec §5.1: each ship on a shared vein mines at 1 / (1 + perExtraShip x (n - 1))
   -- spec §8.5: the only free Compute in the game
   bailout = { computeBelow = 2, creditsBelow = 200, grantCompute = 3, cooldownSeconds = 300 },

@@ -130,9 +130,10 @@ function Model.feed(sim)
 end
 
 -- One string that changes when anything the shell draws changes: the shell redraws only then.
-function Model.signature(sim, screenId: string)
+function Model.signature(sim, screenId: string, extra: string?)
   local top, parts = Model.topBar(sim), {}
   parts[#parts + 1] = screenId
+  parts[#parts + 1] = extra or ""
   parts[#parts + 1] = ("%s|%s|%s|%s|%d"):format(top.creditsText, top.computeText, top.reputationText, top.tierText, round(top.computeFraction * 100))
   for _, p in ipairs(Model.map(sim).planets) do parts[#parts + 1] = p.id .. (p.lit and "+" or "-") end
   for _, m in ipairs(Model.map(sim).markets) do parts[#parts + 1] = m.id end

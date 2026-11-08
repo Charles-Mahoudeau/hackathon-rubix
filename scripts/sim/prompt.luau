@@ -52,7 +52,20 @@ local function orNone(text)
   return text
 end
 
--- opts.settings overrides the agent's own context settings (the panel previews options without saving them).
+-- Token weight of each equipped tool's schema line (D14: every equipped tool is paid for in every prompt).
+function Prompt.toolWeights(sim, agentId)
+  local out = {}
+  for _, name in ipairs(sim:equippedTools(agentId)) do
+    local sch = ToolsConfig.schemas[name]
+    local args = {}
+    for k, v in pairs(sch.args) do args[k] = argText(v) end
+    out[#out + 1] = { name = name, tokens = Compute.estimateTokens(Ai, Json.encode({ name = name, description = sch.description, args = args })) }
+  end
+  return out
+end
+
+-- opts.settings overrides the agent's own context settings (the panel previews options without saving them);
+-- opts.directive / opts.order override the saved texts (the editor previews a draft the same way).
 -- -> { text, sections = {rules, directive, order, context, tools}, input, contextText, format }
 function Prompt.build(sim, agentId, opts)
   local agent = sim.agents[agentId]
@@ -60,8 +73,8 @@ function Prompt.build(sim, agentId, opts)
   local contextText = Renderer.render(ContextBuilder.build(sim, agentId, settings), settings.format)
   local parts = {
     rules = rulesText(agent, settings.format),
-    directive = "[PLAYER DIRECTIVE]\n" .. orNone(agent.directive),
-    order = "[CURRENT ORDER]\n" .. orNone(agent.order),
+    directive = "[PLAYER DIRECTIVE]\n" .. orNone(opts and opts.directive or agent.directive),
+    order = "[CURRENT ORDER]\n" .. orNone(opts and opts.order or agent.order),
     context = "[CONTEXT]\n" .. contextText,
     tools = "[TOOLS]\n" .. toolsText(sim, agentId),
   }
