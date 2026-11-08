@@ -240,18 +240,7 @@ local function mapOverlay(font, r, map, opts)
       nodes[#nodes + 1] = dot(d, cfg.routeThickness * scale, name, math.min(1, style.color[4] * 0.55 + (focused and 0.3 or 0)))
     end
   end
-  for _, c in ipairs(map.convoys) do
-    local a, b = points[c.from], points[c.to]
-    local at = { x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }
-    for _, n in ipairs(Glow.halo(at, cfg.convoyDot / 2, "active", t, true, "text")) do nodes[#nodes + 1] = n end
-    nodes[#nodes + 1] = dot(at, cfg.convoyDot, "text")
-  end
-  for _, c in ipairs(map.rivals) do
-    local a, b = points[c.from], points[c.to]
-    if a and b then
-      nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.rivalDot, c.orange and Theme.semantic.warning or "dim")
-    end
-  end
+  -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
   local function label(center, name, sub, colorName, subColor, below)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
