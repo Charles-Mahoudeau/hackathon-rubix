@@ -5,25 +5,25 @@ local World = require("@scripts/config/world")
 local Sim = {}
 Sim.__index = Sim
 
-local function lcg(seed)
-  local s = seed
-  return function()
-    s = (s * 1103515245 + 12345) % 2147483648
-    return s / 2147483648
-  end
-end
-
-local function deepCopy(v)
+function Sim.deepCopy(v)
   if type(v) ~= "table" then return v end
   local out = {}
-  for k, x in pairs(v) do out[k] = deepCopy(x) end
+  for k, x in pairs(v) do out[k] = Sim.deepCopy(x) end
   return out
 end
 
 function Sim.new(opts)
   opts = opts or {}
   local b = opts.balance or Balance
-  local self = setmetatable({ b = b, tick = 0, logs = {}, rand = lcg(opts.seed or b.seed) }, Sim)
+  local seed = opts.seed or b.seed
+  local self = setmetatable({ b = b, tick = 0, logs = {}, seed = seed, rng = { main = seed }, tier = 1,
+    debug = { creditBoosts = 0 } }, Sim)
+  -- Linear congruential stream; its whole state is rng.main, so a save can resume it exactly.
+  self.rand = function()
+    local s = (self.rng.main * 1103515245 + 12345) % 2147483648
+    self.rng.main = s
+    return s / 2147483648
+  end
   self.resources = { credits = b.startCredits, compute = b.startCompute, reputation = b.startReputation }
   self.warehouse = {}
   for _, ore in ipairs(b.ores) do self.resources[ore] = 0; self.warehouse[ore] = 0 end
@@ -264,6 +264,7 @@ function Sim:step()
       if not ok then self:log("ERROR", "decide failed: " .. tostring(call))
       else
         self.resources.compute = math.max(0, self.resources.compute - self.b.ai.computePerDecision)
+        self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
         local d = self.b.ai
         agent.pending = { call = call, ctx = ctx,
           delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }
@@ -302,7 +303,7 @@ function Sim:context(agentId)
   end
   return {
     tick = self.tick,
-    resources = deepCopy(self.resources),
+    resources = Sim.deepCopy(self.resources),
     ship = { id = ship.id, state = ship.state, at = ship.at, cargo = ship.cargo, ore = ship.ore,
       hold = self.b.ship.cargoCap, vein = ship.vein and ship.vein.id or nil },
     planets = planets,
