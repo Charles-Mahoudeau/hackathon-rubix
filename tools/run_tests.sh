@@ -7,6 +7,8 @@ echo "== check_palette"
 "$dir/tools/check_palette.sh" || status=1
 echo "== check_audio"
 "$dir/tools/check_audio.sh" || status=1
+echo "== check_ui_assets"
+"$dir/tools/check_ui_assets.sh" || status=1
 for t in "$dir"/tests/*.luau; do
   echo "== $(basename "$t")"
   luau "$t" || status=1
