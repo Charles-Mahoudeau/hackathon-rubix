@@ -29,6 +29,9 @@ local function sortedKeys(t)
   return ks
 end
 
+-- The parameter an arg can become ("make this a parameter"), or nil when it cannot (spec §13.2b).
+function Skills.paramOfArg(arg) return PARAM_OF_ARG[arg] end
+
 function Skills.count(sim)
   local n = 0
   for _ in pairs(sim.skills) do n += 1 end
@@ -136,11 +139,13 @@ function Skills.suggestParam(sim, skill)
   return nil
 end
 
--- A copy of `skill` where `arg` (same value in every step that has it) becomes a parameter.
-function Skills.makeParam(skill, arg, filter)
+-- A copy of `skill` where `arg` (same value in every step that has it) becomes a parameter. `only` picks which value
+-- (default: the first found); a parameter of that name must not exist yet.
+function Skills.makeParam(skill, arg, filter, only)
   local pname = PARAM_OF_ARG[arg]
   if not pname then return nil, "not_parametrizable" end
-  local out, value = copy(skill), nil
+  if skill.params and skill.params[pname] then return nil, "already_parameter" end
+  local out, value = copy(skill), only
   for _, step in ipairs(out.steps) do
     local v = step.args and step.args[arg]
     if v ~= nil and not isParam(v) and (value == nil or v == value) then value = v; step.args[arg] = "$" .. pname end

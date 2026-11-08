@@ -41,10 +41,17 @@ function View.model(sim)
     local runners = {}
     for _, u in ipairs(usage[name] or {}) do
       runners[#runners + 1] = { agent = u.agent, params = paramsText(u.params), aborted = u.aborted,
-        restart = u.aborted and ("archive.restart." .. u.agent) or nil }
+        restart = u.aborted and ("archive.restart." .. u.agent) or nil, stop = "studio.stop." .. u.agent }
+    end
+    -- "Run on <agent>" for every agent of the skill's type (the editor then asks for the parameter values).
+    local assigns = {}
+    for _, id in ipairs(sim.agentOrder) do
+      if sim.agents[id].type == s.agent_type then
+        assigns[#assigns + 1] = { agent = id, label = "Run on " .. id, action = ("studio.assign.%s.%s"):format(name, id) }
+      end
     end
     skills[#skills + 1] = { name = name, agentType = s.agent_type, loop = s.loop, params = paramNames, steps = steps,
-      createdFrom = s.created_from or "manual", runners = runners, delete = "archive.delete." .. name }
+      createdFrom = s.created_from or "manual", runners = runners, assigns = assigns, delete = "archive.delete." .. name }
   end
   local used, max = Skills.count(sim), sim:archiveCapacity()
   return {
@@ -61,8 +68,11 @@ function View.signature(sim)
   local parts = { OfflineView.signature(sim), tostring(Skills.count(sim)) }
   for _, id in ipairs(sim.agentOrder) do
     local a = sim.agents[id]
-    if a.mode == "skill" then parts[#parts + 1] = id .. tostring(a.activeSkill) .. tostring(a.skillRun and a.skillRun.aborted or "") end
+    if a.mode == "skill" then
+      parts[#parts + 1] = id .. tostring(a.activeSkill) .. tostring(a.skillRun and a.skillRun.aborted or "") .. paramsText(a.skillParams)
+    end
   end
+  for _, name in ipairs(Skills.names(sim)) do parts[#parts + 1] = name .. #sim.skills[name].steps end
   return table.concat(parts, ",")
 end
 
