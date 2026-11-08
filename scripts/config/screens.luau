@@ -77,7 +77,8 @@ return {
     identityY = 0, identityHeight = 40, boxY = 48, boxHeight = 140, directiveWidth = 408,
     fieldY = 44, fieldHeight = 36, previewY = 86, previewHeight = 46, barY = 28, barHeight = 8,
     actionsY = 192, actionsHeight = 36, toolsY = 234, toolsHeight = 122, feedY = 364, feedHeight = 144,
-    placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)" },
+    teamColW = 150, -- the tools box's right column: name input, home station, dismiss
+    placeholder = { directive = "Permanent instruction (max 400 tokens)", order = "One-off order, until cleared (max 100 tokens)", name = "Display name" },
     emptyList = "No agents", noSelection = "Select an agent", feedLines = 8, saveButton = 'Save as skill', feedEmpty = "No tool calls yet.",
   },
 

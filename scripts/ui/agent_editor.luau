@@ -18,7 +18,7 @@ local Editor = {}
 -- A draft starts as what the agent has saved.
 function Editor.newDraft(sim, agentId)
   local agent = sim.agents[agentId]
-  return { directive = agent.directive, order = agent.order }
+  return { directive = agent.directive, order = agent.order, name = agent.displayName or "" }
 end
 
 -- A counter: tokens of the text against its limit. state: "ok" | "warn" (near the limit) | "over" (cannot be saved).
@@ -57,6 +57,57 @@ function Editor.lockedTools(sim, agentId)
     end
   end
   return out
+end
+
+-- Team controls of one agent (spec §7, §8.1, §16.2): display name, home station (Miners), the tools it could equip, dismiss.
+function Editor.team(sim, agentId)
+  local agent = sim.agents[agentId]
+  local def = sim.registry.agentTypes[agent.type]
+  local equipped, free = {}, {}
+  for _, name in ipairs(sim:equippedTools(agentId)) do equipped[name] = true end
+  for _, name in ipairs(sim.registry.toolOrder) do
+    local offered = false
+    for _, t in ipairs(def.tools) do if t == name then offered = true end end
+    if offered and not equipped[name] then free[#free + 1] = name end
+  end
+  local home
+  if agent.type == "miner" then
+    home = { station = sim:homeOf(agentId), action = "editor.home.cycle" }
+  end
+  return { name = sim:agentName(agentId), home = home, freeTools = free, dismissAction = "editor.dismiss" }
+end
+
+-- Home station choices in build order (main station first).
+function Editor.nextHome(sim, agentId)
+  local order = { sim.home }
+  for _, id in ipairs(sim.stationOrder) do if id ~= sim.home then order[#order + 1] = id end end
+  local cur = sim:homeOf(agentId)
+  for i, id in ipairs(order) do
+    if id == cur then return order[i % #order + 1] end
+  end
+  return order[1]
+end
+
+-- Click on a team control: -> handled, ok, why
+function Editor.act(sim, agentId, action)
+  if action == "editor.home.cycle" then
+    local ok, why = sim:setHomeStation(agentId, Editor.nextHome(sim, agentId))
+    return true, ok, why
+  elseif action == "editor.dismiss" then
+    local ok, why = sim:dismissAgent(agentId)
+    return true, ok, why
+  elseif action:sub(1, 12) == "editor.tool." then
+    local name = action:sub(13)
+    local list = {}
+    local was = false
+    for t in pairs(sim.agents[agentId].tools) do
+      if t == name then was = true else list[#list + 1] = t end
+    end
+    if not was then list[#list + 1] = name end
+    local ok, why = sim:setTools(agentId, list)
+    return true, ok, why
+  end
+  return false
 end
 
 -- The agent list (left column): one row per agent, the selected one marked, a Monitor-locked one flagged.
@@ -116,7 +167,7 @@ function Editor.model(sim, agentId, draft)
     order = orderCounter,
     canSave = Editor.canSave(sim, draft),
     limitNote = Editor.limitNote(directiveCounter, orderCounter),
-    dirty = draft.directive ~= saved.directive or draft.order ~= saved.order,
+    dirty = draft.directive ~= saved.directive or draft.order ~= saved.order or (draft.name or "") ~= saved.name,
     orderActive = agent.order ~= "",
     orderSource = (agent.order ~= "" and agent.orderSource) or nil,
     -- the Monitor lock: only shown once a Monitor is hired, and never for the Monitor itself
@@ -129,6 +180,7 @@ function Editor.model(sim, agentId, draft)
     formats = formats,
     format = p.format,
     tools = Prompt.toolWeights(sim, agentId),
+    team = Editor.team(sim, agentId),
     lockedTools = Editor.lockedTools(sim, agentId),
     toolSlots = (function() local used, max = sim:toolSlots(agentId) return { used = used, max = max } end)(),
     type = agent.type, state = agent.state, mode = agent.mode == "skill" and (agent.activeSkill or "skill") or "AI",
@@ -243,6 +295,11 @@ function Editor.save(sim, agentId, draft)
   if not ok then return false, err end
   ok, err = sim:setOrder(agentId, draft.order)
   if not ok then return false, err end
+  local current = sim.agents[agentId].displayName or ""
+  if (draft.name or "") ~= current and (draft.name or "") ~= "" then
+    ok, err = sim:renameAgent(agentId, draft.name)
+    if not ok then return false, err end
+  end
   return true, sim.compute.cfg.editor.savedToast
 end
 
