@@ -6,6 +6,7 @@ return {
   nav = {
     { id = "map", label = "Map", unlockTier = 1 },
     { id = "agents", label = "Agents", unlockTier = 1 },
+    { id = "team", label = "Team", unlockTier = 2 },
     { id = "logs", label = "Logs", unlockTier = 1 },
     { id = "missions", label = "Missions", unlockTier = 1 },
     { id = "archive", label = "Archive", unlockTier = 1 },
@@ -21,6 +22,7 @@ return {
   -- Shown when a screen has nothing yet. `title` is the heading, `hint` tells the player what will appear and how.
   empty = {
     agents = { title = "No agents to show", hint = "Your Miner will appear here with its directive, tools and mode." },
+    team = { title = "No team yet", hint = "Every agent appears here with its state, mode, Compute and earnings." },
     logs = { title = "No decisions logged yet", hint = "Every agent decision is recorded here once an agent has thought." },
     missions = { title = "No active mission", hint = "Missions teach one idea at a time and appear as you progress." },
     archive = { title = "The Archive is empty", hint = "Skills you save are stored here and keep running with zero Compute." },
@@ -101,6 +103,10 @@ return {
   -- Fleet screen (GR5-12): Reputation bar and hub on top, then one block per station, outposts to build, ships.
   fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
+
+  -- Team screen (GR5-28): one row per agent.
+  team = { rowY = 48, rowHeight = 26, nameX = 0, assetX = 130, modeX = 270, stateX = 380, computeX = 500, netX = 590, errorsX = 690, alertX = 760,
+    headerY = 28 },
 
   -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },

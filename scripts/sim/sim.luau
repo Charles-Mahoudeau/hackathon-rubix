@@ -195,7 +195,7 @@ function Sim:credit(agentId, recordId, gain)
   self.resources.credits = self.resources.credits + gain
   self.lifetimeRevenue = self.lifetimeRevenue + gain
   if agentId then DecisionLog.earned(self, agentId, recordId, gain) end
-  Missions.onCredit(self, recordId, gain)
+  Missions.onCredit(self, recordId, gain, agentId)
   local t = self.tally
   if t and agentId then t.credits[agentId] = (t.credits[agentId] or 0) + gain end
 end
@@ -445,6 +445,7 @@ function Sim:apply(agentId, call, opts)
     self:log("ERROR", agentId .. ": rejected " .. tostring(type(call) == "table" and call.name) .. " (" .. err .. ")")
     Feed.refused(self, agentId, call, err)
     DecisionLog.failed(self, rec, err, type(call) == "table" and call or nil)
+    Missions.onError(self, agentId, err)
     return false, err
   end
   DecisionLog.accepted(self, rec, call, opts and opts.fallback)
@@ -812,6 +813,7 @@ function Sim:stepFreighters()
           local text = ("%s delivered: %d %s sold at %s for %d cr (%.1f each)"):format(f.id, l.qty, l.resource, l.destination, gain, unit)
           if f.owner then self:deliver(f.owner, text) end
           Feed.info(self, f.owner, text)
+          Missions.onDelivery(self, f.owner)
           self:emit("freighter_delivered", { freighter = f.id, station = f.station, destination = l.destination, resource = l.resource, qty = l.qty, credits = gain })
           f.state, f.load = "back", nil
           f.timer = self:ticks(World.freighterRoutes[f.station][l.destination])
