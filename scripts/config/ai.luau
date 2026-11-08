@@ -72,7 +72,7 @@ return {
   -- spec §8.4: an agent stops (paused_error) until the player resumes it
   errorRules = { invalidResponses = 2, providerErrors = 3, sameFailingCall = 2 },
   -- spec §10.5: what the stub picks at random when the directive leaves a choice open
-  stub = { holdPct = { 10, 100 }, waitSeconds = 30 },
+  stub = { holdPct = { 10, 100 }, waitSeconds = 30, heldWaitSeconds = 60, storeChance = 0.5 },
   recentMax = 10,
   inboxMax = 5,
   timeoutSeconds = 20, -- real seconds for a whole provider turn (spec §8.4); GR5-15 said 10, tune here

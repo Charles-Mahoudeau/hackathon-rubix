@@ -4,6 +4,7 @@
 local Screens = require("@scripts/config/screens")
 local DecisionLog = require("@scripts/sim/decision_log")
 local Feed = require("@scripts/sim/feed")
+local ContextBuilder = require("@scripts/sim/context_builder")
 local Skills = require("@scripts/sim/skills")
 local Versions = require("@scripts/sim/versions")
 local Model = require("@scripts/ui/shell_model")
@@ -49,6 +50,17 @@ local function callText(rec)
   return Feed.formatCall(c.tool, c.args)
 end
 
+-- The feed's result line, then the call's §11 result fields.
+local function resultText(rec)
+  local r = rec.result
+  if not r then return rec.validation == "pending" and "waiting for the answer" or "-" end
+  local text = r.result or r.error
+  if r.data and next(r.data) ~= nil and rec.tool_call then
+    text = ("%s  [%s]"):format(text, ContextBuilder.resultText(rec.tool_call.tool, r.data))
+  end
+  return text
+end
+
 local function rowText(rec, maxChars)
   local text = ("#%d %s %s %s %s"):format(rec.id, clock(rec.t_game), rec.agent_id, rec.source == "ai" and "ai" or rec.source, callText(rec))
   local reason = DecisionLog.errorReason(rec)
@@ -82,7 +94,7 @@ local function detail(rec)
     call = callText(rec),
     validation = rec.validation, isError = reason ~= nil, reason = reason,
     fallback = rec.fallback == true,
-    result = rec.result and (rec.result.result or rec.result.error) or (rec.validation == "pending" and "waiting for the answer" or "-"),
+    result = resultText(rec),
     credits = rec.credits_delta,
   }
 end

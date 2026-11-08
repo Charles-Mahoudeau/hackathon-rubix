@@ -159,7 +159,7 @@ local function walk(spec, where)
     if spec.background.borderColor then checkColor(spec.background.borderColor, where) end
   end
   if spec.text then assert(type(spec.text.text) == "string" and spec.text.size, where .. ": text") checkColor(spec.text.color, where) end
-  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.")), where .. ": button action") end
+  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.") or spec.button.action:match("^studio%.") or spec.button.action:match("^archive%.") or spec.button.action:match("^offline%.") or spec.button.action:match("^team%.") or spec.button.action:match("^map%.") or spec.button.action:match("^debug%.")), where .. ": button action") end
   for _, child in ipairs(spec.children or {}) do walk(child, where) end
 end
 for tier = 1, 5 do
@@ -179,7 +179,7 @@ local skin = { texture = "fake-texture", slice = Theme.panelSkin.slice, color = 
 local skinned = Shell.spec(Sim.new(), "map", { skin = skin })
 local function countWhere(spec, pred) local n = pred(spec) and 1 or 0 for _, c in ipairs(spec.children or {}) do n += countWhere(c, pred) end return n end
 assert(countWhere(skinned, function(n) return n.image and n.image.slice ~= nil end) == 3, "top bar, nav and feed use the skin")
-assert(countWhere(skinned, function(n) return n.image and n.background end) == 0, "an image panel has no background")
+assert(countWhere(skinned, function(n) return n.image and n.image.slice ~= nil and n.background and n.background.color[4] == Theme.alpha.chromeFill and not n.background.borderColor end) == 3, "a skinned panel has an opaque borderless backing")
 assert(countWhere(Shell.spec(Sim.new(), "map", {}), function(n) return n.image and n.image.slice ~= nil end) == 0, "no skin, no nine-patch")
 assert(#Theme.panelSkin.slice == 4 and Theme.palette[Theme.panelSkin.tint], "panel skin config")
 

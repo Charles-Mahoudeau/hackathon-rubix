@@ -132,37 +132,39 @@ function Monitor.apply(sim, agentId, call, rid)
   local args, n = call.args or {}, call.name
   local entry = Feed.begin(sim, agentId, call, sim:takeReasoning(), rid)
   if n == "wait" then
-    Feed.finish(sim, entry, "waiting")
+    Feed.finish(sim, entry, "waiting", true, {})
     return true
   end
   if n == "report" then
     sim:log("INFO", agentId .. " report: " .. tostring(args.message))
-    Feed.finish(sim, entry, "sent")
+    local delivered = true
     if args.to ~= nil and args.to ~= "player" then
-      sim:deliver(args.to, ("from %s: %s"):format(agentId, tostring(args.message)))
+      delivered = sim:deliver(args.to, ("from %s: %s"):format(agentId, tostring(args.message)))
     else
       Feed.info(sim, agentId, tostring(args.message))
     end
+    Feed.finish(sim, entry, "sent", true, { delivered = delivered })
     return true
   end
   local target = sim.agents[args.agent]
-  local result
+  local result, data = nil, {}
   if n == "set_order" then
     sim:setOrder(target.id, args.text)
     target.orderSource = "monitor"
     -- an aborted skill does not read the order: hand the agent back to its AI
     if skillAborted(target) then Skills.stop(sim, target.id) end
     tell(sim, target.id, "order from the Monitor: " .. args.text)
-    result = "order set"
+    result, data = "order set", { order_set = (args.text or "") ~= "" }
   elseif n == "assign_skill" then
     Skills.assign(sim, target.id, args.skill, args.params)
     tell(sim, target.id, "the Monitor assigned skill " .. args.skill)
-    result = "running " .. args.skill
+    result, data = "running " .. args.skill, { assigned = args.skill }
   elseif n == "pause_agent" then
     target.pausedBy = "monitor"
     sim:pauseAgent(target.id, "paused by the Monitor")
     result = "paused"
   elseif n == "resume_agent" then
+    data = { previous_error = target.blockReason or (target.skillRun and target.skillRun.aborted) or "none" }
     if target.state == "paused_error" then
       sim:resumeAgent(target.id)
     else
@@ -171,7 +173,7 @@ function Monitor.apply(sim, agentId, call, rid)
     tell(sim, target.id, "the Monitor resumed this agent")
     result = "resumed"
   end
-  Feed.finish(sim, entry, ("%s: %s"):format(target.id, result))
+  Feed.finish(sim, entry, ("%s: %s"):format(target.id, result), true, data)
   if n ~= "pause_agent" then Missions.onMonitorFix(sim, target.id) end
   sim:emit("monitor_action", { monitor = agentId, tool = n, agent = target.id })
   return true, { agent = target.id, result = result }
