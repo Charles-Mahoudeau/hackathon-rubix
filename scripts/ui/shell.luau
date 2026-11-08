@@ -10,6 +10,7 @@ local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
 local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
+local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
 local Glitch = require("@scripts/render/vfx/glitch")
 
@@ -340,6 +341,87 @@ local function contextScreen(font, r, panelModel)
   return leftPanel, withChildren(rightPanel, rows)
 end
 
+-- Logs screen (GR5-8, spec §12.2): per-agent stats on top, the filtered list (errors amber with their reason), and the
+-- clicked record on the right.
+local function logsScreen(font, r, m)
+  local c = Screens.logs
+  local left = {}
+  local function nodeAt(x, y, node, w, h) left[#left + 1] = at(x, y, node, w, h) end
+  local y = L.pad
+  nodeAt(L.pad, y, text(font, "DECISION LOG", T.small, "dim"))
+  y += c.statRowHeight
+  nodeAt(L.pad, y, text(font, "PER AGENT, LAST 10 GAME MINUTES", T.small, "dim"))
+  y += c.statRowHeight
+  for _, h in ipairs(m.header) do
+    local line = ("%-12s credits/h %6s   Compute/h %5.1f   net/h %6s"):format(h.id, Model.thousands(h.creditsPerHour), h.computePerHour,
+      (h.netPerHour < 0 and "-" or "") .. Model.thousands(math.abs(h.netPerHour)))
+    nodeAt(L.pad, y, text(font, line, T.small, h.netPerHour < 0 and Theme.semantic.warning or "text"))
+    y += c.statRowHeight
+  end
+  y += 6
+  local x = L.pad
+  for _, a in ipairs(m.agents) do
+    nodeAt(x, y, button(font, a.label, a.action, a.active and "cyan" or "dim", c.agentButtonWidth), c.agentButtonWidth, c.buttonHeight)
+    x += c.agentButtonWidth + 6
+  end
+  y += c.buttonHeight + 6
+  x = L.pad
+  for _, sBtn in ipairs(m.sources) do
+    nodeAt(x, y, button(font, sBtn.label, sBtn.action, sBtn.active and "cyan" or "dim", c.sourceButtonWidth), c.sourceButtonWidth, c.buttonHeight)
+    x += c.sourceButtonWidth + 6
+  end
+  nodeAt(x + 10, y, button(font, "Errors only", "logs.errors", m.errorsOnly and Theme.semantic.warning or "dim", c.errorsButtonWidth), c.errorsButtonWidth, c.buttonHeight)
+  y += c.buttonHeight + 10
+  local rowW = c.listWidth - 2 * L.pad
+  for _, row in ipairs(m.rows) do
+    local color = row.isError and Theme.semantic.error or (row.pending and "dim" or "text")
+    nodeAt(L.pad, y, { style = { paddingX = 6, justify = "center" },
+      background = { color = row.selected and UiTheme.hover("cyan") or UiTheme.color("panel", 0), radius = 2 },
+      button = { action = row.action, hovered = UiTheme.hover("cyan"), pressed = UiTheme.pressed("cyan") },
+      children = { text(font, row.text, T.small, color) } }, rowW, c.rowHeight)
+    y += c.rowHeight
+  end
+  y += 6
+  nodeAt(L.pad, y, button(font, "Newer", "logs.page.-1", m.page > 0 and "cyan" or "dim", 80), 80, c.buttonHeight)
+  nodeAt(L.pad + 90, y + 6, text(font, ("%d-%d of %d   page %d/%d"):format(m.shown == 0 and 0 or m.page * c.rows + 1,
+    math.min(m.shown, (m.page + 1) * c.rows), m.shown, m.page + 1, m.pages), T.small, "dim"))
+  nodeAt(c.listWidth - L.pad - 80, y, button(font, "Older", "logs.page.1", m.page + 1 < m.pages and "cyan" or "dim", 80), 80, c.buttonHeight)
+  local leftPanel = withChildren(panel({ x = r.x, y = r.y, w = c.listWidth, h = r.h }, nil), left)
+
+  local rows = {}
+  local d = m.detail
+  local wrapW = r.w - c.listWidth - L.gap - 2 * L.pad
+  local function wrapped(str, colorName)
+    return { style = { maxWidth = wrapW }, text = { text = str, font = font, size = T.small, color = UiTheme.color(colorName), wrap = true } }
+  end
+  if not d then
+    rows[#rows + 1] = wrapped(m.hint, "dim")
+  else
+    rows[#rows + 1] = text(font, d.title, T.heading, d.isError and Theme.semantic.error or "cyan")
+    rows[#rows + 1] = text(font, ("%s   answered in %s   prompt v%s"):format(d.time, d.latency, d.promptVersion or "-"), T.small, "dim")
+    rows[#rows + 1] = text(font, "", T.small, "dim")
+    rows[#rows + 1] = text(font, "TOKENS" .. (d.realTokens and " (total from the provider)" or " (estimate)"), T.small, "dim")
+    for _, t in ipairs(d.tokens) do rows[#rows + 1] = text(font, ("%-10s %5d"):format(t.name, t.tokens), T.small, t.name == "total" and "cyan" or "text") end
+    local sizes = {}
+    for _, sz in ipairs(d.contextSizes) do sizes[#sizes + 1] = ("%s %d"):format(sz.format, sz.tokens) end
+    if #sizes > 0 then rows[#rows + 1] = text(font, "Context in both formats: " .. table.concat(sizes, ", "), T.small, "dim") end
+    rows[#rows + 1] = text(font, "Compute spent: " .. d.computeText, T.small, "text")
+    rows[#rows + 1] = text(font, "", T.small, "dim")
+    rows[#rows + 1] = text(font, "REASONING", T.small, "dim")
+    rows[#rows + 1] = wrapped(d.reasoning, "text")
+    rows[#rows + 1] = text(font, "CALL", T.small, "dim")
+    rows[#rows + 1] = wrapped(d.call, "text")
+    rows[#rows + 1] = text(font, "VALIDATION", T.small, "dim")
+    rows[#rows + 1] = wrapped(d.validation .. (d.fallback and "  (the stub played this decision)" or ""), d.validation == "ok" and "green" or Theme.semantic.error)
+    rows[#rows + 1] = text(font, "RESULT", T.small, "dim")
+    rows[#rows + 1] = wrapped(d.result, (d.isError and d.validation == "ok") and Theme.semantic.error or "text")
+    if d.credits ~= 0 then rows[#rows + 1] = text(font, ("Credits from this action: %+d"):format(d.credits), T.small, "green") end
+  end
+  local rightPanel = panel({ x = r.x + c.listWidth + L.gap, y = r.y, w = r.w - c.listWidth - L.gap, h = r.h },
+    { direction = "column", gap = 3, padding = L.pad, overflow = "hidden" })
+  return leftPanel, withChildren(rightPanel, rows)
+end
+
 -- Shop (GR5-7, spec §6.5): every upgrade with its cost, a Buy button when it can be bought, and why when it cannot.
 local function shopScreen(font, r, m)
   local c = Screens.shop
@@ -389,7 +471,7 @@ function Shell.inputsSpec(draft, opts)
     } }
 end
 
--- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
+-- The whole screen as a spec for engine.ui.spawn. opts = { font, tab = "editor"|"context", logs = LogsView.new() state, skin = UiTheme.panelSkin() or nil, glitch = frame params of Glitch.update or nil }.
 function Shell.spec(sim, screenId: string, opts)
   opts = opts or {}
   skin = opts.skin
@@ -418,6 +500,10 @@ function Shell.spec(sim, screenId: string, opts)
         buy = ComputeView.buyOptions(sim, Screens.compute.packs) }
       a, b = editorScreen(font, rects.main, Editor.model(sim, id, opts.draft), { toast = opts.toast, presets = Editor.presets(sim), compute = compute })
     end
+    children[#children + 1] = a
+    children[#children + 1] = b
+  elseif screenId == "logs" and LogsView.total(sim) > 0 then
+    local a, b = logsScreen(font, rects.main, LogsView.model(sim, opts.logs or LogsView.new()))
     children[#children + 1] = a
     children[#children + 1] = b
   elseif screenId == "shop" then

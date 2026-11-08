@@ -8,6 +8,7 @@ local Compute = require("@scripts/sim/compute")
 local Prompt = require("@scripts/sim/prompt")
 local ContextSettings = require("@scripts/sim/context_settings")
 local Feed = require("@scripts/sim/feed")
+local DecisionLog = require("@scripts/sim/decision_log")
 local Json = require("@scripts/sim/json")
 local Upgrades = require("@scripts/sim/upgrades")
 
@@ -40,6 +41,7 @@ function Sim.new(opts)
     return s / 2147483648
   end
   Feed.init(self)
+  DecisionLog.init(self)
   self.resources = { credits = b.startCredits, compute = b.startCompute, reputation = b.startReputation }
   self.warehouse = {}
   for _, ore in ipairs(b.ores) do self.resources[ore] = 0; self.warehouse[ore] = 0 end
@@ -117,6 +119,10 @@ function Sim:emit(name, data)
   e[#e + 1] = { tick = self.tick, name = name, data = data }
   if #e > 500 then table.remove(e, 1) end
 end
+
+-- Real seconds, for the t_real_* stamps of the decision log. The sim never reads a clock itself: the host injects one
+-- (the server passes the engine's real time); without it the stamps are game seconds.
+function Sim:setRealClock(fn) self.realClock = fn end
 
 function Sim:drainEvents()
   local out = self.events
@@ -327,14 +333,21 @@ local function remember(agent, call, ok, err)
 end
 
 -- opts.auto: the sim itself issues the call (a full hold sends the ship home); it gets no feed line of its own.
+-- opts.record: the decision-log record of the AI decision being applied; opts.skill: a skill step (its own record);
+-- opts.fallback: the stub stands in for a failed provider.
 function Sim:apply(agentId, call, opts)
   local ok, err = self:validate(agentId, call)
   remember(self.agents[agentId], call, ok, err)
+  local rec = opts and opts.record
+  if opts and opts.skill then rec = DecisionLog.skillStep(self, agentId, opts.skill) end
   if not ok then
     self:log("ERROR", agentId .. ": rejected " .. tostring(type(call) == "table" and call.name) .. " (" .. err .. ")")
     Feed.refused(self, agentId, call, err)
+    DecisionLog.failed(self, rec, err, type(call) == "table" and call or nil)
     return false, err
   end
+  DecisionLog.accepted(self, rec, call, opts and opts.fallback)
+  local rid = rec and rec.id
   local args, n = call.args or {}, call.name
   local agent = self.agents[agentId]
   local ship = self.ships[args.ship or ownedShip(self, agentId).id]
@@ -346,7 +359,8 @@ function Sim:apply(agentId, call, opts)
     self.resources.credits = self.resources.credits + gain
     self.lifetimeRevenue = self.lifetimeRevenue + gain
     self:log("INFO", ("%s sold %d %s for %d"):format(agentId, q, args.resource, gain))
-    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning()), ("+%d cr"):format(gain))
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("+%d cr"):format(gain))
+    DecisionLog.earned(self, agentId, rid, gain)
     return true, { sold = q, total = gain }
   elseif agent.type == "logistician" and n == "ship" then
     -- stock is taken at call time, so a second Logistician on the same stock or freighter gets the error (spec §8.6)
@@ -355,15 +369,15 @@ function Sim:apply(agentId, call, opts)
     self.warehouse[args.resource] = self.warehouse[args.resource] - q
     local oneWay = World.freighterRoutes[agent.station][args.destination]
     f.state, f.timer, f.load = "out", self:ticks(oneWay), { resource = args.resource, qty = q, destination = args.destination }
-    f.owner = agentId
+    f.owner, f.recordId = agentId, rid
     self:log("INFO", ("%s shipped %d %s to %s on %s"):format(agentId, q, args.resource, args.destination, f.id))
-    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning()), ("%s on its way (%d s)"):format(f.id, oneWay))
+    Feed.finish(self, Feed.begin(self, agentId, call, self:takeReasoning(), rid), ("%s on its way (%d s)"):format(f.id, oneWay))
     return true, { freighter_id = f.id, eta_s = oneWay }
   end
   local shipCall = agent.type == "miner" and (n == "mine" or n == "return" or n == "sell" or n == "scan" or n == "wait")
   if shipCall and n == "return" then self:finishMine(ship) end
-  local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning()) or nil
-  if shipCall and entry then ship.feedEntry = entry end
+  local entry = not (opts and opts.auto) and Feed.begin(self, agentId, call, self:takeReasoning(), rid) or nil
+  if shipCall and entry then ship.feedEntry, ship.recordId = entry, rid end
   if n == "mine" then
     local vein = self.veins[args.vein]
     ship.stopPct, ship.mineStartTick, ship.mineStartCargo = args.stop_at_hold_pct or 100, self.tick, ship.cargo
@@ -400,7 +414,7 @@ function Sim:apply(agentId, call, opts)
   elseif n == "run_skill" then
     self:log("INFO", "run_skill " .. args.name)
     Feed.finish(self, entry, "running skill")
-    return self:apply(agentId, self.skills[args.name])
+    return self:apply(agentId, self.skills[args.name], { skill = args.name })
   end
   return true
 end
@@ -436,6 +450,7 @@ function Sim:sell(ship, planetId)
     self.resources.credits = self.resources.credits + gain
     self.lifetimeRevenue = self.lifetimeRevenue + gain
     self:log("INFO", ("sold %d %s for %d"):format(ship.cargo, ship.ore, gain))
+    DecisionLog.earned(self, ship.owner, ship.recordId, gain)
     self:finishMine(ship)
     local text = ("sold %d %s, +%d cr"):format(ship.cargo, ship.ore, gain)
     if ship.feedEntry then self:finishDock(ship, text) else Feed.info(self, ship.owner, text) end
@@ -605,13 +620,15 @@ end
 -- A decision made against `ctx` arrives later (async provider). Reject it if the world moved under it,
 -- otherwise apply() re-validates every precondition against the live state.
 -- opts.fallback: the stub stands in for a failed provider, so its success must not clear that provider's error streak.
+-- opts.record: the decision-log record of this decision.
 function Sim:resolveDecision(agentId, call, ctx, opts)
   local ship = ownedShip(self, agentId)
   if self.agents[agentId].type == "miner" and ctx and ctx.ship and ctx.ship.state ~= ship.state then
     self:log("WARN", ("%s: stale decision dropped (ship was %s, now %s)"):format(agentId, ctx.ship.state, ship.state))
+    DecisionLog.failed(self, opts and opts.record, "stale", type(call) == "table" and call or nil)
     return false, "stale"
   end
-  local ok, err = self:apply(agentId, call)
+  local ok, err = self:apply(agentId, call, { record = opts and opts.record, fallback = opts and opts.fallback })
   if ok then
     if not (opts and opts.fallback) then self:noteSuccess(agentId) end
   else
@@ -632,6 +649,7 @@ function Sim:stepFreighters()
           self.resources.credits = self.resources.credits + gain
           self.lifetimeRevenue = self.lifetimeRevenue + gain
           self:log("INFO", ("Delivery %s: %d %s sold on %s -> %d cr"):format(f.id, l.qty, l.resource, l.destination, gain))
+          if f.owner then DecisionLog.earned(self, f.owner, f.recordId, gain) end
           f.state, f.load = "back", nil
           f.timer = self:ticks(World.freighterRoutes[f.station][l.destination])
         else
@@ -716,7 +734,10 @@ function Sim:setProvider(provider)
     local pend = agent.pending
     if pend then
       agent.pending = nil
-      self.compute:settle(pend.charge, pend.input, 0)
+      local cost = self.compute:settle(pend.charge, pend.input, 0)
+      local rec = DecisionLog.find(self, pend.rec)
+      DecisionLog.answered(self, rec, { cost = cost })
+      DecisionLog.failed(self, rec, "dropped: AI provider switched")
       finishRequest(self, pend.reqId, 0)
       setAgentState(self, agent, "idle")
       self:log("WARN", id .. ": AI provider switched, pending decision dropped")
@@ -737,34 +758,39 @@ function Sim:onAiResponse(resp)
   local pend = agent.pending
   agent.pending = nil
   local realIn, realOut = resp.input_tokens or 0, resp.output_tokens or 0
+  local rec, info = DecisionLog.find(self, pend.rec), {}
   if resp.ok and realIn + realOut > 0 then
     local est = resp.estimated_tokens or 0
     local real = realIn + realOut
     local pct = est > 0 and math.floor((real - est) / est * 100 + 0.5) or 0
     self:log("INFO", ("ai %s: tokens est %d real %d (%+d%%) in %.1fs"):format(agentId, est, real, pct, resp.seconds or 0))
-    self.compute:settle(pend.charge, realIn, realOut)
+    info = { output = realOut, total = real, realTokens = true, cost = self.compute:settle(pend.charge, realIn, realOut) }
     finishRequest(self, pend.reqId, real)
   else
-    self.compute:settle(pend.charge, pend.input, self.aiConfig.estimatedOutputTokens)
+    info = { output = self.aiConfig.estimatedOutputTokens,
+      cost = self.compute:settle(pend.charge, pend.input, self.aiConfig.estimatedOutputTokens) }
     finishRequest(self, pend.reqId, pend.input + self.aiConfig.estimatedOutputTokens)
   end
+  if resp.ok then info.reasoning = resp.tool_call.reasoning end
+  DecisionLog.answered(self, rec, info)
   setAgentState(self, agent, "idle")
   if resp.ok then
     if resp.tool_call.reasoning ~= "" then self:log("INFO", agentId .. " reasoning: " .. resp.tool_call.reasoning) end
     self.nextReasoning = resp.tool_call.reasoning ~= "" and resp.tool_call.reasoning or nil
-    self:resolveDecision(agentId, { name = resp.tool_call.tool, args = resp.tool_call.args }, pend.ctx)
+    self:resolveDecision(agentId, { name = resp.tool_call.tool, args = resp.tool_call.args }, pend.ctx, { record = rec })
     self.nextReasoning = nil
     return
   end
   self:log("ERROR", ("ai %s: %s (%s)"):format(agentId, resp.kind or "error", tostring(resp.error)))
   Feed.error(self, agentId, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
+  DecisionLog.failed(self, rec, ("%s: %s"):format(resp.kind == "invalid" and "invalid response" or "provider error", tostring(resp.error)))
   self:noteFailure(agentId, resp.kind == "invalid" and "invalid" or "provider")
   if agent.state == "paused_error" then return end
   if self.decide then
     local ok, call = pcall(self.decide, self, agentId, pend.ctx)
     if ok then
       self:log("WARN", agentId .. ": fell back to stub")
-      self:resolveDecision(agentId, call, pend.ctx, { fallback = true })
+      self:resolveDecision(agentId, call, pend.ctx, { fallback = true, record = rec })
     else self:log("ERROR", "decide failed: " .. tostring(call)) end
   end
 end
@@ -784,10 +810,11 @@ function Sim:stepAgent(id, agent)
     if pend.started and pend.delay <= 0 then
       agent.pending = nil
       local outTokens = Prompt.outputTokens(pend.call)
-      self.compute:settle(pend.charge, pend.input, outTokens)
+      local rec = DecisionLog.find(self, pend.rec)
+      DecisionLog.answered(self, rec, { output = outTokens, cost = self.compute:settle(pend.charge, pend.input, outTokens) })
       finishRequest(self, pend.reqId, pend.input + outTokens)
       setAgentState(self, agent, "idle")
-      self:resolveDecision(id, pend.call, pend.ctx)
+      self:resolveDecision(id, pend.call, pend.ctx, { record = rec })
     end
     return
   end
@@ -824,10 +851,11 @@ function Sim:stepAgent(id, agent)
     setAgentState(self, agent, "no_compute", self.aiConfig.budgetMessage)
     return
   end
-  local charge = self.compute:charge(id, prompt.input)
+  local charge, cost = self.compute:charge(id, prompt.input)
+  local rec = DecisionLog.open(self, id, prompt, cost)
   agent.decisions[#agent.decisions + 1] = self.tick
   if self.provider then
-    agent.pending = { provider = true, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input,
+    agent.pending = { provider = true, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, rec = rec.id,
       started = status == "running", prompt = Prompt.forProvider(self, id, prompt) }
     self.reqs[reqId] = agent.pending
     setAgentState(self, agent, "thinking")
@@ -835,7 +863,7 @@ function Sim:stepAgent(id, agent)
   end
   self.lastDecision = { agent = id, tick = self.tick, ctx = ctx, call = call }
   local d = self.b.ai
-  agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, started = status == "running",
+  agent.pending = { call = call, ctx = ctx, reqId = reqId, charge = charge, input = prompt.input, rec = rec.id, started = status == "running",
     delay = self:ticks(d.delaySecondsMin + self.rand() * (d.delaySecondsMax - d.delaySecondsMin)) }
   self.reqs[reqId] = agent.pending
   setAgentState(self, agent, "thinking")

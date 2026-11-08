@@ -83,6 +83,13 @@ return {
     values = { ["true"] = "on", ["false"] = "off" }, -- everything else is shown as its own text
   },
 
+  -- Logs screen (GR5-8, spec §12.2): the list on the left (newest first), the clicked record on the right.
+  logs = {
+    listWidth = 640, rowHeight = 22, rows = 11, rowChars = 86, statRowHeight = 18, buttonHeight = 26,
+    sources = { { id = "all", label = "All" }, { id = "ai", label = "AI" }, { id = "skill", label = "Skills" } },
+    agentButtonWidth = 96, sourceButtonWidth = 64, errorsButtonWidth = 120,
+    hint = "Click a record to see its tokens, reasoning, call and result.",
+  },
   -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
   shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
 

@@ -8,6 +8,7 @@ local Sim = require("@scripts/sim/sim")
 local Shell = require("@scripts/ui/shell")
 local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
+local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
 local UiTheme = require("@scripts/ui/theme")
 local Model = require("@scripts/ui/shell_model")
@@ -18,6 +19,7 @@ local state = {
 	sim = nil, shell = Shell.new(), ui = nil, world = {}, worldSig = nil, uiSig = nil, lastRefresh = -1e9, lastTime = nil, acc = 0,
 	draft = nil, toast = nil, inputs = nil, inputsDirty = true, -- agent editor (GR5-5)
 	tab = "editor", -- Agents screen tab: "editor" | "context" (GR5-6)
+	logs = LogsView.new(), -- Logs screen filters and selection (GR5-8)
 }
 
 local function despawnAll(commands, list)
@@ -39,7 +41,7 @@ end
 local function rebuildUi(commands, glitchFrame)
 	if state.ui then commands:despawn(state.ui) end
 	local shown
-	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab })
+	state.ui, shown = Shell.spawn(commands, state.sim, state.shell.screen, { glitch = glitchFrame, draft = state.draft, toast = state.toast, tab = state.tab, logs = state.logs })
 	state.shell.screen = shown
 end
 
@@ -112,6 +114,7 @@ engine.ecs.system("game.Shell", {
 		for click in ctx.events.read("rtype.UiClicked") do
 			if editorClick(click.action) then changed = true end
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
+			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
 			local screen = Shell.parseAction(click.action, state.sim.tier)
 			if screen and screen ~= state.shell.screen then
@@ -139,6 +142,7 @@ engine.ecs.system("game.Shell", {
 			extra = table.concat({ state.tab, state.draft.directive, state.draft.order, state.toast or "", m.totalTokens,
 				table.concat(rates, ","), table.concat(settings, ",") }, "|")
 		end
+		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
 		local sig = Model.signature(state.sim, state.shell.screen, extra)
 		local due = now - state.lastRefresh >= Screens.refreshSeconds
