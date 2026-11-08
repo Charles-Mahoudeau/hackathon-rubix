@@ -12,6 +12,7 @@ local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
 local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
+local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
 local MarketView = require("@scripts/ui/market_view")
@@ -549,6 +550,70 @@ local function shopScreen(font, r, m)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Fleet (GR5-12, spec §6.5-6.7): Reputation and command capacity, the logistics hub, each station with its freighters,
+-- Logisticians and idle reason, outposts to build, and the mining ships.
+local function fleetScreen(font, r, m)
+  local c = Screens.fleet
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  local rep = m.reputation
+  nodeAt(L.pad, L.pad, text(font, ("REPUTATION %d  %s  command %d / %d"):format(rep.level,
+    rep.next and ("%s / %s"):format(Model.thousands(rep.revenue), Model.thousands(rep.next)) or "max", rep.used, rep.capacity), T.small, "dim"))
+  nodeAt(L.pad, c.barY, { style = { height = c.barHeight, width = c.barWidth },
+    background = { color = UiTheme.color("dim", Theme.alpha.line), radius = 2 },
+    children = { { style = { height = "100%", width = ("%d%%"):format(rep.percent) }, background = { color = UiTheme.color("cyan"), radius = 2 } } } })
+  local hub = m.hub
+  if hub then
+    if hub.state == "owned" then
+      nodeAt(c.hubX, L.pad, text(font, "Logistics hub: online", T.small, "green"))
+    else
+      nodeAt(c.hubX, L.pad, text(font, ("Logistics hub  %s"):format(hub.costText), T.small, hub.state == "available" and "cyan" or "dim"))
+      if hub.state == "available" then nodeAt(c.hubX, c.barY - 4, button(font, "Build hub", hub.action, "cyan", c.buttonWidth))
+      elseif hub.note then nodeAt(c.hubX, c.barY, text(font, hub.note, T.small, Theme.semantic.warning)) end
+    end
+  end
+  local y = c.stationY
+  local function row(label, colorName, x)
+    nodeAt(x or L.pad, y, text(font, label, T.small, colorName))
+    y += c.lineHeight
+  end
+  for _, st in ipairs(m.stations) do
+    row(("%s   stock %s"):format(st.label, st.stockText), "text")
+    row(("freighters %d/%d   hangars %d   Logisticians %s"):format(st.freighters, st.freighterCap, st.hangar,
+      #st.logisticians > 0 and table.concat(st.logisticians, ", ") or "none"), "dim")
+    if st.idleText then row(st.idleText, Theme.semantic.warning) end
+    for _, f in ipairs(st.freighterRows) do
+      row(f.state == "docked" and (f.id .. "  docked") or ("%s  %s  eta %ds"):format(f.id, f.cargo and ("-> " .. f.dest .. " " .. f.cargo) or ("back to " .. f.dest), f.eta), "dim", c.convoyX)
+    end
+    if m.hubOpen then
+      local x = L.pad
+      local function act(label, can, action, note)
+        if can then nodeAt(x, y, button(font, label, action, "cyan", c.buttonWidth))
+        else nodeAt(x, y, text(font, label .. ": " .. (note or "unavailable"), T.small, "dim")) end
+        x += c.buttonWidth + c.buttonGap
+      end
+      act(("Freighter %d cr"):format(st.freighterCost), st.canFreighter, st.actions.freighter, st.freighterNote)
+      act(("Hangar %d cr"):format(st.hangarCost), st.canHangar, st.actions.hangar, st.hangarNote)
+      act("Hire Logistician", st.canHire, st.actions.hire, st.hireNote)
+      y += 34
+    end
+    y += c.blockGap
+  end
+  if m.hubOpen then
+    row("OUTPOSTS", "dim")
+    local x = L.pad
+    for _, o in ipairs(m.outposts) do
+      if o.can then nodeAt(x, y, button(font, ("%s %d cr"):format(o.planet, o.cost), o.action, "cyan", c.outpostButtonWidth))
+      else nodeAt(x, y + 6, text(font, ("%s: %s"):format(o.planet, o.note or "unavailable"), T.small, "dim")) end
+      x += c.outpostButtonWidth + c.buttonGap
+    end
+    y += 34 + c.blockGap
+  end
+  row("SHIPS", "dim")
+  for _, s in ipairs(m.ships) do row(s.text, s.owner and "text" or Theme.semantic.warning) end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Missions (GR5-9, spec §15): the current mission (goal, hint, progress bar, reward, Claim), then every mission in order.
 local function missionsScreen(font, r, m)
   local c = Screens.missions
@@ -708,6 +773,8 @@ function Shell.spec(sim, screenId: string, opts)
     end
   elseif screenId == "shop" then
     children[#children + 1] = shopScreen(font, rects.main, ShopView.model(sim))
+  elseif screenId == "fleet" and sim.tier >= 4 then
+    children[#children + 1] = fleetScreen(font, rects.main, FleetView.model(sim))
   elseif screenId == "missions" then
     children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
   elseif screenId == "archive" and (sim.skills and next(sim.skills) or sim.lastOfflineReport) then

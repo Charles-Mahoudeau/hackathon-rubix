@@ -159,7 +159,7 @@ local function walk(spec, where)
     if spec.background.borderColor then checkColor(spec.background.borderColor, where) end
   end
   if spec.text then assert(type(spec.text.text) == "string" and spec.text.size, where .. ": text") checkColor(spec.text.color, where) end
-  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.")), where .. ": button action") end
+  if spec.button then assert(spec.button.action and (spec.button.action:match("^nav%.") or spec.button.action:match("^editor%.") or spec.button.action:match("^shop%.") or spec.button.action:match("^fleet%.") or spec.button.action:match("^compute%.") or spec.button.action:match("^context%.") or spec.button.action:match("^speed%.")), where .. ": button action") end
   for _, child in ipairs(spec.children or {}) do walk(child, where) end
 end
 for tier = 1, 5 do

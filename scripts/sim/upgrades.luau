@@ -3,7 +3,8 @@
 local Upgrades = {}
 
 function Upgrades.new()
-  return { drill = 1, hold = 1, engine = 1, scanner = false, archive = 0, ships = 0, warehouse = false, tradingPost = false }
+  return { drill = 1, hold = 1, engine = 1, scanner = false, archive = 0, ships = 0, warehouse = false, tradingPost = false,
+    hub = false, deepNav = false }
 end
 
 local function item(sim, id) return sim.b.shop.items[id] end
@@ -28,7 +29,7 @@ end
 
 function Upgrades.commandCapacity(sim)
   local c = sim.b.commandCapacity
-  return c.base + c.perReputationLevel * sim:reputationLevel()
+  return c[math.min(#c, sim:reputationLevel() + 1)]
 end
 
 local function owned(sim, it)
@@ -38,14 +39,16 @@ local function owned(sim, it)
   if it.stat == "archive" then return up.archive >= it.max end
   if it.stat == "warehouse" then return up.warehouse end
   if it.stat == "tradingPost" then return up.tradingPost end
-  return up.ships >= it.max
+  if it.stat == "hub" then return up.hub == true end
+  if it.stat == "deepNav" then return up.deepNav == true end
+  return up.ships >= it.n
 end
 
--- Why `id` cannot be bought now, or nil: tier_locked | already_owned | needs_<previous> | not_enough_credits.
+-- Why `id` cannot be bought now, or nil: tier_locked | already_owned | needs_<previous> | reputation_<n> | not_enough_credits.
 function Upgrades.blocker(sim, id)
   local it = item(sim, id)
   if not it then return "unknown_item" end
-  if sim.tier < sim.b.shop.tier then return "tier_locked" end
+  if sim.tier < (it.tier or sim.b.shop.tier) then return "tier_locked" end
   if owned(sim, it) then return "already_owned" end
   if it.mark and sim.upgrades[it.stat] < it.mark - 1 then
     for _, other in ipairs(sim.b.shop.order) do
@@ -53,7 +56,8 @@ function Upgrades.blocker(sim, id)
       if o.stat == it.stat and o.mark == it.mark - 1 then return "needs_" .. other end
     end
   end
-  if it.needs and not sim.upgrades[item(sim, it.needs).stat] then return "needs_" .. it.needs end
+  if it.needs and not owned(sim, item(sim, it.needs)) then return "needs_" .. it.needs end
+  if it.rep and sim:reputationLevel() < it.rep then return "reputation_" .. it.rep end
   if sim.resources.credits < it.cost then return "not_enough_credits" end
   return nil
 end
@@ -69,7 +73,8 @@ function Upgrades.catalog(sim)
     elseif why == "not_enough_credits" then state = "unaffordable"
     elseif why then state = "locked" end
     local count = it.stat == "archive" and sim.upgrades.archive or nil
-    rows[#rows + 1] = { id = id, name = it.name, desc = it.desc, cost = it.cost, state = state, blocker = why, count = count, max = it.max }
+    rows[#rows + 1] = { id = id, name = it.name, desc = it.desc, cost = it.cost, state = state, blocker = why, count = count, max = it.max,
+      tier = it.tier or sim.b.shop.tier }
   end
   return rows
 end
@@ -106,6 +111,11 @@ function Upgrades.buy(sim, id)
     up.warehouse = true
     sim:enterTier(3)
   elseif it.stat == "tradingPost" then up.tradingPost = true
+  elseif it.stat == "hub" then
+    up.hub = true
+    sim:enterTier(sim.b.logistics.hubTier)
+  elseif it.stat == "deepNav" then
+    up.deepNav, sim.deepNav = true, true
   elseif it.stat == "ship" then
     up.ships += 1
     local n = #sim.shipOrder + 1

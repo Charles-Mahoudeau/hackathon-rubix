@@ -53,6 +53,7 @@ return {
       { from = "kessa", to = "halcyon", risk = "medium" },
       { from = "kessa", to = "meridian", risk = "medium" },
     },
+    safeRouteSeconds = 160, -- outpost routes up to this long are drawn blue
     routeThickness = 2,
     routeSpacing = 14, -- view pixels between two dashes of a route line
     convoyDot = 6,
@@ -96,6 +97,10 @@ return {
   },
   -- Shop screen (GR5-7): one row per upgrade, then the fleet and the tool slots under the list.
   shop = { rowY = 48, rowHeight = 36, descX = 190, noteX = 520, costX = 700, buyX = 790, buyWidth = 90, footerGap = 16 },
+
+  -- Fleet screen (GR5-12): Reputation bar and hub on top, then one block per station, outposts to build, ships.
+  fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
+    buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
 
   -- Archive screen (GR5-10): skills list, "While you were away" box and the demo button; Market screen: one row per price.
   archive = { awayHours = 1, rowY = 48, rowHeight = 18, skillGap = 10, buttonWidth = 190, offlineY = 48, offlineWidth = 360, dismissWidth = 110 },

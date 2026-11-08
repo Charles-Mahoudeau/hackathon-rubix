@@ -11,6 +11,7 @@ local Editor = require("@scripts/ui/agent_editor")
 local ComputeView = require("@scripts/ui/compute_view")
 local LogsView = require("@scripts/ui/logs_view")
 local ShopView = require("@scripts/ui/shop_view")
+local FleetView = require("@scripts/ui/fleet_view")
 local MissionsView = require("@scripts/ui/missions_view")
 local ArchiveView = require("@scripts/ui/archive_view")
 local OfflineView = require("@scripts/ui/offline_view")
@@ -116,6 +117,7 @@ engine.ecs.system("game.Shell", {
 			if ComputeView.act(state.sim, Screens.editor.agent, click.action) then changed = true end
 			if LogsView.act(state.logs, click.action) then changed = true end
 			if ShopView.act(state.sim, click.action) then changed = true end
+			if FleetView.act(state.sim, click.action) then changed = true end
 			if MissionsView.act(state.sim, click.action) then changed = true end
 			if ArchiveView.act(state.sim, click.action) then changed = true end
 			if OfflineView.act(state.sim, click.action) then changed = true end
@@ -148,6 +150,7 @@ engine.ecs.system("game.Shell", {
 		end
 		if state.shell.screen == "logs" then extra = LogsView.signature(state.sim, state.logs) end
 		if state.shell.screen == "shop" then extra = ShopView.signature(state.sim) end
+		if state.shell.screen == "fleet" then extra = FleetView.signature(state.sim) end
 		if state.shell.screen == "missions" then extra = MissionsView.signature(state.sim) end
 		if state.shell.screen == "archive" then extra = ArchiveView.signature(state.sim) end
 		if state.shell.screen == "market" then extra = MarketView.signature(state.sim) end

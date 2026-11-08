@@ -6,13 +6,16 @@ local Screens = require("@scripts/config/screens")
 local View = {}
 
 local BLOCKERS = {
-  tier_locked = "Reach tier 2",
   already_owned = "Owned",
   not_enough_credits = "Not enough credits",
 }
 
-local function blockerText(rows, blocker: string?)
+local function blockerText(rows, row)
+  local blocker: string? = row.blocker
   if not blocker then return nil end
+  if blocker == "tier_locked" then return "Reach tier " .. row.tier end
+  local rep = blocker:match("^reputation_(%d+)$")
+  if rep then return "Needs Reputation " .. rep end
   local previous = blocker:match("^needs_(.+)$")
   if previous then
     for _, r in ipairs(rows) do if r.id == previous then return "Needs " .. r.name end end
@@ -25,7 +28,7 @@ function View.model(sim)
   for _, r in ipairs(rows) do
     r.costText = ("%d cr"):format(r.cost)
     r.action = "shop.buy." .. r.id
-    r.note = blockerText(rows, r.blocker)
+    r.note = blockerText(rows, r)
     if r.count and r.max then r.name = ("%s (%d/%d)"):format(r.name, r.count, r.max) end
   end
   local slots = {}

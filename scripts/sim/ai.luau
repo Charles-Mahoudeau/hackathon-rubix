@@ -9,8 +9,12 @@ local mode = "stub" -- "stub" (spec §10.5, reads the directive) | "optimal" (al
 local providers = {} -- name -> decide(sim, agentId, ctx); the real provider registers itself here
 local provider = "stub"
 
+local logisticianStub
+
 local function optimal(sim, agentId, ctx)
-  if sim.agents[agentId].type ~= "miner" then return { name = "report", args = { message = "idle" } } end
+  local kind = sim.agents[agentId].type
+  if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
+  if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local ship = ctx.ship
   if ship.cargo > 0 then return { name = "sell", args = { ship = ship.id } } end
   -- best known vein on a reachable planet: richness (band midpoint if unscanned) x hardness x depot price, per trip jump
@@ -50,7 +54,9 @@ end
 -- sim's stub stream, so a vague prompt wanders (random ore, random hold %) and a precise one works well.
 -- The order is read first, so it wins over the directive.
 local function directiveStub(sim, agentId, ctx)
-  if sim.agents[agentId].type ~= "miner" then return { name = "report", args = { message = "idle" } } end
+  local kind = sim.agents[agentId].type
+  if kind == "logistician" then return logisticianStub(sim, agentId, ctx) end
+  if kind ~= "miner" then return { name = "report", args = { message = "idle" } } end
   local agent = sim.agents[agentId]
   local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
   local function first(fn)
@@ -134,6 +140,52 @@ local function directiveStub(sim, agentId, ctx)
   end)
   if not pct then pct = cfg.holdPct[1] + math.floor(rand() * (cfg.holdPct[2] - cfg.holdPct[1] + 1)) end
   return { name = "mine", args = { vein = choice.vein.id, stop_at_hold_pct = pct } }
+end
+
+-- Logistician stub (spec §10.5). The order, then the directive, may name an ore, a market and "sell" / "ship". Left open,
+-- it picks the fullest stock of at least `minStock` and a random market that buys it, so two vague Logisticians on one
+-- station pick the same stock and collide (spec §8.6). A stock below `minStock` or no docked freighter: wait.
+logisticianStub = function(sim, agentId, ctx)
+  local agent = sim.agents[agentId]
+  local texts = { (agent.order or ""):lower(), (agent.directive or ""):lower() }
+  local cfg = sim.b.logistics.stub
+  local function first(fn)
+    for _, t in ipairs(texts) do
+      local v = fn(t)
+      if v ~= nil then return v end
+    end
+  end
+  local idle = { name = "wait", args = { seconds = cfg.waitSeconds } }
+  local ore = first(function(t) return firstWord(t, sortedKeys(World.ores)) end)
+  local market = first(function(t) return firstWord(t, World.marketOrder) end)
+  local wantsSell = first(function(t) if t:find("sell", 1, true) then return true end end)
+  local wantsShip = first(function(t) if t:find("ship", 1, true) then return true end end)
+  local resource, have = ore, ore and ctx.stock[ore] or 0
+  if not ore then
+    for _, o in ipairs(World.oreOrder) do
+      local q = ctx.stock[o] or 0
+      if q >= cfg.minStock and q > have then resource, have = o, q end
+    end
+  end
+  if not resource or have < 1 then return idle end
+  local cargo = sim.b.freighter.cargo
+  if wantsSell and not wantsShip and market ~= "halcyon" and market ~= "meridian" then
+    local buyer = (market == "orbis" and ctx.station.kind == "main") and "orbis" or "hmc"
+    return { name = "sell", args = { resource = resource, qty = "all", buyer = buyer } }
+  end
+  local docked = false
+  for _, f in ipairs(ctx.freighters) do if f.state == "docked" then docked = true end end
+  if not docked then return idle end
+  local dest = market
+  if not dest then
+    local pool = {}
+    for _, m in ipairs(ctx.markets) do
+      if World.markets[m].demand[resource] then pool[#pool + 1] = m end
+    end
+    if #pool == 0 then return idle end
+    dest = pool[1 + math.floor(sim.randStub() * #pool)]
+  end
+  return { name = "ship", args = { resource = resource, qty = math.min(have, cargo), destination = dest } }
 end
 
 -- Deliberately vague: sometimes emits invalid calls, to exercise validation.
