@@ -11,6 +11,7 @@ engine.ecs.system("game.StationTurrets", {
 	phase = "Update",
 	side = "client",
 	query = { write = { "rtype.SpriteRenderer", "game.StationTurret" } },
+	after = { "game.MapSprites" },
 	run = function(ctx)
 		local now = ctx.time.elapsed
 		for entity, sprite, turret in ctx.query do
