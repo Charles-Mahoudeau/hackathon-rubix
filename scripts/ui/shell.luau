@@ -25,6 +25,7 @@ local Route = require("@scripts/render/vfx/route")
 local Vfx = require("@scripts/config/vfx")
 local Planets = require("@scripts/config/planets")
 local Glow = require("@scripts/ui/glow")
+local Fit = require("@scripts/ui/fit")
 
 local Shell = {}
 
@@ -65,7 +66,7 @@ local skin
 
 -- `plain` keeps the hairline node even with a skin (the map panel, which must stay see-through over the world).
 local function panel(r, extra, plain)
-  local node = { style = { rect(r), extra }, children = {} }
+  local node = { style = { rect(r), { overflow = "hidden" }, extra }, children = {} }
   if skin and not plain then
     node.image = { texture = skin.texture, slice = skin.slice, color = skin.color }
   else
@@ -152,9 +153,12 @@ end
 local function feedStrip(font, r, lines)
   local rows = { text(font, "AGENT FEED", T.small, "dim", { marginBottom = 4 }) }
   if #lines == 0 then rows[#rows + 1] = text(font, "No tool calls yet.", T.small, "dim") end
+  -- One line per entry, cut to the strip: a wrapped entry would push the newest ones out of the fixed-height panel.
+  local room = r.w - 2 * L.gap
   for _, l in ipairs(lines) do
     local color = l.status == "failed" and Theme.semantic.error or (l.status == "running" and "dim" or (l.source == "monitor" and "cyan" or "text"))
-    rows[#rows + 1] = text(font, (l.agent and (l.agent .. "  ") or "") .. l.text, T.small, color)
+    local line = Fit.truncate((l.agent and (l.agent .. "  ") or "") .. l.text, T.small, room)
+    rows[#rows + 1] = text(font, line, T.small, color, { height = math.ceil(T.small * Fit.lineHeight) })
   end
   return withChildren(panel(r, { direction = "column", padding = L.gap, overflow = "hidden" }), rows)
 end
@@ -231,8 +235,12 @@ local function mapOverlay(font, r, map, opts)
   end
 
   local function label(center, name, sub, colorName, subColor, below)
-    return { style = { position = "absolute", left = center.x - 90, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
-      children = { text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil } }
+    local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
+    title.text.align = "center"
+    if line then line.text.align = "center" end
+    local left = math.max(r.x + L.gap, math.min(center.x - 90, r.x + r.w - 180 - L.gap))
+    return { style = { position = "absolute", left = left, top = center.y + below, width = 180, alignItems = "center", direction = "column", gap = 2 },
+      children = { title, line } }
   end
   for _, p in ipairs(map.planets) do
     local c = points[p.id]
@@ -995,10 +1003,10 @@ function Shell.spec(sim, screenId: string, opts)
   end
   for _, n in ipairs(Glow.glitch(opts.glitch, rects)) do children[#children + 1] = n end
   local shift = opts.glitch and opts.glitch.slices[1] and opts.glitch.slices[1].shift or 0
-  return {
+  return Fit.apply({
     style = { position = "absolute", left = shift, top = 0, width = L.view.w, height = L.view.h },
     children = children,
-  }, screenId
+  }, L.view.w), screenId
 end
 
 -- Glitch hook: the shell glitches only when an agent enters paused_error (art direction). Anything else is refused by
