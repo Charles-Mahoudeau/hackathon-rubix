@@ -20,6 +20,7 @@ local ArchiveView = require("@scripts/ui/archive_view")
 local Studio = require("@scripts/ui/skill_studio")
 local TeamView = require("@scripts/ui/team_view")
 local MarketView = require("@scripts/ui/market_view")
+local StationView = require("@scripts/ui/station_view")
 local DebugPanel = require("@scripts/ui/debug")
 local Glitch = require("@scripts/render/vfx/glitch")
 local Route = require("@scripts/render/vfx/route")
@@ -240,18 +241,7 @@ local function mapOverlay(font, r, map, opts)
       nodes[#nodes + 1] = dot(d, cfg.routeThickness * scale, name, math.min(1, style.color[4] * 0.55 + (focused and 0.3 or 0)))
     end
   end
-  for _, c in ipairs(map.convoys) do
-    local a, b = points[c.from], points[c.to]
-    local at = { x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }
-    for _, n in ipairs(Glow.halo(at, cfg.convoyDot / 2, "active", t, true, "text")) do nodes[#nodes + 1] = n end
-    nodes[#nodes + 1] = dot(at, cfg.convoyDot, "text")
-  end
-  for _, c in ipairs(map.rivals) do
-    local a, b = points[c.from], points[c.to]
-    if a and b then
-      nodes[#nodes + 1] = dot({ x = a.x + (b.x - a.x) * c.t, y = a.y + (b.y - a.y) * c.t }, cfg.rivalDot, c.orange and Theme.semantic.warning or "dim")
-    end
-  end
+  -- Convoys and rival convoys are ships now (client/fleet_map.luau, GR5-51): the world layer draws them, no dot here.
 
   local function label(center, name, sub, colorName, subColor, below)
     local title, line = text(font, name, T.body, colorName), sub and text(font, sub, T.small, subColor or "dim") or nil
@@ -696,6 +686,51 @@ local function fleetScreen(font, r, m, time)
   return withChildren(panel(r, nil), kids)
 end
 
+-- Station (GR5-73, spec §6.6 T3, §7): stock per resource with used / capacity, docked ships, freighters and Logisticians of
+-- the main station and of each outpost (one tab per station).
+local function stationScreen(font, r, m, time)
+  local c = Screens.station
+  local kids = {}
+  local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
+  if m.showTabs then
+    for i, tab in ipairs(m.tabs) do
+      nodeAt(L.pad + (i - 1) * (c.tabWidth + c.tabGap), c.tabY, button(font, tab.label, tab.action, tab.active and "cyan" or "dim", c.tabWidth))
+    end
+  end
+  nodeAt(L.pad, c.headerY, text(font, ("%s  %s   stock %s"):format(m.label:upper(), m.planet, m.usedText), T.small, "dim"))
+  nodeAt(L.pad, c.barY, gauge({ height = c.barHeight, width = c.barWidth }, m.percent, m.percent >= 90 and Theme.semantic.warning or "cyan"))
+  for i, row in ipairs(m.stock) do
+    local y = c.rowY + (i - 1) * c.rowHeight
+    nodeAt(L.pad, y, text(font, row.name, T.body, row.qty > 0 and "text" or "dim"))
+    nodeAt(c.rowBarX, y + c.rowBarY - 4, gauge({ height = c.barHeight, width = c.rowBarWidth }, row.percent, "green"))
+    nodeAt(c.rowQtyX, y, text(font, tostring(row.qty), T.body, row.qty > 0 and "text" or "dim"))
+  end
+  local y = c.rowY
+  local function line(label, colorName, state, x)
+    if state then for _, n in ipairs(Glow.light({ x = c.listX - 8, y = y + 8 }, state, time)) do kids[#kids + 1] = n end end
+    nodeAt(x or c.listX, y, text(font, label, T.small, colorName))
+    y += c.lineHeight
+  end
+  line(("DOCKED SHIPS  %d"):format(#m.ships), "dim")
+  if #m.ships == 0 then line("none", "dim", nil, c.listX + 12) end
+  for _, s in ipairs(m.ships) do line(s.text, s.owner and "text" or Theme.semantic.warning, s.owner and "idle" or "pending", c.listX + 12) end
+  y += c.sectionGap
+  if not m.hub then
+    line("FREIGHTERS AND LOGISTICIANS", "dim")
+    line("Build the logistics hub (tier 4) to ship stock to other markets.", "dim", nil, c.listX + 12)
+  else
+    line(("FREIGHTERS  %d / %d"):format(#m.freighters, m.freighterCap), "dim")
+    if #m.freighters == 0 then line("none", "dim", nil, c.listX + 12) end
+    for _, f in ipairs(m.freighters) do line(f.text, "text", f.state == "docked" and "idle" or "acting", c.listX + 12) end
+    y += c.sectionGap
+    line(("LOGISTICIANS  %d"):format(#m.logisticians), "dim")
+    if #m.logisticians == 0 then line("none", "dim", nil, c.listX + 12) end
+    for _, a in ipairs(m.logisticians) do line(a.text, "text", a.state, c.listX + 12) end
+    if m.idleText then line(m.idleText, Theme.semantic.warning, "pending", c.listX + 12) end
+  end
+  return withChildren(panel(r, nil), kids)
+end
+
 -- Missions (GR5-9, spec §15): the current mission (goal, hint, progress bar, reward, Claim), then every mission in order.
 local function missionsScreen(font, r, m)
   local c = Screens.missions
@@ -1037,6 +1072,8 @@ function Shell.spec(sim, screenId: string, opts)
     children[#children + 1] = alertsScreen(font, rects.main, AlertsView.model(sim))
   elseif screenId == "archive" then
     children[#children + 1] = archiveScreen(font, rects.main, ArchiveView.model(sim), Studio.model(sim, opts.studio or Studio.new()))
+  elseif screenId == "station" and sim:hasWarehouse() then
+    children[#children + 1] = stationScreen(font, rects.main, StationView.model(sim, opts.station), opts.time or 0)
   elseif screenId == "debug" and Model.screenVisible(sim.tier, "debug") then
     children[#children + 1] = debugScreen(font, rects.main, DebugPanel.model(sim, opts.debug or DebugPanel.new()))
   elseif screenId == "market" and sim:hasWarehouse() then

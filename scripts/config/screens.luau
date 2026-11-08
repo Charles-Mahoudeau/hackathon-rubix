@@ -63,8 +63,6 @@ return {
     riskValue = { low = 0.2, medium = 0.6 }, -- the cosmetic risk fed to render/vfx/route for a route's colour
     animSeconds = 0.15, -- the map redraws this often (planet pulse, moving dashes); other screens use refreshSeconds
     routeSpacing = 14, -- view pixels between two dashes of a route line
-    convoyDot = 6,
-    rivalDot = 5, -- rival convoys (raiding branch): amber on the raidable orange routes, dim on the others
   },
 
   -- Agent editor (GR5-5): view pixels inside the main panel. The two text inputs are their own UI tree, so typing never
@@ -110,6 +108,10 @@ return {
   -- Fleet screen (GR5-12): Reputation bar and hub on top, then one block per station, outposts to build, ships.
   fleet = { barY = 30, barWidth = 360, barHeight = 10, hubX = 520, stationY = 78, blockGap = 14, lineHeight = 18, buttonWidth = 150,
     buttonGap = 8, outpostButtonWidth = 190, convoyX = 420 },
+
+  -- Station screen (GR5-73): a tab per station, the stock bars on the left, docked ships / freighters / Logisticians on the right.
+  station = { tabY = 8, tabWidth = 170, tabGap = 8, headerY = 52, barY = 76, barWidth = 360, barHeight = 10, rowY = 104, rowHeight = 30,
+    rowBarY = 14, rowBarWidth = 200, rowBarX = 150, rowQtyX = 360, listX = 520, lineHeight = 20, sectionGap = 14 },
 
   -- Team screen (GR5-28): one row per agent.
   team = { rowY = 48, rowHeight = 26, nameX = 0, assetX = 130, modeX = 270, stateX = 380, computeX = 500, netX = 590, errorsX = 690, alertX = 760,

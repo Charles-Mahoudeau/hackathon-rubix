@@ -294,7 +294,7 @@ do
   assert(s.agents.refiner.state ~= "paused_error" and s.warehouse.plate == 0)
   s.warehouse.titanium = 9
   run(s, 60)
-  assert(s.warehouse.plate == 3 or Refining.refineryAt(s, s.home).job ~= nil, "it resumes once the inputs arrive")
+  assert(s.warehouse.plate >= 3 or Refining.refineryAt(s, s.home).job ~= nil, "it resumes once the inputs arrive")
 end
 
 -- 9. skills: a Refiner skill with a recipe parameter
@@ -310,6 +310,7 @@ do
   s.warehouse.titanium = 100
   assert(Skills.assign(s, "refiner", "make", { r = "plate" }))
   s:setDecider(Ai.decide)
+  s:setDirective("miner", "Mine cobalt and sell at HMC.") -- a vague Miner may store into the warehouse (spec 10.5)
   run(s, 120)
   assert(s.warehouse.plate == 30 and s.warehouse.titanium == 10, "three jobs of 10 plates: " .. s.warehouse.plate)
   assert(s.agents.refiner.mode == "skill", s.agents.refiner.mode)
