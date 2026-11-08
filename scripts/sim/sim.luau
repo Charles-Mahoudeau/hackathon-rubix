@@ -398,6 +398,7 @@ function Sim:validate(agentId, call)
     if ship.cargo >= ship.cargoCap then return false, "hold_full" end
     local pct = args.stop_at_hold_pct
     if pct ~= nil and (type(pct) ~= "number" or pct < 10 or pct > 100) then return false, "bad stop_at_hold_pct" end
+    if args.to ~= nil and args.to ~= "home" and args.to ~= "local_depot" then return false, "bad dock" end
   elseif n == "return" then
     if ship.state == "idle" then return false, "already_docked" end
     if ship.state ~= "mining" then return false, "ship busy" end
@@ -558,6 +559,8 @@ function Sim:apply(agentId, call, opts)
     -- Which vein the hold came from, for the missions: "mixed" once two veins feed one hold.
     if ship.cargo <= 0 then ship.cargoVein = vein.id elseif ship.cargoVein ~= vein.id then ship.cargoVein = "mixed" end
     ship.stopPct, ship.mineStartTick, ship.mineStartCargo = args.stop_at_hold_pct or 100, self.tick, ship.cargo
+    -- the dock the full hold goes to: the sim issues that `return` itself, so the stub's choice rides on the mine call
+    ship.returnTo = args.to
     ship.state, ship.vein, ship.dest = "travel_out", vein, vein.planet
     ship.timer = travelTicks(self, ship, ship.at, vein.planet, vein.jumps)
   elseif n == "return" then
@@ -709,7 +712,7 @@ function Sim:stepShip(ship, sharing)
       if ship.state == "travel_out" then
         ship.state = "mining"
         ship.ore = ship.vein.ore
-        if ship.vein.reserve < 1 then self:apply(ship.owner, { name = "return", args = { ship = ship.id } }, { auto = true }) end
+        if ship.vein.reserve < 1 then self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true }) end
       else
         ship.vein = nil
         ship.crowdedBy = {}
@@ -748,7 +751,7 @@ function Sim:stepShip(ship, sharing)
     local stopAt = math.ceil(ship.cargoCap * (ship.stopPct or 100) / 100 - 1e-9)
     if ship.cargo >= stopAt or v.reserve < 1 then
       if ship.cargo >= ship.cargoCap then ship.cargo, ship.cargoF = ship.cargoCap, ship.cargoCap end
-      self:apply(ship.owner, { name = "return", args = { ship = ship.id } }, { auto = true })
+      self:apply(ship.owner, { name = "return", args = { ship = ship.id, to = ship.returnTo } }, { auto = true })
     end
   end
 end
@@ -852,7 +855,15 @@ function Sim:resolveDecision(agentId, call, ctx, opts)
     DecisionLog.failed(self, opts and opts.record, "stale", type(call) == "table" and call or nil)
     return false, "stale"
   end
+  -- the stub explains itself (spec §10.5); a provider's reasoning was set by the caller
+  local own = type(call) == "table" and call.reasoning
+  if own and own ~= "" and not self.nextReasoning then
+    self.nextReasoning = own
+    local rec = opts and opts.record
+    if rec and not rec.reasoning then rec.reasoning = own end
+  end
   local ok, err = self:apply(agentId, call, { record = opts and opts.record, fallback = opts and opts.fallback })
+  self.nextReasoning = nil
   if ok then
     if not (opts and opts.fallback) then self:noteSuccess(agentId) end
   else
@@ -1048,7 +1059,8 @@ function Sim:stepAgent(id, agent)
       agent.pending = nil
       local outTokens = Prompt.outputTokens(pend.call)
       local rec = DecisionLog.find(self, pend.rec)
-      DecisionLog.answered(self, rec, { output = outTokens, cost = self.compute:settle(pend.charge, pend.input, outTokens) })
+      DecisionLog.answered(self, rec, { output = outTokens, reasoning = pend.call.reasoning,
+        cost = self.compute:settle(pend.charge, pend.input, outTokens) })
       finishRequest(self, pend.reqId, pend.input + outTokens)
       setAgentState(self, agent, "idle")
       self:resolveDecision(id, pend.call, pend.ctx, { record = rec })
