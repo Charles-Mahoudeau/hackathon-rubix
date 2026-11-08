@@ -51,6 +51,11 @@ do
   assert(m.current.id == 1 and m.current.claim == nil and m.current.percent == 0 and m.total == 8 and #m.rows == 8)
   assert(m.current.hint == "Name the ore, vein and return point." and #m.current.brief == 2, "hint and brief lines from the microcopy")
   assert(m.current.rewardText == "Reward: 300 cr + 5 Compute")
+  local view = MissionsView.new()
+  assert(MissionsView.act(s, "missions.select.2", view))
+  local selected = MissionsView.model(s, view)
+  assert(selected.current.id == 2 and selected.current.locked and selected.current.progressText == "Claim the previous mission")
+  assert(selected.current.claim == nil and selected.rows[1].state == "active" and selected.rows[2].state == "locked")
 end
 
 -- 1b. every displayed mission string (title, each brief line, hint) fits the 40-character label limit, branch missions included

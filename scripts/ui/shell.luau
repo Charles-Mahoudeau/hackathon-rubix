@@ -888,7 +888,8 @@ local function logsScreen(font, r, m)
     if d.record then rows[#rows + 1] = button(font, d.record.label, d.record.action, "cyan", 220) end
   end
   local rightPanel = panel({ x = r.x + c.listWidth + L.gap, y = r.y, w = r.w - c.listWidth - L.gap, h = r.h },
-    { direction = "column", gap = 3, padding = L.pad, overflow = "hidden" })
+    { direction = "column", gap = 3, padding = L.pad, overflow = "scroll" })
+  rightPanel.scroll = { speed = 30 }
   return leftPanel, withChildren(rightPanel, rows)
 end
 
@@ -1150,8 +1151,10 @@ local function missionsScreen(font, r, m)
   -- The mission list sits in a column to the right of the current mission, so it never runs past the panel's bottom edge.
   for i, row in ipairs(m.rows) do
     local y = c.listY + (i - 1) * c.rowHeight
-    local color = row.state == "claimed" and "green" or (row.state == "current" and "cyan" or "dim")
-    nodeAt(c.listX, y, text(font, (row.state == "claimed" and "[x] " or "[ ] ") .. row.name, T.small, color))
+    local color = (row.state == "claimed" or row.state == "complete") and "green" or (row.state == "active" and "cyan" or "dim")
+    local label = row.name .. "  [" .. row.state .. "]"
+    nodeAt(c.listX, y, buttonNode({ width = c.rewardX - 8, height = c.rowHeight, justify = "center" }, row.action, color,
+      { text(font, Fit.truncate(label, T.small, c.rewardX - 20), T.small, color) }, cur and cur.id == row.id))
     for i, key in ipairs(row.icons) do nodeAt(c.listX + c.rewardX + (i - 1) * (ICON.row + 2), y, Icon.node(key, ICON.row, color)) end
     nodeAt(c.listX + c.rewardX + #row.icons * (ICON.row + 2), y, text(font, row.reward, T.small, color))
   end
@@ -1581,7 +1584,7 @@ function Shell.spec(sim, screenId: string, opts)
   elseif screenId == "team" then
     children[#children + 1] = teamScreen(font, rects.main, TeamView.model(sim), opts.time or 0)
   elseif screenId == "missions" then
-    children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim))
+    children[#children + 1] = missionsScreen(font, rects.main, MissionsView.model(sim, opts.missions))
   elseif screenId == "branches" and sim.tier >= 2 then
     children[#children + 1] = branchesScreen(font, rects.main, BranchesView.model(sim), opts.time or 0)
   elseif screenId == "alerts" and sim.tier >= 5 then
