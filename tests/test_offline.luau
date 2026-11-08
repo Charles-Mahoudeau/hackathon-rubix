@@ -25,6 +25,7 @@ local function team(seed)
   assert(Skills.assign(s, "miner", "ore-run", { vein = "K1" }))
   assert(Skills.assign(s, "miner_b", "ore-run", { vein = "K2" }))
   assert(Skills.assign(s, "miner_c", "ore-run", { vein = "K3" }))
+  s:addAgent("logistician", "logistician", { tier = s.tier })
   s.agents.logistician.directive = "move cobalt to Halcyon"
   s.agents.logistician.mode = "ai"
   return s

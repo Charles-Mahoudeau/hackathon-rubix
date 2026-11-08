@@ -187,7 +187,7 @@ do
   local r = assert(Persistence.load(storage, "save.json"))
   r:setDecider(Ai.decide)
   assert(r.upgrades.drill == 2 and r.upgrades.scanner and r.upgrades.archive == 1 and r.upgrades.ships == 1)
-  assert(#r.shipOrder == 2 and r.ships.s2.drillRate == 3 and #r.agentOrder == 3 and r.agents.miner2.directive == "Mine titanium on K1.")
+  assert(#r.shipOrder == 2 and r.ships.s2.drillRate == 3 and #r.agentOrder == 2 and r.agents.miner2.directive == "Mine titanium on K1.")
   s:run(1500); r:run(1500)
   assert(r.resources.credits == s.resources.credits and r.ships.s2.cargo == s.ships.s2.cargo, "restored game == original")
 end
@@ -199,7 +199,7 @@ do
   local m = ShopView.model(s)
   local by = {}
   for _, r in ipairs(m.rows) do by[r.id] = r end
-  assert(#m.rows == 11 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
+  assert(#m.rows == 15 and by.drill_mk2.state == "unaffordable" and by.engine_mk2.state == "available" and by.drill_mk3.state == "locked")
   assert(by.drill_mk3.note == "Needs Drill Mk2" and by.engine_mk2.action == "shop.buy.engine_mk2" and by.engine_mk2.costText == "1000 cr")
   local handled, ok = ShopView.act(s, "shop.buy.engine_mk2")
   assert(handled and ok and s.upgrades.engine == 2 and s.resources.credits == 0)

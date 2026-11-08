@@ -108,6 +108,18 @@ function Model.map(sim)
         seconds = World.freighterRoutes[r.from][r.to] }
     end
   end
+  -- An outpost adds its own routes (spec D21); the colour follows the trip length.
+  for _, sid in ipairs(sim.stationOrder) do
+    if sid ~= sim.home then
+      for _, mid in ipairs(World.marketOrder) do
+        if shown[mid] then
+          local seconds = World.freighterRoutes[sid][mid]
+          local low = seconds <= cfg.safeRouteSeconds
+          routes[#routes + 1] = { from = sid, to = mid, risk = low and "low" or "medium", color = low and "safe" or "risky", seconds = seconds }
+        end
+      end
+    end
+  end
   local convoys = {}
   for _, f in ipairs(sim.freighters) do
     local l = f.load

@@ -4,6 +4,7 @@ local World = require("@scripts/config/world")
 local Ai = require("@scripts/config/ai")
 local Renderer = require("./context_renderer")
 local Market = require("./market")
+local Logistics = require("./logistics")
 
 local Builder = {}
 
@@ -73,11 +74,12 @@ local function veinRows(sim, ship, mode)
   return rows
 end
 
-local function priceSubs(sim, ship, s)
+-- `ship` may be nil (a station agent): its own planet then stands for the current location.
+local function priceSubs(sim, ship, s, planet)
   local subs = {}
   if s.prices_hmc ~= "off" then
     for _, pid in ipairs(World.planetOrder) do
-      if (s.prices_hmc == "all" and sim:inRange(ship, pid)) or (s.prices_hmc == "current" and pid == ship.at) then
+      if (s.prices_hmc == "all" and (not ship or sim:inRange(ship, pid))) or (s.prices_hmc == "current" and pid == (ship and ship.at or planet)) then
         local p = {}
         for _, ore in ipairs(World.oreOrder) do p[ore] = round1(World.planets[pid].depotRate * World.ores[ore].basePrice) end
         subs[#subs + 1] = { "hmc@" .. pid, oreMap(p) }
@@ -110,8 +112,16 @@ end
 
 local builders = {}
 
+local function inboxList(agent, s)
+  local inbox = {}
+  if s.inbox then
+    for i = math.max(1, #agent.inbox - Ai.inboxMax + 1), #agent.inbox do inbox[#inbox + 1] = agent.inbox[i] end
+  end
+  return inbox
+end
+
 function builders.miner(sim, agent, s)
-  local ship = sim.ships.s1
+  local ship = sim:ownedShip(agent.id)
   local data = {
     { key = "time", kind = "scalar", value = clock(sim) },
     shipSection(sim, ship),
@@ -132,14 +142,39 @@ function builders.miner(sim, agent, s)
   end
   data[#data + 1] = { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" },
     rows = recentRows(agent, s.recent_results) }
-  local inbox = {}
-  if s.inbox then
-    for i = math.max(1, #agent.inbox - Ai.inboxMax + 1), #agent.inbox do inbox[#inbox + 1] = agent.inbox[i] end
-  end
-  data[#data + 1] = { key = "inbox", kind = "strings", items = inbox }
+  data[#data + 1] = { key = "inbox", kind = "strings", items = inboxList(agent, s) }
   data[#data + 1] = { key = "credits", kind = "scalar", value = sim.resources.credits }
   data[#data + 1] = { key = "compute", kind = "scalar", value = round1(sim.resources.compute) }
   return data
+end
+
+-- Spec §9.2.3: time, station, stock, freighters, others_here, prices, recent, inbox, credits, compute.
+function builders.logistician(sim, agent, s)
+  local st = sim.stations[agent.station]
+  local stock = {}
+  for _, ore in ipairs(World.oreOrder) do
+    if st.stock[ore] > 0 then stock[#stock + 1] = { ore, st.stock[ore] } end
+  end
+  local rows = {}
+  for _, r in ipairs(Logistics.freighterRows(sim, st.id)) do
+    rows[#rows + 1] = { r.id, r.state, r.cargo or "-", r.dest or "-", r.eta or "-" }
+  end
+  local others = {}
+  for _, id in ipairs(Logistics.logisticiansAt(sim, st.id)) do if id ~= agent.id then others[#others + 1] = id end end
+  local subs = priceSubs(sim, nil, { prices_hmc = "off", prices_orbis = s.prices_orbis, prices_halcyon = s.prices_halcyon,
+    prices_meridian = s.prices_meridian, price_trends = s.price_trends }, st.planet)
+  return {
+    { key = "time", kind = "scalar", value = clock(sim) },
+    { key = "station", kind = "object", fields = { { "id", Logistics.label(st) }, { "cap", Logistics.storageCap(sim, st) } } },
+    { key = "stock", kind = "map", map = map(stock) },
+    { key = "freighters", kind = "table", cols = { "id", "state", "cargo", "dest", "eta_s" }, rows = rows },
+    { key = "others_here", kind = "scalar", value = others },
+    { key = "prices", kind = "maps", subs = subs },
+    { key = "recent", kind = "table", cols = { "tool", "args", "ok", "result" }, rows = recentRows(agent, s.recent_results) },
+    { key = "inbox", kind = "strings", items = inboxList(agent, s) },
+    { key = "credits", kind = "scalar", value = sim.resources.credits },
+    { key = "compute", kind = "scalar", value = round1(sim.resources.compute) },
+  }
 end
 
 -- -> ordered context data for `agentId` under `settings` (defaults to the agent's own settings).

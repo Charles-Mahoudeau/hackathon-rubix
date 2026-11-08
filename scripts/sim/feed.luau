@@ -16,7 +16,7 @@ local function fmtArgs(tool, a)
   if tool == "ship" then return ("%s, %s -> %s"):format(tostring(a.resource), tostring(a.qty or "all"), tostring(a.destination)) end
   if tool == "run_skill" then return tostring(a.name) end
   if tool == "wait" then return tostring(a.seconds) end
-  if tool == "report" then return "player" end
+  if tool == "report" then return a.to or "player" end
   if tool == "scan" then return tostring(a.planet) end
   return ""
 end

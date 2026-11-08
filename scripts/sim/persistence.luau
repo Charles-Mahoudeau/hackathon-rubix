@@ -29,6 +29,13 @@ function Persistence.serialize(sim, savedAt)
     copy.feedEntry = ship.feedEntry and ship.feedEntry.id or nil -- relinked to the feed list on load
     ships[id] = copy
   end
+  local charges = {}
+  for id, charge in pairs(sim.compute.charges) do charges[tostring(id)] = charge end
+  local stations = {}
+  for id, st in pairs(sim.stations) do
+    stations[id] = { id = st.id, planet = st.planet, kind = st.kind, hangar = st.hangar,
+      stock = st.kind == "outpost" and Sim.deepCopy(st.stock) or nil } -- the main stock is `warehouse`
+  end
   return {
     schema_version = Persistence.SCHEMA_VERSION,
     seed = sim.seed,
@@ -56,6 +63,11 @@ function Persistence.serialize(sim, savedAt)
       records = sim.records,
       recordSeq = sim.recordSeq,
       missions = sim.missions,
+      stationOrder = sim.stationOrder,
+      compute = { nextId = sim.compute.nextId, charges = charges, spend = sim.compute.spend,
+        lifetime = sim.compute.lifetime, lifetimeTotal = sim.compute.lifetimeTotal, started = sim.compute.started },
+      freighters = sim.freighters,
+      stations = stations,
       market = Market.serialize(sim.market),
     }),
     veins = veins,
@@ -75,6 +87,22 @@ function Persistence.restore(data, opts)
   end
   for k, v in pairs(st.resources) do sim.resources[k] = v end
   for k, v in pairs(st.warehouse) do sim.warehouse[k] = v end
+  -- Older saves have no stations or freighters: the main station from Sim.new stays, with no freighters.
+  if st.stations then
+    for id, saved in pairs(st.stations) do
+      if saved.kind == "main" then sim.stations[id].hangar = saved.hangar or 0
+      else sim.stations[id] = { id = saved.id, planet = saved.planet, kind = saved.kind, hangar = saved.hangar or 0, stock = saved.stock } end
+    end
+    sim.stationOrder = st.stationOrder
+  end
+  sim.freighters = st.freighters or {}
+  -- The Compute ledger: a decision in flight at save time must settle against its own charge. JSON keys are strings.
+  if st.compute then
+    local c = sim.compute
+    for _, key in ipairs({ "nextId", "spend", "lifetime", "lifetimeTotal", "started" }) do c[key] = st.compute[key] end
+    c.charges = {}
+    for id, charge in pairs(st.compute.charges) do c.charges[tonumber(id)] = charge end
+  end
   for id, saved in pairs(st.agents) do
     if saved.mode == "default" then saved.mode = "ai" end
     sim.agents[id] = saved
