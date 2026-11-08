@@ -20,42 +20,61 @@ function Monitor.init(sim)
   sim.monitorSettings = { scope = cfg(sim).defaultScope, heartbeat = cfg(sim).heartbeat.default, alertTypes = alertTypes }
 end
 
-function Monitor.agent(sim) return sim.agents.monitor end
+function Monitor.agent(sim, scope)
+  for _, id in ipairs(sim.agentOrder) do
+    local a = sim.agents[id]
+    if a.type == "monitor" and (scope == nil or a.monitorSettings.scope == scope) then return a end
+  end
+end
 
 -- Why the Monitor cannot be hired now (nil: it can).
-function Monitor.hireBlocker(sim)
+function Monitor.hireBlocker(sim, scope)
   if not sim.upgrades.commandCenter then return "command_center_locked" end
-  if sim.agents.monitor then return "already_hired" end
+  if Monitor.agent(sim, scope or sim.monitorSettings.scope) then return "already_hired" end
   if #sim.agentOrder >= sim:commandCapacity() then return "command_capacity" end
   return nil
 end
 
-function Monitor.hire(sim)
-  local why = Monitor.hireBlocker(sim)
+function Monitor.hire(sim, scope)
+  scope = scope or sim.monitorSettings.scope
+  local valid = false
+  for _, s in ipairs(Registry.scopes(sim)) do if s == scope then valid = true end end
+  if not valid then return false, "bad_scope" end
+  local why = Monitor.hireBlocker(sim, scope)
   if why then
     sim:log("ERROR", "hire: cannot hire the Monitor (" .. why .. ")")
     return false, why
   end
-  local agent = sim:addAgent("monitor", "monitor", { tier = sim.tier })
+  local n = 1
+  while sim.agents["monitor_" .. n] do n += 1 end
+  local id = "monitor_" .. n
+  local agent = sim:addAgent(id, "monitor", { tier = sim.tier })
+  agent.monitorSettings = { scope = scope, heartbeat = sim.monitorSettings.heartbeat, alertTypes = {} }
+  for t, on in pairs(sim.monitorSettings.alertTypes) do agent.monitorSettings.alertTypes[t] = on end
   Monitor.armHeartbeat(sim, agent)
   sim:log("INFO", "monitor: hired (empty directive)")
-  sim:emit("agent_added", { agent = "monitor" })
-  return true, "monitor"
+  sim:emit("agent_added", { agent = id })
+  return true, id
 end
 
 function Monitor.armHeartbeat(sim, agent)
-  local hb = sim.monitorSettings.heartbeat
+  local hb = agent.monitorSettings.heartbeat
   agent.nextHeartbeat = hb and (sim.tick + sim:ticks(hb)) or nil
 end
 
 -- changes: { scope = "company|mining|logistics", heartbeat = seconds | false, alertTypes = { type = bool } }
-function Monitor.setSettings(sim, changes)
-  local st, c = sim.monitorSettings, cfg(sim)
+function Monitor.setSettings(sim, changes, agentId)
+  local agent = agentId and sim.agents[agentId] or Monitor.agent(sim, sim.monitorSettings.scope)
+  if agentId and (not agent or agent.type ~= "monitor") then return false, "unknown_agent" end
+  local st, c = agent and agent.monitorSettings or sim.monitorSettings, cfg(sim)
   if changes.scope ~= nil then
     local found = false
     for _, s in ipairs(Registry.scopes(sim)) do if s == changes.scope then found = true end end
     if not found then return false, "bad_scope" end
+    local other = Monitor.agent(sim, changes.scope)
+    if agent and other and other ~= agent then return false, "already_hired" end
     st.scope = changes.scope
+    if agent and agentId == nil then sim.monitorSettings.scope = changes.scope end
   end
   if changes.heartbeat ~= nil then
     local hb = changes.heartbeat
@@ -68,7 +87,7 @@ function Monitor.setSettings(sim, changes)
     else
       return false, "bad_heartbeat"
     end
-    if sim.agents.monitor then Monitor.armHeartbeat(sim, sim.agents.monitor) end
+    if agent then Monitor.armHeartbeat(sim, agent) end
   end
   for t, on in pairs(changes.alertTypes or {}) do
     if st.alertTypes[t] == nil then return false, "unknown_alert_type" end
@@ -86,18 +105,18 @@ end
 
 -- Woken by an alert in its queue, or by the heartbeat; with the heartbeat off and no alert it never decides.
 function Monitor.needsDecision(sim, agent)
-  if #Alerts.queue(sim) > 0 then return true end
+  if #Alerts.queue(sim, agent) > 0 then return true end
   return agent.nextHeartbeat ~= nil and sim.tick >= agent.nextHeartbeat
 end
 
 -- A decision is sent: it takes the oldest queued alert and restarts the heartbeat.
 function Monitor.onSend(sim, agent)
-  Alerts.consume(sim)
+  Alerts.consume(sim, agent)
   Monitor.armHeartbeat(sim, agent)
 end
 
-function Monitor.inScope(sim, target)
-  local scope = sim.monitorSettings.scope
+function Monitor.inScope(sim, target, monitor)
+  local scope = (monitor and monitor.monitorSettings or sim.monitorSettings).scope
   return scope == "company" or sim.registry:scopeOfAgentType(target.type) == scope
 end
 
@@ -107,7 +126,7 @@ function Monitor.validate(sim, agent, n, args)
   if n == "wait" or n == "report" then return true end
   local target = type(args.agent) == "string" and sim.agents[args.agent] or nil
   if not target or target.type == "monitor" then return false, "unknown_agent" end
-  if not Monitor.inScope(sim, target) then return false, "out_of_scope" end
+  if not Monitor.inScope(sim, target, agent) then return false, "out_of_scope" end
   if target.monitorLock then return false, "agent_locked" end
   if n == "set_order" then
     if type(args.text) ~= "string" then return false, "bad_args" end
@@ -190,11 +209,11 @@ local function errors10m(sim, agentId)
 end
 
 -- The agents table of the Monitor's context (spec §9.2.4), one row per supervised agent. Detached from the sim.
-function Monitor.agentRows(sim)
+function Monitor.agentRows(sim, monitor)
   local rows = {}
   for _, id in ipairs(sim.agentOrder) do
     local a = sim.agents[id]
-    if a.type ~= "monitor" and Monitor.inScope(sim, a) then
+    if a.type ~= "monitor" and Monitor.inScope(sim, a, monitor) then
       local at
       if a.type == "miner" then
         local ship = sim:ownedShip(id)
@@ -215,9 +234,9 @@ function Monitor.agentRows(sim)
 end
 
 -- Detached snapshot for the decider (stub or provider prompt checks).
-function Monitor.context(sim)
+function Monitor.context(sim, monitor)
   local alerts = {}
-  for _, a in ipairs(Alerts.queue(sim)) do
+  for _, a in ipairs(Alerts.queue(sim, monitor)) do
     alerts[#alerts + 1] = { id = a.id, type = a.type, agent = a.agent, reason = a.reason, skill = a.skill, params = a.params,
       age_s = math.floor((sim.tick - a.tick) * sim.b.tickSeconds) }
   end
@@ -231,7 +250,7 @@ function Monitor.context(sim)
       end
     end
   end
-  return { tick = sim.tick, scope = sim.monitorSettings.scope, alerts = alerts, agents = Monitor.agentRows(sim),
+  return { tick = sim.tick, scope = monitor.monitorSettings.scope, alerts = alerts, agents = Monitor.agentRows(sim, monitor),
     skills = skills, veins = veins, resources = { credits = sim.resources.credits, compute = sim.resources.compute } }
 end
 

@@ -896,8 +896,8 @@ function Sim:setOrder(agentId, text)
   return ok, err
 end
 
-function Sim:hireMonitor() return Monitor.hire(self) end
-function Sim:setMonitorSettings(changes) return Monitor.setSettings(self, changes) end
+function Sim:hireMonitor(scope) return Monitor.hire(self, scope) end
+function Sim:setMonitorSettings(changes, agentId) return Monitor.setSettings(self, changes, agentId) end
 function Sim:setMonitorLock(agentId, locked) return Monitor.setLock(self, agentId, locked) end
 
 -- Skills the company Archive can hold (spec D1: 1 from T1, +1 per Archive upgrade, +2 with the warehouse). The Archive is
@@ -1272,7 +1272,7 @@ function Sim:richnessBand(richness) return band(richness) end
 -- Hidden veins are omitted and unscanned veins expose only a richness band (spec §4.3).
 function Sim:context(agentId)
   local agent = self.agents[agentId]
-  if agent.type == "monitor" then return Monitor.context(self) end
+  if agent.type == "monitor" then return Monitor.context(self, agent) end
   if agent.type == "privateer" then return Raiding.context(self, agent) end
   if agent.type == "refiner" then return Refining.context(self, agent) end
   if agent.type == "scavenger" then return Salvage.context(self, agent) end

@@ -326,11 +326,11 @@ do
   local function react(directive, alert, setup)
     local s = monitor()
     if setup then setup(s) end
-    s.agents.monitor.directive = directive
-    local ctx = s:context("monitor")
+    s.agents.monitor_1.directive = directive
+    local ctx = s:context("monitor_1")
     ctx.alerts = alert and { { id = 1, type = alert.type, agent = alert.agent or "miner", reason = alert.reason or "vein_depleted",
       skill = alert.skill, params = alert.params, age_s = 5 } } or {}
-    return Ai.decide(s, "monitor", ctx), s
+    return Ai.decide(s, "monitor_1", ctx), s
   end
   local aborted = { type = "skill_aborted", skill = "Titanium loop", params = "vein=K1" }
   local function paused(s) s.agents.miner.state = "paused_error" end
@@ -375,11 +375,11 @@ do
   -- nothing fits: a random valid action; no alert: wait(60)
   local acts = seen(function(seed)
     local s = monitor()
-    s.agents.monitor.directive = "Be helpful."
+    s.agents.monitor_1.directive = "Be helpful."
     for _ = 1, seed do s.randStub() end
-    local ctx = s:context("monitor")
+    local ctx = s:context("monitor_1")
     ctx.alerts = { { id = 1, type = "agent_idle", agent = "miner", reason = "idle", age_s = 1 } }
-    local c = Ai.decide(s, "monitor", ctx)
+    local c = Ai.decide(s, "monitor_1", ctx)
     assert(c.reasoning:find("random", 1, true), c.reasoning)
     return c.name
   end, 24)

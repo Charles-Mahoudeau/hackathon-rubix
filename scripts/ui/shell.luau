@@ -1190,6 +1190,8 @@ local function alertsScreen(font, r, m)
   local function nodeAt(x, y, node) kids[#kids + 1] = at(x, y, node) end
   nodeAt(L.pad, L.pad, text(font, ("%s  %s"):format(Words.monitor.title, m.state), T.small, "dim"))
   local x = L.pad
+  nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
+  x += c.buttonWidth + c.gap
   if m.hire then
     nodeAt(x, c.controlsY, button(font, "Hire Monitor", m.hire, "green", c.buttonWidth))
   elseif m.hireNote then
@@ -1197,8 +1199,6 @@ local function alertsScreen(font, r, m)
   end
   local y = c.typesY
   if m.hired then
-    nodeAt(x, c.controlsY, button(font, Words.monitor.scope .. ": " .. m.scope, m.scopeAction, "cyan", c.buttonWidth))
-    x += c.buttonWidth + c.gap
     nodeAt(x, c.controlsY + 6, text(font, Words.monitor.heartbeat .. " " .. m.heartbeatText, T.small, "text"))
     x += 140
     nodeAt(x, c.controlsY, button(font, "-", m.heartbeatActions.down, "cyan", c.smallWidth))

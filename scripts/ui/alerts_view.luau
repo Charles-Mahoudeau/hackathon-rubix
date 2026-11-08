@@ -15,8 +15,8 @@ local BLOCKER = {
 }
 
 -- The Monitor's own tool calls, newest first: what it did to which agent, and whether the sim accepted it.
-local function history(sim, limit)
-  local out, monitor = {}, sim.agents.monitor
+local function history(monitor, limit)
+  local out = {}
   if not monitor then return out end
   for i = #monitor.history, 1, -1 do
     local h = monitor.history[i]
@@ -37,17 +37,18 @@ local function nextOf(list, current)
 end
 
 function View.model(sim)
-  local b, st = sim.b, sim.monitorSettings
-  local hired = sim.agents.monitor ~= nil
+  local monitor = Monitor.agent(sim, sim.monitorSettings.scope)
+  local st = monitor and monitor.monitorSettings or sim.monitorSettings
+  local hired = monitor ~= nil
   local hb = st.heartbeat
   local types = {}
   for _, t in ipairs(sim.registry.alertTypes) do
     types[#types + 1] = { type = t, label = Copy.alert(t), on = st.alertTypes[t] == true, action = "alerts.type." .. t }
   end
   local blocker = Monitor.hireBlocker(sim)
-  local rows = Alerts.rows(sim)
+  local rows = Alerts.rows(sim, monitor or false)
   for _, r in ipairs(rows) do r.label = Copy.alert(r.type) end
-  local acts = history(sim, Screens.alerts.historyRows)
+  local acts = history(monitor, Screens.alerts.historyRows)
   return {
     hired = hired,
     state = hired and Words.states.open or (blocker and Words.states.locked or Words.states.available),
@@ -56,7 +57,7 @@ function View.model(sim)
     emptyHistory = #acts == 0 and (hired and Words.monitor.noActions or Words.monitor.noMonitor) or nil,
     hire = (not hired and not blocker) and "alerts.hire" or nil,
     hireNote = (not hired and blocker) and (BLOCKER[blocker] or blocker) or nil,
-    scope = st.scope, scopeAction = "alerts.scope",
+    scope = sim.monitorSettings.scope, scopeAction = "alerts.scope",
     heartbeatText = hb and ("%d s"):format(hb) or "off",
     heartbeatActions = { down = "alerts.heartbeat.down", up = "alerts.heartbeat.up", off = "alerts.heartbeat.off" },
     types = types,
@@ -65,10 +66,11 @@ function View.model(sim)
 end
 
 function View.signature(sim)
-  local parts = { tostring(sim.agents.monitor ~= nil), sim.monitorSettings.scope, tostring(sim.monitorSettings.heartbeat), tostring(#sim.alerts.list) }
-  for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(sim.monitorSettings.alertTypes[t]) end
-  for _, r in ipairs(Alerts.rows(sim)) do parts[#parts + 1] = r.id .. r.status end
-  local monitor = sim.agents.monitor
+  local monitor = Monitor.agent(sim, sim.monitorSettings.scope)
+  local st = monitor and monitor.monitorSettings or sim.monitorSettings
+  local parts = { tostring(monitor ~= nil), sim.monitorSettings.scope, tostring(st.heartbeat), tostring(#sim.alerts.list) }
+  for _, t in ipairs(sim.registry.alertTypes) do parts[#parts + 1] = tostring(st.alertTypes[t]) end
+  for _, r in ipairs(Alerts.rows(sim, monitor or false)) do parts[#parts + 1] = r.id .. r.status end
   parts[#parts + 1] = tostring(monitor and #monitor.history or 0) .. tostring(monitor and monitor.histSeq or 0)
   return table.concat(parts, ",")
 end
@@ -79,20 +81,24 @@ function View.act(sim, action)
   local c = sim.b.monitor
   if action == "alerts.hire" then return true, sim:hireMonitor() end
   if action == "alerts.scope" then
-    return true, sim:setMonitorSettings({ scope = nextOf(Registry.scopes(sim), sim.monitorSettings.scope) })
+    sim.monitorSettings.scope = nextOf(Registry.scopes(sim), sim.monitorSettings.scope)
+    return true, true
   end
-  local hb = sim.monitorSettings.heartbeat
+  local monitor = Monitor.agent(sim, sim.monitorSettings.scope)
+  local st = monitor and monitor.monitorSettings or sim.monitorSettings
+  local id = monitor and monitor.id
+  local hb = st.heartbeat
   local h = c.heartbeat
   if action == "alerts.heartbeat.off" then
     local value = h.default
     if hb then value = false end
-    return true, sim:setMonitorSettings({ heartbeat = value })
+    return true, sim:setMonitorSettings({ heartbeat = value }, id)
   end
-  if action == "alerts.heartbeat.down" then return true, sim:setMonitorSettings({ heartbeat = (hb or h.default) - h.step }) end
-  if action == "alerts.heartbeat.up" then return true, sim:setMonitorSettings({ heartbeat = (hb or h.default) + h.step }) end
+  if action == "alerts.heartbeat.down" then return true, sim:setMonitorSettings({ heartbeat = (hb or h.default) - h.step }, id) end
+  if action == "alerts.heartbeat.up" then return true, sim:setMonitorSettings({ heartbeat = (hb or h.default) + h.step }, id) end
   local t = action:match("^alerts%.type%.([%w_]+)$")
-  if t and sim.monitorSettings.alertTypes[t] ~= nil then
-    return true, sim:setMonitorSettings({ alertTypes = { [t] = not sim.monitorSettings.alertTypes[t] } })
+  if t and st.alertTypes[t] ~= nil then
+    return true, sim:setMonitorSettings({ alertTypes = { [t] = not st.alertTypes[t] } }, id)
   end
   return false
 end
